@@ -191,7 +191,7 @@ try {
         <?php endif; ?>
 
         <div style="text-align: center; margin-top: 40px;">
-            <a href="propiedades.php" class="btn btn-outline">
+            <a href="propiedades_inventario.php" class="btn btn-outline">
                 Ver todas las propiedades <i class="fas fa-arrow-right"></i>
             </a>
         </div>
