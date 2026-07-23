@@ -257,544 +257,363 @@ unset($_SESSION['errores']);
 $mensaje_exito = $_SESSION['mensaje_exito'] ?? '';
 unset($_SESSION['mensaje_exito']);
 $show_auth = isset($_GET['show_auth']) ? true : false;
-?>
 
+// Obtener datos del usuario para el sidebar
+$usuario = null;
+if (isset($_SESSION['usuario_id'])) {
+    require_once 'includes/conexion.php';
+    require_once 'includes/auth.php';
+    $usuario = obtenerUsuarioActual($conn);
+}
+?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="css/wizard.css">
-    <title>Publicar Propiedad - Wizard</title>
-    <style>
-        /* ======================================== */
-        /* ESTILOS DEL MODAL DE AUTENTICACIÓN */
-        /* ======================================== */
-        .modal-overlay {
-            display: <?php echo $show_auth ? 'flex' : 'none'; ?>;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.6);
-            z-index: 9999;
-            align-items: center;
-            justify-content: center;
-            backdrop-filter: blur(5px);
-            animation: fadeIn 0.3s ease;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        
-        .modal-content {
-            background: white;
-            border-radius: 20px;
-            padding: 40px;
-            max-width: 700px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: 0 30px 80px rgba(0,0,0,0.3);
-            animation: slideUp 0.4s ease;
-        }
-        
-        @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(40px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #f0f0f0;
-        }
-        
-        .modal-header h2 {
-            margin: 0;
-            font-size: 24px;
-            color: #1a1a2e;
-        }
-        
-        .modal-close {
-            background: none;
-            border: none;
-            font-size: 28px;
-            cursor: pointer;
-            color: #999;
-            transition: all 0.3s;
-            padding: 0 10px;
-        }
-        
-        .modal-close:hover {
-            color: #333;
-            transform: rotate(90deg);
-        }
-        
-        .auth-tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 25px;
-            background: #f8f9fa;
-            padding: 5px;
-            border-radius: 12px;
-        }
-        
-        .auth-tab {
-            flex: 1;
-            padding: 12px;
-            text-align: center;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            background: transparent;
-            color: #666;
-        }
-        
-        .auth-tab.active {
-            background: white;
-            color: #1a1a2e;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        
-        .auth-tab:hover {
-            background: rgba(255,255,255,0.5);
-        }
-        
-        .auth-panel {
-            display: none;
-            animation: fadeIn 0.3s ease;
-        }
-        
-        .auth-panel.active {
-            display: block;
-        }
-        
-        .auth-panel .form-group {
-            margin-bottom: 18px;
-        }
-        
-        .auth-panel .form-group label {
-            display: block;
-            margin-bottom: 6px;
-            font-weight: 500;
-            color: #333;
-            font-size: 14px;
-        }
-        
-        .auth-panel .form-group input {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e9ecef;
-            border-radius: 8px;
-            font-size: 15px;
-            transition: all 0.3s;
-            box-sizing: border-box;
-        }
-        
-        .auth-panel .form-group input:focus {
-            border-color: #1a1a2e;
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(26, 26, 46, 0.1);
-        }
-        
-        .auth-panel .btn-auth {
-            width: 100%;
-            padding: 14px;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 16px;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin-top: 10px;
-        }
-        
-        .btn-auth.btn-login {
-            background: #1a1a2e;
-            color: white;
-        }
-        
-        .btn-auth.btn-login:hover {
-            background: #2d2d44;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(26, 26, 46, 0.3);
-        }
-        
-        .btn-auth.btn-register {
-            background: #28a745;
-            color: white;
-        }
-        
-        .btn-auth.btn-register:hover {
-            background: #218838;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(40, 167, 69, 0.3);
-        }
-        
-        .auth-error {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 12px 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            border-left: 4px solid #dc3545;
-            font-size: 14px;
-        }
-        
-        .auth-error ul {
-            margin: 0;
-            padding-left: 20px;
-        }
-        
-        .auth-success {
-            background: #d4edda;
-            color: #155724;
-            padding: 12px 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            border-left: 4px solid #28a745;
-        }
-        
-        @media (max-width: 640px) {
-            .modal-content {
-                padding: 25px 20px;
-            }
-            
-            .auth-tabs {
-                flex-direction: column;
-            }
-        }
-    </style>
+    <title>Publicar Propiedad | Inmobiliaria MH</title>
+    <link rel="stylesheet" href="css/socios.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 </head>
 <body>
 
-<div class="main-layout">
-    <!-- Sidebar de Progreso -->
-    <aside class="progress-bar">
-        <h3>📋 Progreso</h3>
-        
-        <div class="step <?php echo $paso >= 1 ? 'active' : ''; ?> <?php echo $paso > 1 ? 'completed' : ''; ?>" data-step="1">
-            <span class="step-number">1</span> Datos Básicos
-        </div>
-        
-        <div class="step <?php echo $paso >= 2 ? 'active' : ''; ?> <?php echo $paso > 2 ? 'completed' : ''; ?>" data-step="2">
-            <span class="step-number">2</span> Detalles
-        </div>
-        
-        <div class="step <?php echo $paso >= 3 ? 'active' : ''; ?> <?php echo $paso > 3 ? 'completed' : ''; ?>" data-step="3">
-            <span class="step-number">3</span> Legal
-        </div>
-        
-        <div class="step <?php echo $paso >= 4 ? 'active' : ''; ?> <?php echo $paso > 4 ? 'completed' : ''; ?>" data-step="4">
-            <span class="step-number">4</span> Autenticación
-        </div>
-    </aside>
+<?php include 'sidebar.php'; ?>
 
-    <!-- Contenido del Wizard -->
-    <div class="wizard-container">
-        <?php if (isset($_GET['login']) && $_GET['login'] == 'success'): ?>
-            <div class="success-message" style="background: #d4edda; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #28a745;">
-                <p style="margin: 0; color: #155724;">✅ ¡Sesión iniciada correctamente! Ahora puedes publicar tu propiedad.</p>
-            </div>
-        <?php endif; ?>
-        
-        <?php if (isset($_GET['register']) && $_GET['register'] == 'success'): ?>
-            <div class="success-message" style="background: #d4edda; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #28a745;">
-                <p style="margin: 0; color: #155724;">✅ ¡Registro exitoso! Ahora puedes publicar tu propiedad.</p>
-            </div>
-        <?php endif; ?>
-        
-        <form method="POST" id="wizardForm" class="fade-in" enctype="multipart/form-data" action="">
-            <input type="hidden" name="paso_actual" value="<?php echo $paso; ?>">
+<!-- ===== MAIN CONTENT ===== -->
+<main class="main-content">
+    <div class="main-header">
+        <div class="header-left">
+            <button class="menu-toggle" id="menuToggle">
+                <i class="fas fa-bars"></i>
+            </button>
+            <h1>Publicar Propiedad</h1>
+            <p class="welcome">
+                <i class="fas fa-plus-circle"></i> Completa el formulario para publicar tu propiedad
+            </p>
+        </div>
+        <div class="header-actions">
+            <a href="mis_propiedades.php" class="btn-header secondary">
+                <i class="fas fa-arrow-left"></i> Volver
+            </a>
+        </div>
+    </div>
+
+    <!-- ===== WIZARD LAYOUT ===== -->
+    <div class="wizard-layout">
+        <!-- Sidebar de progreso -->
+        <aside class="progress-sidebar">
+            <h3><i class="fas fa-tasks"></i> Progreso</h3>
             
-            <?php if (!empty($errores)): ?>
-                <div class="error-list">
-                    <ul>
-                        <?php foreach ($errores as $error): ?>
-                            <li>⚠️ <?php echo htmlspecialchars($error); ?></li>
-                        <?php endforeach; ?>
-                    </ul>
+            <div class="step <?php echo $paso >= 1 ? 'active' : ''; ?> <?php echo $paso > 1 ? 'completed' : ''; ?>" data-step="1">
+                <span class="step-number"><span>1</span></span>
+                Datos Básicos
+            </div>
+            
+            <div class="step <?php echo $paso >= 2 ? 'active' : ''; ?> <?php echo $paso > 2 ? 'completed' : ''; ?>" data-step="2">
+                <span class="step-number"><span>2</span></span>
+                Detalles
+            </div>
+            
+            <div class="step <?php echo $paso >= 3 ? 'active' : ''; ?> <?php echo $paso > 3 ? 'completed' : ''; ?>" data-step="3">
+                <span class="step-number"><span>3</span></span>
+                Legal
+            </div>
+            
+            <div class="step <?php echo $paso >= 4 ? 'active' : ''; ?> <?php echo $paso > 4 ? 'completed' : ''; ?>" data-step="4">
+                <span class="step-number"><span>4</span></span>
+                Confirmar
+            </div>
+        </aside>
+
+        <!-- Contenido del wizard -->
+        <div class="wizard-content">
+            <?php if (isset($_GET['login']) && $_GET['login'] == 'success'): ?>
+                <div class="success-message">
+                    <p>✅ ¡Sesión iniciada correctamente! Ahora puedes publicar tu propiedad.</p>
                 </div>
             <?php endif; ?>
-
-            <!-- ======================================== -->
-            <!-- PASO 1: Datos Básicos -->
-            <!-- ======================================== -->
-            <?php if ($paso == 1): ?>
-                <h2>🏠 Datos Básicos</h2>
-                <p class="subtitle">Cuéntanos sobre tu propiedad</p>
-
-                <div class="form-group">
-                    <label for="titulo">Título de la Propiedad <span class="required">*</span></label>
-                    <input type="text" id="titulo" name="titulo" 
-                           value="<?php echo htmlspecialchars($data['titulo'] ?? ''); ?>" 
-                           placeholder="Ej: Hermosa casa en zona residencial" required>
+            
+            <?php if (isset($_GET['register']) && $_GET['register'] == 'success'): ?>
+                <div class="success-message">
+                    <p>✅ ¡Registro exitoso! Ahora puedes publicar tu propiedad.</p>
                 </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="precio">Precio (USD) <span class="required">*</span></label>
-                        <input type="number" id="precio" name="precio" 
-                               value="<?php echo htmlspecialchars($data['precio'] ?? ''); ?>" 
-                               placeholder="0.00" min="0" step="0.01" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="tipo_operacion">Tipo de Operación <span class="required">*</span></label>
-                        <select id="tipo_operacion" name="tipo_operacion" required>
-                            <option value="">Seleccionar</option>
-                            <option value="venta" <?php echo (isset($data['tipo_operacion']) && $data['tipo_operacion'] == 'venta') ? 'selected' : ''; ?>>Venta</option>
-                            <option value="alquiler" <?php echo (isset($data['tipo_operacion']) && $data['tipo_operacion'] == 'alquiler') ? 'selected' : ''; ?>>Alquiler</option>
-                            <option value="renta" <?php echo (isset($data['tipo_operacion']) && $data['tipo_operacion'] == 'renta') ? 'selected' : ''; ?>>Renta</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="descripcion">Descripción Breve</label>
-                    <textarea id="descripcion" name="descripcion" 
-                              placeholder="Describe tu propiedad en pocas palabras"><?php echo htmlspecialchars($data['descripcion'] ?? ''); ?></textarea>
-                </div>
-
-                <div class="btn-group">
-                    <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="2">
-                        Siguiente → 
-                    </button>
-                </div>
-
-            <!-- ======================================== -->
-            <!-- PASO 2: Detalles -->
-            <!-- ======================================== -->
-            <?php elseif ($paso == 2): ?>
-                <h2>📐 Detalles de la Propiedad</h2>
-                <p class="subtitle">Especifica las características principales</p>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="m2">Metros Cuadrados <span class="required">*</span></label>
-                        <input type="number" id="m2" name="m2" 
-                               value="<?php echo htmlspecialchars($data['m2'] ?? ''); ?>" 
-                               placeholder="m²" min="1" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="recamaras">Número de Recámaras <span class="required">*</span></label>
-                        <input type="number" id="recamaras" name="recamaras" 
-                               value="<?php echo htmlspecialchars($data['recamaras'] ?? ''); ?>" 
-                               placeholder="Ej: 3" min="0" max="20" required>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="banos">Baños</label>
-                        <input type="number" id="banos" name="banos" 
-                               value="<?php echo htmlspecialchars($data['banos'] ?? ''); ?>" 
-                               placeholder="Ej: 2" min="0" max="10">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="estacionamiento">Estacionamientos</label>
-                        <input type="number" id="estacionamiento" name="estacionamiento" 
-                               value="<?php echo htmlspecialchars($data['estacionamiento'] ?? ''); ?>" 
-                               placeholder="Ej: 2" min="0" max="10">
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="ubicacion">Ubicación <span class="required">*</span></label>
-                    <input type="text" id="ubicacion" name="ubicacion" 
-                           value="<?php echo htmlspecialchars($data['ubicacion'] ?? ''); ?>" 
-                           placeholder="Ciudad, colonia, calle" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="imagenes">Subir Imágenes (máximo 5)</label>
-                    <input type="file" id="imagenes" name="imagenes[]" multiple accept="image/*">
-                    <small style="color: #666; display: block; margin-top: 0.3rem;">
-                        Formatos: JPG, PNG, GIF, WEBP. Tamaño máximo: 5MB por imagen
-                    </small>
-                    <?php if (!empty($data['imagenes'])): ?>
-                        <div style="margin-top: 0.5rem;">
-                            <small>✅ <?php echo count($data['imagenes']); ?> imágenes subidas</small>
-                        </div>
-                    <?php endif; ?>
-                </div>
-
-                <div class="btn-group">
-                    <a href="?paso=1" class="btn btn-secondary">← Atrás</a>
-                    <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="3">
-                        Siguiente → 
-                    </button>
-                </div>
-
-            <!-- ======================================== -->
-            <!-- PASO 3: Situación Legal -->
-            <!-- ======================================== -->
-            <?php elseif ($paso == 3): ?>
-                <h2>⚖️ Situación Legal</h2>
-                <p class="subtitle">Información sobre la situación legal de la propiedad</p>
-
-                <div class="form-group">
-                    <label>¿Tiene algún gravamen o embargo?</label>
-                    <div class="radio-group">
-                        <label><input type="radio" name="has_lien" value="1" <?php echo (isset($data['has_lien']) && $data['has_lien'] == 1) ? 'checked' : ''; ?>> Sí</label>
-                        <label><input type="radio" name="has_lien" value="0" <?php echo (isset($data['has_lien']) && $data['has_lien'] == 0) ? 'checked' : ''; ?> <?php echo !isset($data['has_lien']) ? 'checked' : ''; ?>> No</label>
-                    </div>
-                </div>
-
-                <div class="form-group" id="lien_group" style="display: <?php echo (isset($data['has_lien']) && $data['has_lien'] == 1) ? 'block' : 'none'; ?>;">
-                    <label for="lien_description">Monto de la deuda o descripción del gravamen</label>
-                    <input type="text" id="lien_description" name="debt_amount" 
-                           value="<?php echo htmlspecialchars($data['debt_amount'] ?? ''); ?>" 
-                           placeholder="Ej: $50,000 o descripción del gravamen">
-                </div>
-
-                <div class="form-group">
-                    <label for="legal_status">Estado Legal de la Propiedad</label>
-                    <select id="legal_status" name="legal_status">
-                        <option value="libre" <?php echo (isset($data['legal_status']) && $data['legal_status'] == 'libre') ? 'selected' : ''; ?>>Libre de gravamenes</option>
-                        <option value="intestado" <?php echo (isset($data['legal_status']) && $data['legal_status'] == 'intestado') ? 'selected' : ''; ?>>Intestado (sin testamento)</option>
-                        <option value="sucesion" <?php echo (isset($data['legal_status']) && $data['legal_status'] == 'sucesion') ? 'selected' : ''; ?>>En proceso de sucesión</option>
-                        <option value="litigio" <?php echo (isset($data['legal_status']) && $data['legal_status'] == 'litigio') ? 'selected' : ''; ?>>En litigio</option>
-                        <option value="otro" <?php echo (isset($data['legal_status']) && $data['legal_status'] == 'otro') ? 'selected' : ''; ?>>Otro</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label for="legal_status_notes">Notas sobre la situación legal</label>
-                    <textarea id="legal_status_notes" name="legal_status_notes" 
-                              placeholder="Describe cualquier aspecto legal relevante"><?php echo htmlspecialchars($data['legal_status_notes'] ?? ''); ?></textarea>
-                </div>
-
-                <div class="btn-group">
-                    <a href="?paso=2" class="btn btn-secondary">← Atrás</a>
-                    <?php if (isset($_SESSION['usuario_id'])): ?>
-                        <!-- Si ya está logueado, va directamente al paso 4 -->
-                        <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="4">
-                            Siguiente → 
-                        </button>
-                    <?php else: ?>
-                        <!-- Si no está logueado, abre el modal -->
-                        <button type="button" class="btn btn-dorado" id="btnOpenAuth">
-                            🔐 Siguiente (Inicia sesión)
-                        </button>
-                    <?php endif; ?>
-                </div>
-
-            <!-- ======================================== -->
-            <!-- PASO 4: Autenticación y Resumen Final -->
-            <!-- ======================================== -->
-            <?php elseif ($paso == 4): ?>
-                <h2>🔐 Resumen Final</h2>
-                <p class="subtitle">Revisa los datos y confirma la publicación</p>
-
-                <?php if (isset($_SESSION['usuario_id'])): ?>
-                    <div style="background: #d4edda; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #28a745;">
-                        <p style="margin: 0; color: #155724;">
-                            ✅ Publicando como <strong><?php echo htmlspecialchars($_SESSION['usuario_nombre']); ?></strong>
-                            <?php if (isset($_SESSION['usuario_role'])): ?>
-                                <span style="font-size: 12px; background: #155724; color: white; padding: 2px 10px; border-radius: 12px; margin-left: 10px;">
-                                    <?php echo ucfirst($_SESSION['usuario_role']); ?>
-                                </span>
-                            <?php endif; ?>
-                        </p>
-                    </div>
-                <?php else: ?>
-                    <div style="background: #fff3cd; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #ffc107;">
-                        <p style="margin: 0; color: #856404;">
-                            ⚠️ Debes iniciar sesión para publicar. 
-                            <a href="?paso=3&show_auth=true" style="color: #1a1a2e; font-weight: 600;">Iniciar sesión</a>
-                        </p>
+            <?php endif; ?>
+            
+            <form method="POST" id="wizardForm" enctype="multipart/form-data" action="">
+                <input type="hidden" name="paso_actual" value="<?php echo $paso; ?>">
+                
+                <?php if (!empty($errores)): ?>
+                    <div class="error-list">
+                        <ul>
+                            <?php foreach ($errores as $error): ?>
+                                <li>⚠️ <?php echo htmlspecialchars($error); ?></li>
+                            <?php endforeach; ?>
+                        </ul>
                     </div>
                 <?php endif; ?>
 
-                <div class="resumen-card">
-                    <h4 style="margin-bottom: 1rem; color: #1a1a2e;">📋 Resumen de la Propiedad</h4>
-                    
-                    <div class="resumen-item">
-                        <span class="label">Título</span>
-                        <span class="value"><?php echo htmlspecialchars($data['titulo'] ?? 'No especificado'); ?></span>
-                    </div>
-                    
-                    <div class="resumen-item">
-                        <span class="label">Operación</span>
-                        <span class="value"><?php echo ucfirst(htmlspecialchars($data['tipo_operacion'] ?? 'No especificado')); ?></span>
-                    </div>
-                    
-                    <div class="resumen-item">
-                        <span class="label">Precio</span>
-                        <span class="value">$<?php echo number_format($data['precio'] ?? 0, 2); ?></span>
-                    </div>
-                    
-                    <div class="resumen-item">
-                        <span class="label">Metros Cuadrados</span>
-                        <span class="value"><?php echo htmlspecialchars($data['m2'] ?? 'No especificado'); ?> m²</span>
-                    </div>
-                    
-                    <div class="resumen-item">
-                        <span class="label">Recámaras</span>
-                        <span class="value"><?php echo htmlspecialchars($data['recamaras'] ?? 'No especificado'); ?></span>
-                    </div>
-                    
-                    <?php if (!empty($data['ubicacion'])): ?>
-                        <div class="resumen-item">
-                            <span class="label">Ubicación</span>
-                            <span class="value"><?php echo htmlspecialchars($data['ubicacion']); ?></span>
-                        </div>
-                    <?php endif; ?>
-                    
-                    <?php if (!empty($data['legal_status'])): ?>
-                        <div class="resumen-item">
-                            <span class="label">Estado Legal</span>
-                            <span class="value"><?php echo ucfirst(htmlspecialchars($data['legal_status'])); ?></span>
-                        </div>
-                    <?php endif; ?>
-                    
-                    <?php if (!empty($data['imagenes'])): ?>
-                        <div class="resumen-item">
-                            <span class="label">Imágenes</span>
-                            <span class="value"><?php echo count($data['imagenes']); ?> imágenes subidas</span>
-                        </div>
-                    <?php endif; ?>
-                    
-                    <div class="resumen-total">
-                        Total: $<?php echo number_format($data['precio'] ?? 0, 2); ?>
-                    </div>
-                </div>
+                <!-- ======================================== -->
+                <!-- PASO 1: Datos Básicos -->
+                <!-- ======================================== -->
+                <?php if ($paso == 1): ?>
+                    <h2>🏠 Datos Básicos</h2>
+                    <p class="subtitle">Cuéntanos sobre tu propiedad</p>
 
-                <div class="btn-group">
-                    <a href="?paso=3" class="btn btn-secondary">← Atrás</a>
+                    <div class="form-group">
+                        <label for="titulo">Título de la Propiedad <span class="required">*</span></label>
+                        <input type="text" id="titulo" name="titulo" 
+                               value="<?php echo htmlspecialchars($data['titulo'] ?? ''); ?>" 
+                               placeholder="Ej: Hermosa casa en zona residencial" required>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="precio">Precio (USD) <span class="required">*</span></label>
+                            <input type="number" id="precio" name="precio" 
+                                   value="<?php echo htmlspecialchars($data['precio'] ?? ''); ?>" 
+                                   placeholder="0.00" min="0" step="0.01" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="tipo_operacion">Tipo de Operación <span class="required">*</span></label>
+                            <select id="tipo_operacion" name="tipo_operacion" required>
+                                <option value="">Seleccionar</option>
+                                <option value="venta" <?php echo (isset($data['tipo_operacion']) && $data['tipo_operacion'] == 'venta') ? 'selected' : ''; ?>>Venta</option>
+                                <option value="alquiler" <?php echo (isset($data['tipo_operacion']) && $data['tipo_operacion'] == 'alquiler') ? 'selected' : ''; ?>>Alquiler</option>
+                                <option value="renta" <?php echo (isset($data['tipo_operacion']) && $data['tipo_operacion'] == 'renta') ? 'selected' : ''; ?>>Renta</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="descripcion">Descripción Breve</label>
+                        <textarea id="descripcion" name="descripcion" 
+                                  placeholder="Describe tu propiedad en pocas palabras"><?php echo htmlspecialchars($data['descripcion'] ?? ''); ?></textarea>
+                    </div>
+
+                    <div class="btn-group">
+                        <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="2">
+                            Siguiente <i class="fas fa-arrow-right"></i>
+                        </button>
+                    </div>
+
+                <!-- ======================================== -->
+                <!-- PASO 2: Detalles -->
+                <!-- ======================================== -->
+                <?php elseif ($paso == 2): ?>
+                    <h2>📐 Detalles de la Propiedad</h2>
+                    <p class="subtitle">Especifica las características principales</p>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="m2">Metros Cuadrados <span class="required">*</span></label>
+                            <input type="number" id="m2" name="m2" 
+                                   value="<?php echo htmlspecialchars($data['m2'] ?? ''); ?>" 
+                                   placeholder="m²" min="1" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="recamaras">Número de Recámaras <span class="required">*</span></label>
+                            <input type="number" id="recamaras" name="recamaras" 
+                                   value="<?php echo htmlspecialchars($data['recamaras'] ?? ''); ?>" 
+                                   placeholder="Ej: 3" min="0" max="20" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="banos">Baños</label>
+                            <input type="number" id="banos" name="banos" 
+                                   value="<?php echo htmlspecialchars($data['banos'] ?? ''); ?>" 
+                                   placeholder="Ej: 2" min="0" max="10">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="estacionamiento">Estacionamientos</label>
+                            <input type="number" id="estacionamiento" name="estacionamiento" 
+                                   value="<?php echo htmlspecialchars($data['estacionamiento'] ?? ''); ?>" 
+                                   placeholder="Ej: 2" min="0" max="10">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ubicacion">Ubicación <span class="required">*</span></label>
+                        <input type="text" id="ubicacion" name="ubicacion" 
+                               value="<?php echo htmlspecialchars($data['ubicacion'] ?? ''); ?>" 
+                               placeholder="Ciudad, colonia, calle" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="imagenes">Subir Imágenes (máximo 5)</label>
+                        <input type="file" id="imagenes" name="imagenes[]" multiple accept="image/*">
+                        <small style="color: #666; display: block; margin-top: 0.3rem;">
+                            Formatos: JPG, PNG, GIF, WEBP. Tamaño máximo: 5MB por imagen
+                        </small>
+                        <?php if (!empty($data['imagenes'])): ?>
+                            <div style="margin-top: 0.5rem;">
+                                <small>✅ <?php echo count($data['imagenes']); ?> imágenes subidas</small>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="btn-group">
+                        <a href="?paso=1" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Atrás</a>
+                        <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="3">
+                            Siguiente <i class="fas fa-arrow-right"></i>
+                        </button>
+                    </div>
+
+                <!-- ======================================== -->
+                <!-- PASO 3: Situación Legal -->
+                <!-- ======================================== -->
+                <?php elseif ($paso == 3): ?>
+                    <h2>⚖️ Situación Legal</h2>
+                    <p class="subtitle">Información sobre la situación legal de la propiedad</p>
+
+                    <div class="form-group">
+                        <label>¿Tiene algún gravamen o embargo?</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="has_lien" value="1" <?php echo (isset($data['has_lien']) && $data['has_lien'] == 1) ? 'checked' : ''; ?>> Sí</label>
+                            <label><input type="radio" name="has_lien" value="0" <?php echo (isset($data['has_lien']) && $data['has_lien'] == 0) ? 'checked' : ''; ?> <?php echo !isset($data['has_lien']) ? 'checked' : ''; ?>> No</label>
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="lien_group" style="display: <?php echo (isset($data['has_lien']) && $data['has_lien'] == 1) ? 'block' : 'none'; ?>;">
+                        <label for="lien_description">Monto de la deuda o descripción del gravamen</label>
+                        <input type="text" id="lien_description" name="debt_amount" 
+                               value="<?php echo htmlspecialchars($data['debt_amount'] ?? ''); ?>" 
+                               placeholder="Ej: $50,000 o descripción del gravamen">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="legal_status">Estado Legal de la Propiedad</label>
+                        <select id="legal_status" name="legal_status">
+                            <option value="libre" <?php echo (isset($data['legal_status']) && $data['legal_status'] == 'libre') ? 'selected' : ''; ?>>Libre de gravamenes</option>
+                            <option value="intestado" <?php echo (isset($data['legal_status']) && $data['legal_status'] == 'intestado') ? 'selected' : ''; ?>>Intestado (sin testamento)</option>
+                            <option value="sucesion" <?php echo (isset($data['legal_status']) && $data['legal_status'] == 'sucesion') ? 'selected' : ''; ?>>En proceso de sucesión</option>
+                            <option value="litigio" <?php echo (isset($data['legal_status']) && $data['legal_status'] == 'litigio') ? 'selected' : ''; ?>>En litigio</option>
+                            <option value="otro" <?php echo (isset($data['legal_status']) && $data['legal_status'] == 'otro') ? 'selected' : ''; ?>>Otro</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="legal_status_notes">Notas sobre la situación legal</label>
+                        <textarea id="legal_status_notes" name="legal_status_notes" 
+                                  placeholder="Describe cualquier aspecto legal relevante"><?php echo htmlspecialchars($data['legal_status_notes'] ?? ''); ?></textarea>
+                    </div>
+
+                    <div class="btn-group">
+                        <a href="?paso=2" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Atrás</a>
+                        <?php if (isset($_SESSION['usuario_id'])): ?>
+                            <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="4">
+                                Siguiente <i class="fas fa-arrow-right"></i>
+                            </button>
+                        <?php else: ?>
+                            <button type="button" class="btn btn-dorado" id="btnOpenAuth">
+                                <i class="fas fa-lock"></i> Siguiente (Inicia sesión)
+                            </button>
+                        <?php endif; ?>
+                    </div>
+
+                <!-- ======================================== -->
+                <!-- PASO 4: Autenticación y Resumen Final -->
+                <!-- ======================================== -->
+                <?php elseif ($paso == 4): ?>
+                    <h2>🔐 Resumen Final</h2>
+                    <p class="subtitle">Revisa los datos y confirma la publicación</p>
+
                     <?php if (isset($_SESSION['usuario_id'])): ?>
-                        <button type="submit" class="btn btn-success" name="confirmar" value="1">
-                            ✅ Confirmar y Publicar
-                        </button>
+                        <div style="background: #d4edda; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #28a745;">
+                            <p style="margin: 0; color: #155724;">
+                                ✅ Publicando como <strong><?php echo htmlspecialchars($_SESSION['usuario_nombre']); ?></strong>
+                                <?php if (isset($_SESSION['usuario_role'])): ?>
+                                    <span style="font-size: 12px; background: #155724; color: white; padding: 2px 10px; border-radius: 12px; margin-left: 10px;">
+                                        <?php echo ucfirst($_SESSION['usuario_role']); ?>
+                                    </span>
+                                <?php endif; ?>
+                            </p>
+                        </div>
                     <?php else: ?>
-                        <button type="button" class="btn btn-success" id="btnOpenAuthFromPaso4">
-                            🔑 Iniciar sesión para publicar
-                        </button>
+                        <div style="background: #fff3cd; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #ffc107;">
+                            <p style="margin: 0; color: #856404;">
+                                ⚠️ Debes iniciar sesión para publicar. 
+                                <a href="?paso=3&show_auth=true" style="color: #1a1a2e; font-weight: 600;">Iniciar sesión</a>
+                            </p>
+                        </div>
                     <?php endif; ?>
-                </div>
 
-            <?php endif; ?>
-        </form>
+                    <div class="resumen-card">
+                        <h4 style="margin-bottom: 1rem; color: #1a1a2e;">📋 Resumen de la Propiedad</h4>
+                        
+                        <div class="resumen-item">
+                            <span class="label">Título</span>
+                            <span class="value"><?php echo htmlspecialchars($data['titulo'] ?? 'No especificado'); ?></span>
+                        </div>
+                        
+                        <div class="resumen-item">
+                            <span class="label">Operación</span>
+                            <span class="value"><?php echo ucfirst(htmlspecialchars($data['tipo_operacion'] ?? 'No especificado')); ?></span>
+                        </div>
+                        
+                        <div class="resumen-item">
+                            <span class="label">Precio</span>
+                            <span class="value">$<?php echo number_format($data['precio'] ?? 0, 2); ?></span>
+                        </div>
+                        
+                        <div class="resumen-item">
+                            <span class="label">Metros Cuadrados</span>
+                            <span class="value"><?php echo htmlspecialchars($data['m2'] ?? 'No especificado'); ?> m²</span>
+                        </div>
+                        
+                        <div class="resumen-item">
+                            <span class="label">Recámaras</span>
+                            <span class="value"><?php echo htmlspecialchars($data['recamaras'] ?? 'No especificado'); ?></span>
+                        </div>
+                        
+                        <?php if (!empty($data['ubicacion'])): ?>
+                            <div class="resumen-item">
+                                <span class="label">Ubicación</span>
+                                <span class="value"><?php echo htmlspecialchars($data['ubicacion']); ?></span>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <?php if (!empty($data['legal_status'])): ?>
+                            <div class="resumen-item">
+                                <span class="label">Estado Legal</span>
+                                <span class="value"><?php echo ucfirst(htmlspecialchars($data['legal_status'])); ?></span>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <?php if (!empty($data['imagenes'])): ?>
+                            <div class="resumen-item">
+                                <span class="label">Imágenes</span>
+                                <span class="value"><?php echo count($data['imagenes']); ?> imágenes subidas</span>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <div class="resumen-total">
+                            Total: $<?php echo number_format($data['precio'] ?? 0, 2); ?>
+                        </div>
+                    </div>
+
+                    <div class="btn-group">
+                        <a href="?paso=3" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Atrás</a>
+                        <?php if (isset($_SESSION['usuario_id'])): ?>
+                            <button type="submit" class="btn btn-success" name="confirmar" value="1">
+                                <i class="fas fa-check-circle"></i> Confirmar y Publicar
+                            </button>
+                        <?php else: ?>
+                            <button type="button" class="btn btn-success" id="btnOpenAuthFromPaso4">
+                                <i class="fas fa-lock"></i> Iniciar sesión para publicar
+                            </button>
+                        <?php endif; ?>
+                    </div>
+
+                <?php endif; ?>
+            </form>
+        </div>
     </div>
-</div>
+</main>
 
 <!-- ======================================== -->
 <!-- MODAL DE AUTENTICACIÓN -->
@@ -811,7 +630,6 @@ $show_auth = isset($_GET['show_auth']) ? true : false;
             <button class="auth-tab" data-tab="register">Registrarse</button>
         </div>
         
-        <!-- Mensajes de error -->
         <?php if (!empty($errores)): ?>
             <div class="auth-error">
                 <ul>
@@ -881,6 +699,28 @@ $show_auth = isset($_GET['show_auth']) ? true : false;
 </div>
 
 <script>
+    // ===== Menú móvil =====
+    const menuToggle = document.getElementById('menuToggle');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+
+    function toggleSidebar() {
+        sidebar.classList.toggle('open');
+        overlay.classList.toggle('show');
+        document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : '';
+    }
+
+    menuToggle.addEventListener('click', toggleSidebar);
+    overlay.addEventListener('click', toggleSidebar);
+
+    document.querySelectorAll('.sidebar nav a').forEach(link => {
+        link.addEventListener('click', () => {
+            if (window.innerWidth <= 992) {
+                toggleSidebar();
+            }
+        });
+    });
+
     // ========================================
     // MANEJAR TABS DEL MODAL
     // ========================================
@@ -893,11 +733,9 @@ $show_auth = isset($_GET['show_auth']) ? true : false;
         
         tabs.forEach(tab => {
             tab.addEventListener('click', function() {
-                // Quitar active de todos los tabs
                 tabs.forEach(t => t.classList.remove('active'));
                 this.classList.add('active');
                 
-                // Mostrar panel correspondiente
                 const tabName = this.dataset.tab;
                 Object.keys(panels).forEach(key => {
                     panels[key].classList.toggle('active', key === tabName);
@@ -944,14 +782,12 @@ $show_auth = isset($_GET['show_auth']) ? true : false;
         // ========================================
         document.getElementById('closeModal').addEventListener('click', closeModal);
         
-        // Cerrar al hacer clic fuera del modal
         document.getElementById('authModal').addEventListener('click', function(e) {
             if (e.target === this) {
                 closeModal();
             }
         });
         
-        // Cerrar con tecla ESC
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 closeModal();

@@ -82,7 +82,7 @@ foreach ($propiedades as $p) {
     </div>
 
     <nav>
-        <a href="panel_socios.php" class="active">
+        <a href="socios_panel.php" class="active">
             <i class="fas fa-home"></i> Inicio
         </a>
         <a href="mis_propiedades.php">
@@ -92,15 +92,24 @@ foreach ($propiedades as $p) {
         <a href="vender.php">
             <i class="fas fa-plus-circle"></i> Publicar Propiedad
         </a>
-        <a href="favoritos.php">
-            <i class="fas fa-heart"></i> Favoritos
+        <a href="inventario_maestro.php">
+            <i class="fas fa-warehouse"></i> Inventario Maestro
+        </a>
+        <a href="expediente_legal.php">
+            <i class="fas fa-file-alt"></i> Expediente Legal
+        </a>
+        <a href="crm_clientes.php">
+            <i class="fas fa-users"></i> CRM Clientes
+        </a>
+        <a href="inteligencia_negocios.php">
+            <i class="fas fa-chart-line"></i> Inteligencia de Negocios
         </a>
         <a href="mensajes.php">
             <i class="fas fa-envelope"></i> Mensajes
             <span class="badge">3</span>
         </a>
-        <a href="perfil.php">
-            <i class="fas fa-user-cog"></i> Mi Perfil
+        <a href="accesos.php">
+            <i class="fas fa-user-cog"></i> Configuracion de acceso
         </a>
     </nav>
 
