@@ -28,7 +28,7 @@ try {
     // Verificar si las tablas existen
     $checkProperties = $conn->query("SHOW TABLES LIKE 'properties'");
     $checkFinancial = $conn->query("SHOW TABLES LIKE 'property_financials'");
-    $checkMultimedia = $conn->query("SHOW TABLES LIKE 'property_media'");
+    $checkMedia = $conn->query("SHOW TABLES LIKE 'property_media'");
     
     if ($checkProperties->rowCount() == 0) {
         $error_msg = "La tabla 'properties' no existe en la base de datos.";
@@ -127,11 +127,12 @@ foreach ($propiedades as $p) {
     }
 }
 
-// Función para formatear precio (seguro)
+// Función para formatear precio (con separador de miles = coma)
 function formatearPrecio($precio) {
     if ($precio === null || $precio === '' || $precio == 0) {
         return 'Precio no disponible';
     }
+    // Usamos coma como separador de miles y punto para decimales
     return '$' . number_format(floatval($precio), 0, ',', '.');
 }
 
@@ -139,11 +140,11 @@ function formatearPrecio($precio) {
 function getOperationBadge($operationType) {
     $opType = strtolower(trim($operationType ?? ''));
     if ($opType === 'venta' || $opType === 'compra') {
-        return ['class' => 'venta', 'label' => 'Venta'];
+        return ['class' => 'venta', 'label' => 'Venta', 'icon' => 'fa-tag'];
     } elseif ($opType === 'renta' || $opType === 'alquiler') {
-        return ['class' => 'renta', 'label' => 'Renta'];
+        return ['class' => 'renta', 'label' => 'Renta', 'icon' => 'fa-key'];
     } else {
-        return ['class' => 'general', 'label' => 'General'];
+        return ['class' => 'general', 'label' => 'General', 'icon' => 'fa-building'];
     }
 }
 
@@ -159,6 +160,20 @@ function getImagePath($imageUrl) {
     // Si no, asumimos que está en la carpeta uploads/propiedades/
     return 'uploads/propiedades/' . htmlspecialchars($imageUrl);
 }
+
+// Función para obtener el estado
+function getStatusBadge($status) {
+    $status = strtolower(trim($status ?? ''));
+    if ($status === 'activo') {
+        return ['class' => 'status-active', 'label' => 'Activo'];
+    } elseif ($status === 'inactivo') {
+        return ['class' => 'status-inactive', 'label' => 'Inactivo'];
+    } elseif ($status === 'vendido') {
+        return ['class' => 'status-sold', 'label' => 'Vendido'];
+    } else {
+        return ['class' => 'status-other', 'label' => ucfirst($status)];
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -169,189 +184,245 @@ function getImagePath($imageUrl) {
     <title>Inventario de Propiedades | Inmobiliaria MH</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
-        /* Estilos específicos para las tarjetas horizontales */
+        /* ===== ESTILOS CORPORATIVOS ===== */
+        * {
+            box-sizing: border-box;
+        }
+
         .properties-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        .property-card-horizontal {
             display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 15px;
+        }
+
+        /* Tarjeta horizontal delgada - estilo corporativo */
+        .property-row {
+            display: flex;
+            align-items: center;
             background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
+            border: 1px solid #e8edf4;
+            border-radius: 8px;
+            padding: 8px 12px;
+            transition: all 0.15s ease;
+            cursor: default;
+            min-height: 64px;
+            gap: 12px;
+        }
+
+        .property-row:hover {
+            background: #f8faff;
+            border-color: #c7d2e0;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+        }
+
+        /* Columna de imagen - pequeña */
+        .property-row-image {
+            width: 48px;
+            min-width: 48px;
+            height: 48px;
+            border-radius: 6px;
             overflow: hidden;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-            transition: all 0.2s ease-in-out;
-            position: relative;
-            height: 100%;
-            min-height: 180px;
-        }
-
-        .property-card-horizontal:hover {
-            box-shadow: 0 6px 12px rgba(0,0,0,0.08);
-            transform: translateY(-2px);
-            border-color: #cbd5e1;
-        }
-
-        .property-image-container {
-            width: 140px;
-            min-width: 140px;
-            position: relative;
             background: #f1f5f9;
             display: flex;
             align-items: center;
             justify-content: center;
-            overflow: hidden;
+            position: relative;
+            flex-shrink: 0;
         }
 
-        .property-image-container img {
+        .property-row-image img {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            min-height: 120px;
         }
 
-        .property-image-container .no-image {
+        .property-row-image .no-image {
             color: #94a3b8;
-            font-size: 2rem;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 5px;
+            font-size: 1.2rem;
         }
 
-        .property-image-container .no-image i {
-            font-size: 2.5rem;
+        .property-row-image .no-image i {
+            font-size: 1.2rem;
         }
 
-        .property-image-container .no-image span {
-            font-size: 0.6rem;
-            color: #cbd5e1;
-        }
-
-        .property-badge {
+        /* Badge de operación - más pequeño */
+        .property-row-badge {
             position: absolute;
-            top: 8px;
-            left: 8px;
-            background: rgba(16, 185, 129, 0.9);
-            color: white;
-            font-size: 0.65rem;
-            font-weight: 600;
-            padding: 2px 8px;
-            border-radius: 6px;
+            top: -2px;
+            left: -2px;
+            font-size: 0.5rem;
+            font-weight: 700;
+            padding: 1px 5px;
+            border-radius: 4px;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            z-index: 1;
+            letter-spacing: 0.3px;
+            color: white;
+            background: #10b981;
         }
 
-        .property-badge.venta {
-            background: rgba(16, 185, 129, 0.9);
+        .property-row-badge.venta {
+            background: #10b981;
+        }
+        .property-row-badge.renta {
+            background: #3b82f6;
+        }
+        .property-row-badge.general {
+            background: #6b7280;
         }
 
-        .property-badge.renta {
-            background: rgba(59, 130, 246, 0.9);
-        }
-
-        .property-badge.general {
-            background: rgba(107, 114, 128, 0.9);
-        }
-
-        .property-content {
-            padding: 14px;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
+        /* Columna de información principal */
+        .property-row-info {
             flex: 1;
             min-width: 0;
-        }
-
-        .property-title {
-            font-size: 0.95rem;
-            font-weight: 700;
-            color: #1e293b;
-            margin-bottom: 4px;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-            line-height: 1.3;
-        }
-
-        .property-location {
-            font-size: 0.8rem;
-            color: #64748b;
             display: flex;
             align-items: center;
-            gap: 5px;
-            margin-bottom: 8px;
-        }
-
-        .property-location i {
-            color: #10b981;
-        }
-
-        .property-footer {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border-top: 1px solid #f1f5f9;
-            padding-top: 8px;
-            margin-top: auto;
+            gap: 16px;
             flex-wrap: wrap;
-            gap: 5px;
         }
 
-        .property-price {
-            font-size: 1rem;
-            font-weight: 800;
-            color: #059669;
-        }
-
-        .property-price.no-price {
-            color: #94a3b8;
+        .property-row-title {
             font-size: 0.85rem;
             font-weight: 600;
+            color: #0f172a;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 280px;
         }
 
-        .property-actions {
-            display: flex;
-            gap: 6px;
-        }
-
-        .property-action-btn {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
+        .property-row-title i {
             color: #64748b;
+            font-size: 0.7rem;
+            margin-right: 4px;
+        }
+
+        .property-row-location {
+            font-size: 0.75rem;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+
+        .property-row-location i {
+            color: #10b981;
+            font-size: 0.7rem;
+        }
+
+        /* Estado de la propiedad */
+        .property-row-status {
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 2px 10px;
+            border-radius: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+
+        .property-row-status.status-active {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .property-row-status.status-inactive {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .property-row-status.status-sold {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .property-row-status.status-other {
+            background: #f1f5f9;
+            color: #475569;
+        }
+
+        /* Comisión */
+        .property-row-commission {
+            font-size: 0.7rem;
+            color: #64748b;
+            white-space: nowrap;
+        }
+
+        .property-row-commission i {
+            color: #8b5cf6;
+            font-size: 0.65rem;
+        }
+
+        /* Precio - destacado y con coma */
+        .property-row-price {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #0f172a;
+            white-space: nowrap;
+            min-width: 120px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .property-row-price .currency {
+            color: #64748b;
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+
+        .property-row-price.no-price {
+            color: #94a3b8;
+            font-weight: 500;
+            font-size: 0.75rem;
+        }
+
+        /* Acciones */
+        .property-row-actions {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .property-row-actions .action-btn {
             width: 28px;
             height: 28px;
+            border: none;
+            background: transparent;
+            color: #94a3b8;
             border-radius: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.75rem;
             cursor: pointer;
-            transition: all 0.2s;
-            text-decoration: none;
-            border: none;
+            transition: all 0.15s;
+            font-size: 0.8rem;
         }
 
-        .property-action-btn:hover {
-            background: #10b981;
-            color: white;
-            border-color: #10b981;
+        .property-row-actions .action-btn:hover {
+            background: #f1f5f9;
+            color: #0f172a;
         }
 
+        .property-row-actions .action-btn.view:hover {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .property-row-actions .action-btn.edit:hover {
+            background: #dcfce7;
+            color: #16a34a;
+        }
+
+        /* Mensajes */
         .message-box {
-            padding: 15px 20px;
+            padding: 12px 16px;
             border-radius: 8px;
-            margin: 10px 0;
+            margin: 8px 0;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
+            font-size: 0.85rem;
         }
 
         .message-box.info {
@@ -379,15 +450,16 @@ function getImagePath($imageUrl) {
         }
 
         .message-box i {
-            font-size: 1.2rem;
+            font-size: 1rem;
         }
 
+        /* Estadísticas adicionales - más compactas */
         .stats-extra {
             display: flex;
-            gap: 10px;
-            font-size: 0.85rem;
+            gap: 8px;
+            font-size: 0.78rem;
             color: #64748b;
-            margin-top: 5px;
+            margin-top: 4px;
             flex-wrap: wrap;
         }
 
@@ -395,37 +467,91 @@ function getImagePath($imageUrl) {
             background: #f1f5f9;
             padding: 2px 10px;
             border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
 
-        /* Responsivo */
-        @media (max-width: 992px) {
-            .properties-grid {
-                grid-template-columns: 1fr;
+        .stats-extra span i {
+            font-size: 0.7rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .property-row {
+                flex-wrap: wrap;
+                padding: 10px 12px;
+                min-height: auto;
+                gap: 8px;
+            }
+
+            .property-row-info {
+                flex: 1 1 100%;
+                gap: 8px;
+            }
+
+            .property-row-title {
+                max-width: 100%;
+                white-space: normal;
+                font-size: 0.8rem;
+            }
+
+            .property-row-location {
+                font-size: 0.7rem;
+                width: 100%;
+            }
+
+            .property-row-price {
+                min-width: auto;
+                text-align: left;
+                font-size: 0.9rem;
+                margin-left: auto;
+            }
+
+            .property-row-actions {
+                margin-left: auto;
+            }
+
+            .property-row-status {
+                font-size: 0.6rem;
+                padding: 1px 8px;
+            }
+
+            .property-row-commission {
+                font-size: 0.65rem;
             }
         }
 
-        @media (max-width: 640px) {
-            .property-image-container {
-                width: 100px;
-                min-width: 100px;
+        @media (max-width: 480px) {
+            .property-row {
+                padding: 8px 10px;
             }
-            
-            .property-content {
-                padding: 10px;
+
+            .property-row-image {
+                width: 40px;
+                min-width: 40px;
+                height: 40px;
             }
-            
-            .property-title {
-                font-size: 0.85rem;
+
+            .property-row-title {
+                font-size: 0.75rem;
             }
-            
-            .property-footer {
-                flex-direction: column;
-                align-items: stretch;
+
+            .property-row-price {
+                font-size: 0.8rem;
+                min-width: 80px;
             }
-            
-            .property-actions {
-                justify-content: flex-end;
+
+            .property-row-actions .action-btn {
+                width: 24px;
+                height: 24px;
+                font-size: 0.7rem;
             }
+        }
+
+        /* Scroll horizontal para tabla en móvil */
+        .table-container {
+            overflow-x: auto;
         }
     </style>
 </head>
@@ -481,7 +607,7 @@ function getImagePath($imageUrl) {
 
     <div class="table-container">
         <div class="table-header">
-            <h3><i class="fas fa-th-large"></i> Catálogo de Inmuebles</h3>
+            <h3><i class="fas fa-list-ul"></i> Listado de Inmuebles</h3>
             <div class="search-box">
                 <input type="text" placeholder="Buscar por municipio o título..." id="searchTable">
                 <select id="filterOperation">
@@ -492,7 +618,7 @@ function getImagePath($imageUrl) {
             </div>
         </div>
 
-        <div style="padding: 20px;">
+        <div style="padding: 16px 20px;">
             <?php if (!empty($error_msg)): ?>
                 <div class="message-box <?php echo strpos($error_msg, 'Error') !== false ? 'error' : 'info'; ?>">
                     <i class="fas <?php echo strpos($error_msg, 'Error') !== false ? 'fa-exclamation-circle' : 'fa-info-circle'; ?>"></i>
@@ -529,64 +655,82 @@ function getImagePath($imageUrl) {
                 <div class="properties-grid" id="propertiesGrid">
                     <?php foreach ($propiedades as $propiedad): 
                         $badge = getOperationBadge($propiedad['operation_type'] ?? '');
+                        $statusBadge = getStatusBadge($propiedad['status'] ?? '');
                         $price = $propiedad['price'] ?? null;
                         $hasPrice = ($price !== null && $price > 0);
                         $priceClass = $hasPrice ? '' : 'no-price';
-                        $priceText = $hasPrice ? formatearPrecio($price) : 'Sin precio asignado';
+                        $priceText = $hasPrice ? formatearPrecio($price) : 'Sin precio';
                         $imagePath = getImagePath($propiedad['image_url'] ?? '');
                         $hasImage = !empty($imagePath);
+                        $title = htmlspecialchars($propiedad['title'] ?? 'Sin título');
+                        $municipality = htmlspecialchars($propiedad['municipality'] ?? 'Ubicación no especificada');
+                        $commission = $propiedad['commission_percentage'] ?? 0;
                     ?>
-                        <div class="property-card-horizontal" 
-                             data-text="<?php echo strtolower(htmlspecialchars(($propiedad['title'] ?? '') . ' ' . ($propiedad['municipality'] ?? ''))); ?>" 
+                        <div class="property-row" 
+                             data-text="<?php echo strtolower($title . ' ' . $municipality); ?>" 
                              data-operation="<?php echo strtolower(trim($propiedad['operation_type'] ?? '')); ?>">
-                            <div class="property-image-container">
-                                <span class="property-badge <?php echo $badge['class']; ?>">
+                            
+                            <!-- Imagen -->
+                            <div class="property-row-image">
+                                <span class="property-row-badge <?php echo $badge['class']; ?>">
                                     <?php echo $badge['label']; ?>
                                 </span>
                                 <?php if ($hasImage): ?>
                                     <img src="<?php echo $imagePath; ?>" 
-                                         alt="<?php echo htmlspecialchars($propiedad['title'] ?? 'Inmueble'); ?>" 
+                                         alt="<?php echo $title; ?>" 
                                          loading="lazy"
-                                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                         onerror="this.style.display='none'; this.parentElement.querySelector('.no-image').style.display='flex';">
                                     <div class="no-image" style="display: none;">
                                         <i class="fas fa-image"></i>
-                                        <span>Error al cargar</span>
                                     </div>
                                 <?php else: ?>
                                     <div class="no-image">
                                         <i class="fas fa-building"></i>
-                                        <span>Sin imagen</span>
                                     </div>
                                 <?php endif; ?>
                             </div>
-                            <div class="property-content">
-                                <div>
-                                    <div class="property-title" title="<?php echo htmlspecialchars($propiedad['title'] ?? 'Sin Título'); ?>">
-                                        <?php echo htmlspecialchars($propiedad['title'] ?? 'Sin Título'); ?>
-                                    </div>
-                                    <div class="property-location">
-                                        <i class="fas fa-map-marker-alt"></i>
-                                        <span><?php echo htmlspecialchars($propiedad['municipality'] ?? 'Ubicación no especificada'); ?></span>
-                                    </div>
-                                    <?php if ($hasPrice && isset($propiedad['commission_percentage']) && $propiedad['commission_percentage'] > 0): ?>
-                                        <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 2px;">
-                                            <i class="fas fa-percent"></i> Comisión: <?php echo number_format($propiedad['commission_percentage'], 1); ?>%
-                                        </div>
-                                    <?php endif; ?>
+
+                            <!-- Información -->
+                            <div class="property-row-info">
+                                <div class="property-row-title" title="<?php echo $title; ?>">
+                                    <i class="fas fa-home"></i> <?php echo $title; ?>
                                 </div>
-                                <div class="property-footer">
-                                    <div class="property-price <?php echo $priceClass; ?>">
-                                        <?php echo $priceText; ?>
-                                    </div>
-                                    <div class="property-actions">
-                                        <button class="property-action-btn" title="Ver detalles" onclick="verPropiedad('<?php echo $propiedad['id']; ?>')">
-                                            <i class="fas fa-eye"></i>
-                                        </button>
-                                        <button class="property-action-btn" title="Editar" onclick="editarPropiedad('<?php echo $propiedad['id']; ?>')">
-                                            <i class="fas fa-edit"></i>
-                                        </button>
-                                    </div>
+                                
+                                <div class="property-row-location">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    <span><?php echo $municipality; ?></span>
                                 </div>
+
+                                <!-- Estado -->
+                                <span class="property-row-status <?php echo $statusBadge['class']; ?>">
+                                    <?php echo $statusBadge['label']; ?>
+                                </span>
+
+                                <!-- Comisión -->
+                                <?php if ($commission > 0): ?>
+                                    <div class="property-row-commission">
+                                        <i class="fas fa-percent"></i> <?php echo number_format($commission, 1); ?>%
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+
+                            <!-- Precio -->
+                            <div class="property-row-price <?php echo $priceClass; ?>">
+                                <?php if ($hasPrice): ?>
+                                    <span class="currency">$</span><?php echo number_format(floatval($price), 0, ',', '.'); ?>
+                                <?php else: ?>
+                                    <?php echo $priceText; ?>
+                                <?php endif; ?>
+                            </div>
+
+                            <!-- Acciones -->
+                            <div class="property-row-actions">
+                                <button class="action-btn view" title="Ver detalles" onclick="verPropiedad('<?php echo $propiedad['id']; ?>')">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button class="action-btn edit" title="Editar" onclick="editarPropiedad('<?php echo $propiedad['id']; ?>')">
+                                    <i class="fas fa-edit"></i>
+                                </button>
                             </div>
                         </div>
                     <?php endforeach; ?>
@@ -594,9 +738,9 @@ function getImagePath($imageUrl) {
                 
                 <!-- Mostrar datos de depuración (solo en desarrollo) -->
                 <?php if (isset($_GET['debug'])): ?>
-                    <div style="margin-top: 30px; padding: 20px; background: #f8fafc; border-radius: 8px; overflow-x: auto;">
-                        <h4>Datos de depuración (primer registro):</h4>
-                        <pre style="font-size: 12px;"><?php print_r(reset($propiedades)); ?></pre>
+                    <div style="margin-top: 20px; padding: 16px; background: #f8fafc; border-radius: 8px; overflow-x: auto; font-size: 12px;">
+                        <h4 style="margin: 0 0 10px 0; font-size: 0.85rem;">Datos de depuración (primer registro):</h4>
+                        <pre style="margin: 0;"><?php print_r(reset($propiedades)); ?></pre>
                     </div>
                 <?php endif; ?>
             <?php endif; ?>
@@ -641,23 +785,23 @@ document.addEventListener('DOMContentLoaded', function() {
     const filterOperation = document.getElementById('filterOperation');
 
     if(searchInput && filterOperation) {
-        searchInput.addEventListener('keyup', filtrarTarjetas);
-        filterOperation.addEventListener('change', filtrarTarjetas);
+        searchInput.addEventListener('keyup', filtrarFilas);
+        filterOperation.addEventListener('change', filtrarFilas);
     }
 
-    function filtrarTarjetas() {
+    function filtrarFilas() {
         const searchText = (searchInput.value || '').toLowerCase().trim();
         const operationVal = (filterOperation.value || '').toLowerCase().trim();
-        const cards = document.querySelectorAll('.property-card-horizontal');
+        const rows = document.querySelectorAll('.property-row');
 
-        cards.forEach(card => {
-            const cardText = (card.getAttribute('data-text') || '').toLowerCase();
-            const cardOp = (card.getAttribute('data-operation') || '').toLowerCase();
+        rows.forEach(row => {
+            const rowText = (row.getAttribute('data-text') || '').toLowerCase();
+            const rowOp = (row.getAttribute('data-operation') || '').toLowerCase();
 
-            const matchesSearch = cardText.includes(searchText);
-            const matchesOp = operationVal === '' || cardOp === operationVal;
+            const matchesSearch = rowText.includes(searchText);
+            const matchesOp = operationVal === '' || rowOp === operationVal;
 
-            card.style.display = (matchesSearch && matchesOp) ? '' : 'none';
+            row.style.display = (matchesSearch && matchesOp) ? '' : 'none';
         });
     }
 
@@ -667,11 +811,11 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     window.verPropiedad = function(id) {
-        window.location.href = 'propiedad_detalle.php?id=' + id;
+        window.location.href = 'propiedad_detalle_inventario.php?id=' + id;
     };
 
     window.editarPropiedad = function(id) {
-        window.location.href = 'propiedad_editar.php?id=' + id;
+        window.location.href = 'propiedad_editar_inventario.php?id=' + id;
     };
 });
 </script>
