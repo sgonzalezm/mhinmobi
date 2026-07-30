@@ -32,48 +32,345 @@ if ($property_id == 0) {
 
 $propiedad = null;
 $error_msg = '';
+$mensaje_exito = '';
+$enlace_generado = '';
 
-try {
-    // Consulta general (sin restricción de owner) - USANDO TABLA socios
-    $stmt = $conn->prepare("
-        SELECT 
-            p.id,
-            p.owner_id,
-            p.title,
-            p.operation_type,
-            p.address_city,
-            p.address_municipality,
-            p.status,
-            p.created_at,
-            p.updated_at,
-            DATEDIFF(NOW(), p.created_at) as days_active,
-            pd.square_meters,
-            pd.bedrooms,
-            pd.bathrooms,
-            pd.parking_spots,
-            pf.asking_price as price,
-            pf.min_acceptable_price,
-            pf.potential_profit_margin,
-            pf.commission_percentage,
-            (pf.asking_price * pf.commission_percentage / 100) as commission_amount,
-            s.nombre as owner_name,
-            s.email as owner_email
-        FROM properties p
-        LEFT JOIN property_details pd ON p.id = pd.property_id
-        LEFT JOIN property_financials pf ON p.id = pf.property_id
-        LEFT JOIN socios s ON p.owner_id = s.id
-        WHERE p.id = ?
-    ");
-    $stmt->execute([$property_id]);
-    $propiedad = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if (!$propiedad) {
-        $error_msg = "Propiedad no encontrada.";
+// ===== FUNCIÓN PARA OBTENER LA URL BASE CORRECTA =====
+function getBaseUrl() {
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
+    $host = $_SERVER['HTTP_HOST'];
+    
+    // Obtener la ruta base del proyecto
+    $script_name = $_SERVER['SCRIPT_NAME'];
+    $base_path = dirname($script_name);
+    
+    // Normalizar la ruta base
+    if ($base_path == '/' || $base_path == '\\') {
+        $base_path = '';
     }
+    
+    // Asegurar que termina con /
+    if (!empty($base_path) && substr($base_path, -1) != '/') {
+        $base_path .= '/';
+    }
+    
+    return $protocol . $host . $base_path;
+}
 
-    // Obtener imagen principal
-    $imagen_principal = '';
-    if ($propiedad) {
+// ===== FUNCIÓN PARA OBTENER DOCUMENTOS DE LA PROPIEDAD =====
+function getPropertyDocuments($conn, $property_id) {
+    $documentos = [
+        'generales' => [],
+        'clientes' => [],
+        'pendientes' => 0,
+        'total' => 0
+    ];
+    
+    try {
+        // 1. Documentos generales de la propiedad (de property_documents)
+        $stmt = $conn->prepare("
+            SELECT 
+                'general' as origen,
+                id,
+                document_type,
+                file_name,
+                file_path,
+                file_size,
+                mime_type,
+                uploaded_at,
+                uploaded_by,
+                NULL as client_name,
+                NULL as client_email,
+                NULL as status,
+                'general' as tipo_documento
+            FROM property_documents
+            WHERE property_id = ?
+            ORDER BY uploaded_at DESC
+        ");
+        $stmt->execute([$property_id]);
+        $documentos['generales'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // 2. Documentos subidos por clientes (de client_uploaded_documents)
+        $stmt = $conn->prepare("
+            SELECT 
+                'cliente' as origen,
+                c.id,
+                c.document_type,
+                c.file_name,
+                c.file_path,
+                c.file_size,
+                c.mime_type,
+                c.uploaded_at,
+                NULL as uploaded_by,
+                t.client_name,
+                t.client_email,
+                c.status,
+                'cliente' as tipo_documento,
+                c.status as review_status
+            FROM client_uploaded_documents c
+            JOIN document_upload_tokens t ON c.token_id = t.id
+            WHERE c.property_id = ?
+            ORDER BY c.uploaded_at DESC
+        ");
+        $stmt->execute([$property_id]);
+        $documentos['clientes'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // 3. Contar pendientes de revisión
+        $documentos['pendientes'] = count(array_filter($documentos['clientes'], function($doc) {
+            return $doc['status'] === 'pending_review';
+        }));
+        
+        $documentos['total'] = count($documentos['generales']) + count($documentos['clientes']);
+        
+    } catch (PDOException $e) {
+        // Si las tablas no existen, ignorar
+        error_log("Error al obtener documentos: " . $e->getMessage());
+    }
+    
+    return $documentos;
+}
+
+// ===== FUNCIÓN PARA OBTENER ÍCONO SEGÚN TIPO DE DOCUMENTO =====
+function getDocumentIcon($document_type) {
+    $icons = [
+        'ficha_tecnica' => 'fa-clipboard-list',
+        'escritura' => 'fa-scroll',
+        'avaluo' => 'fa-chart-pie',
+        'certificado' => 'fa-certificate',
+        'identificacion' => 'fa-id-card',
+        'comprobante_domicilio' => 'fa-home',
+        'contrato_compraventa' => 'fa-handshake',
+        'estado_cuenta' => 'fa-chart-bar',
+        'otros' => 'fa-file'
+    ];
+    return $icons[$document_type] ?? 'fa-file';
+}
+
+// ===== FUNCIÓN PARA OBTENER COLOR SEGÚN TIPO DE DOCUMENTO =====
+function getDocumentColor($document_type) {
+    $colors = [
+        'ficha_tecnica' => '#3498db',
+        'escritura' => '#2c3e50',
+        'avaluo' => '#f39c12',
+        'certificado' => '#27ae60',
+        'identificacion' => '#9b59b6',
+        'comprobante_domicilio' => '#1abc9c',
+        'contrato_compraventa' => '#e74c3c',
+        'estado_cuenta' => '#e67e22',
+        'otros' => '#95a5a6'
+    ];
+    return $colors[$document_type] ?? '#95a5a6';
+}
+
+// ===== FUNCIÓN PARA FORMATEAR TAMAÑO DE ARCHIVO =====
+function formatFileSize($bytes) {
+    if ($bytes === null || $bytes === 0) return '0 B';
+    $k = 1024;
+    $sizes = ['B', 'KB', 'MB', 'GB'];
+    $i = floor(log($bytes) / log($k));
+    return number_format($bytes / pow($k, $i), 2) . ' ' . $sizes[$i];
+}
+
+// ===== FUNCIÓN PARA OBTENER ETIQUETA DE ESTADO =====
+function getDocumentStatusLabel($status) {
+    $labels = [
+        'pending_review' => ['label' => '⏳ Pendiente', 'class' => 'status-pending'],
+        'approved' => ['label' => '✅ Aprobado', 'class' => 'status-approved'],
+        'rejected' => ['label' => '❌ Rechazado', 'class' => 'status-rejected'],
+        'pending_correction' => ['label' => '🔄 Corrección', 'class' => 'status-correction']
+    ];
+    return $labels[$status] ?? ['label' => $status, 'class' => ''];
+}
+
+// Procesar generación de enlace desde el modal
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'generar_enlace') {
+    $email = trim($_POST['email'] ?? '');
+    $nombre = trim($_POST['nombre'] ?? '');
+    $dias_validez = (int)($_POST['dias_validez'] ?? 7);
+    $max_uploads = (int)($_POST['max_uploads'] ?? 10);
+    $token_type = $_POST['token_type'] ?? 'owner';
+    $enviar_whatsapp = isset($_POST['enviar_whatsapp']) ? 1 : 0;
+    $telefono = trim($_POST['telefono'] ?? '');
+    
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error_msg = "❌ Email inválido. Por favor, ingresa un email válido.";
+    } else {
+        try {
+            // Generar token único
+            $token = bin2hex(random_bytes(32));
+            $expires_at = date('Y-m-d H:i:s', strtotime("+{$dias_validez} days"));
+            
+            $stmt = $conn->prepare("
+                INSERT INTO document_upload_tokens 
+                (property_id, client_email, client_name, token, token_type, expires_at, max_uploads, created_by) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $property_id, 
+                $email, 
+                $nombre, 
+                $token, 
+                $token_type, 
+                $expires_at, 
+                $max_uploads, 
+                $_SESSION['usuario_id']
+            ]);
+            
+            $token_id = $conn->lastInsertId();
+            
+            // ===== GENERAR URL CORRECTA =====
+            $base_url = getBaseUrl();
+            $enlace = $base_url . "upload_documentos.php?token=" . $token;
+            $enlace_generado = $enlace;
+            
+            // Enviar email al cliente
+            $mensaje_email = "
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .header { background: #2c3e50; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+                    .content { padding: 20px; background: #f8f9fa; border-radius: 0 0 8px 8px; }
+                    .btn { background: #3498db; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; }
+                    .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+                </style>
+            </head>
+            <body>
+                <div class='container'>
+                    <div class='header'>
+                        <h2>📄 Subida de Documentos</h2>
+                    </div>
+                    <div class='content'>
+                        <p>Hola " . htmlspecialchars($nombre ?: 'Cliente') . ",</p>
+                        <p>Has sido invitado a subir los documentos para la propiedad: <strong>" . htmlspecialchars($propiedad['title'] ?? 'Propiedad') . "</strong></p>
+                        <p>Para comenzar, haz clic en el siguiente enlace:</p>
+                        <p style='text-align: center; margin: 30px 0;'>
+                            <a href='" . $enlace . "' class='btn'>📤 Subir Documentos</a>
+                        </p>
+                        <p><strong>⏰ Este enlace expirará en " . $dias_validez . " días.</strong></p>
+                        <p style='font-size: 12px; color: #666;'>
+                            <small>Si el botón no funciona, copia y pega este enlace en tu navegador:</small><br>
+                            <span style='word-break: break-all;'>" . $enlace . "</span>
+                        </p>
+                    </div>
+                    <div class='footer'>
+                        Este es un mensaje automático de Inmobiliaria MH.
+                    </div>
+                </div>
+            </body>
+            </html>
+            ";
+            
+            $headers = "MIME-Version: 1.0\r\n";
+            $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+            $headers .= "From: Inmobiliaria MH <no-reply@inmobiliariamh.com>\r\n";
+            
+            mail($email, "Sube tus documentos - Inmobiliaria MH", $mensaje_email, $headers);
+            
+            // Si se solicitó enviar por WhatsApp
+            if ($enviar_whatsapp && !empty($telefono)) {
+                $telefono_limpio = preg_replace('/[^0-9]/', '', $telefono);
+                if (strlen($telefono_limpio) >= 10) {
+                    // Guardar en sesión para mostrar el enlace de WhatsApp
+                    $_SESSION['whatsapp_link'] = "https://wa.me/" . $telefono_limpio . "?text=" . urlencode(
+                        "Hola, te comparto el enlace para subir los documentos de la propiedad:\n\n" . 
+                        $enlace . "\n\n" .
+                        "Este enlace expira en " . $dias_validez . " días.\n" .
+                        "Saludos, equipo Inmobiliaria MH."
+                    );
+                }
+            }
+            
+            $mensaje_exito = "✅ Enlace generado exitosamente y enviado al correo del cliente.";
+            
+            // Recargar la propiedad para actualizar datos
+            $stmt = $conn->prepare("
+                SELECT 
+                    p.id,
+                    p.owner_id,
+                    p.title,
+                    p.operation_type,
+                    p.address_city,
+                    p.address_municipality,
+                    p.status,
+                    p.created_at,
+                    p.updated_at,
+                    DATEDIFF(NOW(), p.created_at) as days_active,
+                    pd.square_meters,
+                    pd.bedrooms,
+                    pd.bathrooms,
+                    pd.parking_spots,
+                    pf.asking_price as price,
+                    pf.min_acceptable_price,
+                    pf.potential_profit_margin,
+                    pf.commission_percentage,
+                    (pf.asking_price * pf.commission_percentage / 100) as commission_amount,
+                    s.nombre as owner_name,
+                    s.email as owner_email
+                FROM properties p
+                LEFT JOIN property_details pd ON p.id = pd.property_id
+                LEFT JOIN property_financials pf ON p.id = pf.property_id
+                LEFT JOIN socios s ON p.owner_id = s.id
+                WHERE p.id = ?
+            ");
+            $stmt->execute([$property_id]);
+            $propiedad = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+        } catch (PDOException $e) {
+            $error_msg = "❌ Error al generar el enlace: " . $e->getMessage();
+        }
+    }
+}
+
+// Si no se ha recargado después de generar, obtener la propiedad
+if (!$propiedad) {
+    try {
+        $stmt = $conn->prepare("
+            SELECT 
+                p.id,
+                p.owner_id,
+                p.title,
+                p.operation_type,
+                p.address_city,
+                p.address_municipality,
+                p.status,
+                p.created_at,
+                p.updated_at,
+                DATEDIFF(NOW(), p.created_at) as days_active,
+                pd.square_meters,
+                pd.bedrooms,
+                pd.bathrooms,
+                pd.parking_spots,
+                pf.asking_price as price,
+                pf.min_acceptable_price,
+                pf.potential_profit_margin,
+                pf.commission_percentage,
+                (pf.asking_price * pf.commission_percentage / 100) as commission_amount,
+                s.nombre as owner_name,
+                s.email as owner_email
+            FROM properties p
+            LEFT JOIN property_details pd ON p.id = pd.property_id
+            LEFT JOIN property_financials pf ON p.id = pf.property_id
+            LEFT JOIN socios s ON p.owner_id = s.id
+            WHERE p.id = ?
+        ");
+        $stmt->execute([$property_id]);
+        $propiedad = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$propiedad) {
+            $error_msg = "Propiedad no encontrada.";
+        }
+    } catch (PDOException $e) {
+        $error_msg = "Error al cargar la propiedad: " . $e->getMessage();
+        error_log("Error en propiedad_detalle_inventario.php: " . $e->getMessage());
+    }
+}
+
+// Obtener imagen principal
+$imagen_principal = '';
+if ($propiedad) {
+    try {
         $stmtImg = $conn->prepare("
             SELECT file_path, is_primary
             FROM property_media
@@ -86,11 +383,41 @@ try {
         if ($img) {
             $imagen_principal = $img['file_path'];
         }
+    } catch (PDOException $e) {
+        // Ignorar error de imágenes
     }
+}
 
-} catch (PDOException $e) {
-    $error_msg = "Error al cargar la propiedad: " . $e->getMessage();
-    error_log("Error en propiedad_detalle_inventario.php: " . $e->getMessage());
+// Obtener tokens generados para esta propiedad (para mostrar historial)
+$tokens_generados = [];
+if ($propiedad) {
+    try {
+        $stmt = $conn->prepare("
+            SELECT 
+                t.*,
+                DATEDIFF(t.expires_at, NOW()) as dias_restantes,
+                CASE 
+                    WHEN t.is_used = 1 THEN 'Usado'
+                    WHEN t.expires_at < NOW() THEN 'Expirado'
+                    WHEN t.upload_count >= t.max_uploads THEN 'Límite alcanzado'
+                    ELSE 'Activo'
+                END as estado
+            FROM document_upload_tokens t
+            WHERE t.property_id = ?
+            ORDER BY t.created_at DESC
+            LIMIT 5
+        ");
+        $stmt->execute([$property_id]);
+        $tokens_generados = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        // Tabla aún no existe
+    }
+}
+
+// Obtener documentos de la propiedad
+$documentos_propiedad = [];
+if ($propiedad) {
+    $documentos_propiedad = getPropertyDocuments($conn, $property_id);
 }
 
 // Funciones auxiliares
@@ -132,6 +459,24 @@ function getOperationBadge($operationType) {
         return ['class' => 'general', 'label' => 'General'];
     }
 }
+
+// Obtener teléfono del propietario si existe
+$telefono_propietario = '';
+if ($propiedad && !empty($propiedad['owner_id'])) {
+    try {
+        $stmt = $conn->prepare("SELECT telefono FROM socios WHERE id = ?");
+        $stmt->execute([$propiedad['owner_id']]);
+        $socio = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($socio) {
+            $telefono_propietario = $socio['telefono'] ?? '';
+        }
+    } catch (PDOException $e) {
+        // Ignorar
+    }
+}
+
+// Obtener la URL base para usar en el historial
+$base_url = getBaseUrl();
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -172,6 +517,7 @@ function getOperationBadge($operationType) {
         .detail-actions {
             display: flex;
             gap: 8px;
+            flex-wrap: wrap;
         }
 
         .btn-detail {
@@ -204,6 +550,33 @@ function getOperationBadge($operationType) {
 
         .btn-detail.primary:hover {
             background: #1e40af;
+        }
+
+        .btn-detail.success {
+            background: #16a34a;
+            color: white;
+        }
+
+        .btn-detail.success:hover {
+            background: #15803d;
+        }
+
+        .btn-detail.whatsapp {
+            background: #25D366;
+            color: white;
+        }
+
+        .btn-detail.whatsapp:hover {
+            background: #1da851;
+        }
+
+        .btn-detail.danger {
+            background: #dc2626;
+            color: white;
+        }
+
+        .btn-detail.danger:hover {
+            background: #b91c1c;
         }
 
         .main-card {
@@ -367,6 +740,319 @@ function getOperationBadge($operationType) {
         }
 
         .message-box.error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+        .message-box.success { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+        .message-box.info { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+
+        /* ===== MODAL ESTILOS ===== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-box {
+            background: white;
+            border-radius: 16px;
+            max-width: 580px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            animation: modalIn 0.3s ease-out;
+            padding: 0;
+        }
+
+        @keyframes modalIn {
+            from { transform: scale(0.95) translateY(-20px); opacity: 0; }
+            to { transform: scale(1) translateY(0); opacity: 1; }
+        }
+
+        .modal-header {
+            padding: 20px 25px;
+            border-bottom: 1px solid #e8edf4;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8fafc;
+            border-radius: 16px 16px 0 0;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.1rem;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: #94a3b8;
+            cursor: pointer;
+            padding: 0 8px;
+            transition: color 0.2s;
+        }
+
+        .modal-close:hover {
+            color: #0f172a;
+        }
+
+        .modal-body {
+            padding: 25px;
+        }
+
+        .modal-body .form-group {
+            margin-bottom: 18px;
+        }
+
+        .modal-body .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: #0f172a;
+            font-size: 0.9rem;
+        }
+
+        .modal-body .form-group label .required {
+            color: #dc2626;
+        }
+
+        .modal-body .form-group .help-text {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            margin-top: 4px;
+        }
+
+        .modal-body .form-group input,
+        .modal-body .form-group select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            transition: border-color 0.2s;
+        }
+
+        .modal-body .form-group input:focus,
+        .modal-body .form-group select:focus {
+            border-color: #1d4ed8;
+            outline: none;
+        }
+
+        .modal-body .form-group .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+        }
+
+        .modal-body .form-group .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .modal-body .form-group .checkbox-group label {
+            margin: 0;
+            cursor: pointer;
+            font-weight: 400;
+        }
+
+        .modal-footer {
+            padding: 16px 25px;
+            border-top: 1px solid #e8edf4;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            background: #f8fafc;
+            border-radius: 0 0 16px 16px;
+        }
+
+        .btn-modal {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-modal.secondary {
+            background: #f1f5f9;
+            color: #475569;
+        }
+
+        .btn-modal.secondary:hover {
+            background: #e2e8f0;
+        }
+
+        .btn-modal.primary {
+            background: #1d4ed8;
+            color: white;
+        }
+
+        .btn-modal.primary:hover {
+            background: #1e40af;
+        }
+
+        .btn-modal.success {
+            background: #16a34a;
+            color: white;
+        }
+
+        .btn-modal.success:hover {
+            background: #15803d;
+        }
+
+        /* Enlace generado */
+        .link-generated {
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .link-generated .link-url {
+            word-break: break-all;
+            font-size: 0.85rem;
+            color: #166534;
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            margin: 8px 0;
+            border: 1px dashed #86efac;
+        }
+
+        .link-generated .btn-copy {
+            background: #f1f5f9;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .link-generated .btn-copy:hover {
+            background: #e2e8f0;
+        }
+
+        .link-generated .whatsapp-link {
+            display: inline-block;
+            background: #25D366;
+            color: white;
+            padding: 6px 14px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 0.8rem;
+            margin-left: 8px;
+        }
+
+        .link-generated .whatsapp-link:hover {
+            background: #1da851;
+        }
+
+        /* Badge de tokens */
+        .token-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .token-badge.active { background: #dcfce7; color: #166534; }
+        .token-badge.expired { background: #fee2e2; color: #991b1b; }
+        .token-badge.used { background: #dbeafe; color: #1e40af; }
+        .token-badge.limit { background: #fef3c7; color: #92400e; }
+
+        .tokens-list {
+            margin-top: 8px;
+        }
+
+        .token-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #f8fafc;
+            border-radius: 6px;
+            margin-bottom: 4px;
+            font-size: 0.8rem;
+        }
+
+        .token-item .token-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .token-item .token-info .email {
+            color: #475569;
+        }
+
+        .token-item .token-info .date {
+            color: #94a3b8;
+            font-size: 0.7rem;
+        }
+
+        /* ===== ESTILOS PARA DOCUMENTOS ===== */
+        .doc-item {
+            transition: all 0.2s ease;
+        }
+
+        .doc-item:hover {
+            background: #f1f5f9 !important;
+        }
+
+        .doc-status {
+            font-size: 0.65rem;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .doc-status.status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .doc-status.status-approved {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .doc-status.status-rejected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .doc-status.status-correction {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .documentos-section .doc-item {
+            border-left: 3px solid;
+        }
 
         @media (max-width: 768px) {
             .two-col {
@@ -375,6 +1061,51 @@ function getOperationBadge($operationType) {
 
             .detail-title h1 {
                 font-size: 1.1rem;
+            }
+
+            .detail-header {
+                flex-direction: column;
+            }
+
+            .detail-actions {
+                width: 100%;
+            }
+
+            .detail-actions .btn-detail {
+                flex: 1;
+                justify-content: center;
+                font-size: 0.75rem;
+                padding: 6px 10px;
+            }
+
+            .modal-box {
+                max-width: 100%;
+                margin: 10px;
+            }
+
+            .modal-body {
+                padding: 15px;
+            }
+
+            .token-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 4px;
+            }
+
+            .doc-item {
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+            
+            .doc-item .doc-status {
+                font-size: 0.6rem;
+                padding: 1px 6px;
+            }
+            
+            .doc-item .btn-detail {
+                padding: 2px 6px;
+                font-size: 0.65rem;
             }
         }
     </style>
@@ -393,6 +1124,26 @@ function getOperationBadge($operationType) {
                 <i class="fas fa-exclamation-circle"></i>
                 <span><?php echo htmlspecialchars($error_msg); ?></span>
             </div>
+        <?php endif; ?>
+
+        <?php if (!empty($mensaje_exito)): ?>
+            <div class="message-box success">
+                <i class="fas fa-check-circle"></i>
+                <span><?php echo htmlspecialchars($mensaje_exito); ?></span>
+            </div>
+        <?php endif; ?>
+
+        <?php if (isset($_SESSION['whatsapp_link'])): ?>
+            <div class="message-box info">
+                <i class="fab fa-whatsapp"></i>
+                <span>
+                    Enlace generado. 
+                    <a href="<?php echo $_SESSION['whatsapp_link']; ?>" target="_blank" style="color: #25D366; font-weight: 600;">
+                        <i class="fab fa-whatsapp"></i> Enviar por WhatsApp ahora
+                    </a>
+                </span>
+            </div>
+            <?php unset($_SESSION['whatsapp_link']); ?>
         <?php endif; ?>
 
         <?php if ($propiedad): 
@@ -422,6 +1173,9 @@ function getOperationBadge($operationType) {
                     <a href="inventario.php" class="btn-detail secondary">
                         <i class="fas fa-arrow-left"></i> Volver
                     </a>
+                    <button class="btn-detail success" onclick="abrirModalEnlace()">
+                        <i class="fas fa-link"></i> Generar Enlace
+                    </button>
                     <a href="propiedad_editar.php?id=<?php echo $property_id; ?>" class="btn-detail primary">
                         <i class="fas fa-edit"></i> Editar
                     </a>
@@ -540,10 +1294,16 @@ function getOperationBadge($operationType) {
                         </div>
                     </div>
 
-                    <!-- Propietario / Vendedor (desde tabla socios) -->
+                    <!-- Propietario / Vendedor -->
                     <div class="main-card">
                         <div class="card-header">
                             <h3><i class="fas fa-user"></i> Propietario / Vendedor</h3>
+                            <?php if (!empty($telefono_propietario)): ?>
+                                <a href="https://wa.me/<?php echo preg_replace('/[^0-9]/', '', $telefono_propietario); ?>" 
+                                   target="_blank" class="btn-detail whatsapp" style="padding: 4px 12px; font-size: 0.75rem;">
+                                    <i class="fab fa-whatsapp"></i>
+                                </a>
+                            <?php endif; ?>
                         </div>
                         <div class="card-body">
                             <?php if (!empty($propiedad['owner_name'])): ?>
@@ -555,6 +1315,9 @@ function getOperationBadge($operationType) {
                                         <div class="owner-name"><?php echo htmlspecialchars($propiedad['owner_name']); ?></div>
                                         <div class="owner-contact">
                                             <i class="fas fa-envelope"></i> <?php echo htmlspecialchars($propiedad['owner_email'] ?? 'No disponible'); ?>
+                                            <?php if (!empty($telefono_propietario)): ?>
+                                                <br><i class="fas fa-phone"></i> <?php echo htmlspecialchars($telefono_propietario); ?>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                 </div>
@@ -574,6 +1337,182 @@ function getOperationBadge($operationType) {
                             </div>
                         </div>
                     </div>
+
+                    <!-- ===== SECCIÓN: ENLACES GENERADOS ===== -->
+                    <?php if (!empty($tokens_generados)): ?>
+                    <div class="main-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-history"></i> Enlaces Generados</h3>
+                            <span style="font-size: 0.75rem; color: #94a3b8;">Últimos 5</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="tokens-list">
+                                <?php foreach ($tokens_generados as $token): ?>
+                                    <div class="token-item">
+                                        <div class="token-info">
+                                            <span class="token-badge <?php echo strtolower($token['estado']); ?>">
+                                                <?php echo $token['estado']; ?>
+                                            </span>
+                                            <span class="email">
+                                                <i class="fas fa-envelope"></i> <?php echo htmlspecialchars($token['client_email']); ?>
+                                            </span>
+                                            <span class="date">
+                                                <i class="fas fa-calendar"></i> <?php echo date('d/m/Y', strtotime($token['created_at'])); ?>
+                                            </span>
+                                            <span style="font-size: 0.7rem; color: #94a3b8;">
+                                                <?php echo $token['upload_count']; ?>/<?php echo $token['max_uploads']; ?> docs
+                                            </span>
+                                            <?php if ($token['estado'] === 'Activo'): ?>
+                                                <span style="font-size: 0.7rem; color: #16a34a;">
+                                                    <?php echo $token['dias_restantes']; ?> días
+                                                </span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <?php if ($token['estado'] === 'Activo'): ?>
+                                            <button onclick="copiarTexto('<?php echo $base_url; ?>upload_documentos.php?token=<?php echo $token['token']; ?>')" 
+                                                    style="background: none; border: none; color: #1d4ed8; cursor: pointer; font-size: 0.8rem;">
+                                                <i class="fas fa-copy"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- ===== SECCIÓN: DOCUMENTOS DE LA PROPIEDAD ===== -->
+            <div class="main-card documentos-section">
+                <div class="card-header">
+                    <h3>
+                        <i class="fas fa-file-alt"></i> Documentos de la Propiedad
+                        <span style="font-size: 0.75rem; font-weight: 400; color: #94a3b8; margin-left: 8px;">
+                            (<?php echo $documentos_propiedad['total']; ?> archivos)
+                            <?php if ($documentos_propiedad['pendientes'] > 0): ?>
+                                <span style="background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 10px; margin-left: 5px;">
+                                    <?php echo $documentos_propiedad['pendientes']; ?> pendientes
+                                </span>
+                            <?php endif; ?>
+                        </span>
+                    </h3>
+                    <div style="display: flex; gap: 8px;">
+                        <a href="subir_documento.php?property_id=<?php echo $property_id; ?>" class="btn-detail primary" style="padding: 4px 12px; font-size: 0.75rem;">
+                            <i class="fas fa-upload"></i> Subir
+                        </a>
+                        <a href="gestion_documentos.php?property_id=<?php echo $property_id; ?>" class="btn-detail secondary" style="padding: 4px 12px; font-size: 0.75rem;">
+                            <i class="fas fa-cog"></i> Gestionar
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body" style="padding: 10px 20px;">
+                    <?php if ($documentos_propiedad['total'] === 0): ?>
+                        <div style="text-align: center; padding: 30px 20px; color: #94a3b8;">
+                            <i class="fas fa-file" style="font-size: 40px; display: block; margin-bottom: 10px; opacity: 0.5;"></i>
+                            <p style="margin: 0;">No hay documentos asociados a esta propiedad.</p>
+                            <p style="font-size: 0.85rem; margin-top: 5px;">
+                                <a href="subir_documento.php?property_id=<?php echo $property_id; ?>" style="color: #1d4ed8; text-decoration: none;">
+                                    Subir el primer documento
+                                </a>
+                            </p>
+                        </div>
+                    <?php else: ?>
+                        <!-- Documentos Generales -->
+                        <?php if (!empty($documentos_propiedad['generales'])): ?>
+                            <div style="margin-bottom: 15px;">
+                                <h4 style="font-size: 0.8rem; color: #64748b; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px;">
+                                    <i class="fas fa-folder-open"></i> Documentos Generales
+                                    <span style="font-weight: 400; font-size: 0.7rem; color: #94a3b8;">(<?php echo count($documentos_propiedad['generales']); ?>)</span>
+                                </h4>
+                                <div style="display: grid; grid-template-columns: 1fr; gap: 4px;">
+                                    <?php foreach ($documentos_propiedad['generales'] as $doc): ?>
+                                        <div class="doc-item" style="display: flex; align-items: center; padding: 8px 12px; background: #f8fafc; border-radius: 6px; border-left-color: <?php echo getDocumentColor($doc['document_type']); ?>; transition: background 0.2s;">
+                                            <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+                                                <i class="fas <?php echo getDocumentIcon($doc['document_type']); ?>" style="color: <?php echo getDocumentColor($doc['document_type']); ?>; font-size: 18px; width: 20px;"></i>
+                                                <div style="flex: 1; min-width: 0;">
+                                                    <div style="font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                                        <?php echo htmlspecialchars($doc['file_name']); ?>
+                                                    </div>
+                                                    <div style="font-size: 0.7rem; color: #94a3b8;">
+                                                        <span style="text-transform: capitalize;"><?php echo str_replace('_', ' ', $doc['document_type']); ?></span>
+                                                        • <?php echo formatFileSize($doc['file_size']); ?>
+                                                        • <?php echo date('d/m/Y H:i', strtotime($doc['uploaded_at'])); ?>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div style="display: flex; gap: 4px; flex-shrink: 0; margin-left: 8px;">
+                                                <a href="<?php echo htmlspecialchars($doc['file_path']); ?>" target="_blank" class="btn-detail secondary" style="padding: 2px 8px; font-size: 0.7rem;" title="Ver documento">
+                                                    <i class="fas fa-eye"></i>
+                                                </a>
+                                                <a href="<?php echo htmlspecialchars($doc['file_path']); ?>" download class="btn-detail secondary" style="padding: 2px 8px; font-size: 0.7rem;" title="Descargar">
+                                                    <i class="fas fa-download"></i>
+                                                </a>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+
+                        <!-- Documentos de Clientes -->
+                        <?php if (!empty($documentos_propiedad['clientes'])): ?>
+                            <div>
+                                <h4 style="font-size: 0.8rem; color: #64748b; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px;">
+                                    <i class="fas fa-users"></i> Documentos de Clientes
+                                    <span style="font-weight: 400; font-size: 0.7rem; color: #94a3b8;">(<?php echo count($documentos_propiedad['clientes']); ?>)</span>
+                                    <?php if ($documentos_propiedad['pendientes'] > 0): ?>
+                                        <span style="background: #fef3c7; color: #92400e; padding: 1px 8px; border-radius: 10px; font-size: 0.65rem; font-weight: 600;">
+                                            <?php echo $documentos_propiedad['pendientes']; ?> pendientes de revisión
+                                        </span>
+                                    <?php endif; ?>
+                                </h4>
+                                <div style="display: grid; grid-template-columns: 1fr; gap: 4px;">
+                                    <?php foreach ($documentos_propiedad['clientes'] as $doc): 
+                                        $status = getDocumentStatusLabel($doc['status']);
+                                    ?>
+                                        <div class="doc-item" style="display: flex; align-items: center; padding: 8px 12px; background: <?php echo $doc['status'] === 'pending_review' ? '#fefce8' : '#f8fafc'; ?>; border-radius: 6px; border-left-color: <?php echo $doc['status'] === 'pending_review' ? '#f59e0b' : ($doc['status'] === 'approved' ? '#22c55e' : '#ef4444'); ?>; transition: background 0.2s;">
+                                            <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+                                                <i class="fas <?php echo getDocumentIcon($doc['document_type']); ?>" style="color: <?php echo getDocumentColor($doc['document_type']); ?>; font-size: 18px; width: 20px;"></i>
+                                                <div style="flex: 1; min-width: 0;">
+                                                    <div style="font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                                        <?php echo htmlspecialchars($doc['file_name']); ?>
+                                                    </div>
+                                                    <div style="font-size: 0.7rem; color: #94a3b8;">
+                                                        <span style="text-transform: capitalize;"><?php echo str_replace('_', ' ', $doc['document_type']); ?></span>
+                                                        • <?php echo formatFileSize($doc['file_size']); ?>
+                                                        • <?php echo date('d/m/Y H:i', strtotime($doc['uploaded_at'])); ?>
+                                                        <?php if (!empty($doc['client_name'])): ?>
+                                                            • <i class="fas fa-user"></i> <?php echo htmlspecialchars($doc['client_name']); ?>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: 8px;">
+                                                <span class="doc-status <?php echo $status['class']; ?>" style="font-size: 0.65rem; padding: 2px 8px; border-radius: 10px; <?php 
+                                                    echo match($doc['status']) {
+                                                        'pending_review' => 'background: #fef3c7; color: #92400e;',
+                                                        'approved' => 'background: #dcfce7; color: #166534;',
+                                                        'rejected' => 'background: #fee2e2; color: #991b1b;',
+                                                        'pending_correction' => 'background: #dbeafe; color: #1e40af;',
+                                                        default => 'background: #f1f5f9; color: #475569;'
+                                                    };
+                                                ?>">
+                                                    <?php echo $status['label']; ?>
+                                                </span>
+                                                <a href="<?php echo htmlspecialchars($doc['file_path']); ?>" target="_blank" class="btn-detail secondary" style="padding: 2px 8px; font-size: 0.7rem;" title="Ver documento">
+                                                    <i class="fas fa-eye"></i>
+                                                </a>
+                                                <a href="<?php echo htmlspecialchars($doc['file_path']); ?>" download class="btn-detail secondary" style="padding: 2px 8px; font-size: 0.7rem;" title="Descargar">
+                                                    <i class="fas fa-download"></i>
+                                                </a>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -581,7 +1520,187 @@ function getOperationBadge($operationType) {
     </div>
 </main>
 
+<!-- ===== MODAL PARA GENERAR ENLACE ===== -->
+<div class="modal-overlay" id="modalEnlace">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3><i class="fas fa-link" style="color: #16a34a;"></i> Generar Enlace para Documentos</h3>
+            <button class="modal-close" onclick="cerrarModalEnlace()">&times;</button>
+        </div>
+        <form method="POST" action="" id="formEnlace">
+            <input type="hidden" name="action" value="generar_enlace">
+            <div class="modal-body">
+                <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 20px;">
+                    Genera un enlace seguro para que el cliente pueda subir documentos desde su dispositivo.
+                </p>
+
+                <div class="form-group">
+                    <label>Email del Cliente <span class="required">*</span></label>
+                    <input type="email" name="email" required 
+                           placeholder="cliente@email.com"
+                           value="<?php echo htmlspecialchars($propiedad['owner_email'] ?? ''); ?>">
+                    <div class="help-text">El enlace se enviará automáticamente a este correo.</div>
+                </div>
+
+                <div class="form-group">
+                    <label>Nombre del Cliente</label>
+                    <input type="text" name="nombre" 
+                           placeholder="Nombre completo"
+                           value="<?php echo htmlspecialchars($propiedad['owner_name'] ?? ''); ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Tipo de Usuario</label>
+                    <select name="token_type">
+                        <option value="owner">Propietario</option>
+                        <option value="buyer">Comprador</option>
+                        <option value="agent">Agente</option>
+                    </select>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label>Días de Validez</label>
+                        <select name="dias_validez">
+                            <option value="1">1 día</option>
+                            <option value="3">3 días</option>
+                            <option value="7" selected>7 días</option>
+                            <option value="15">15 días</option>
+                            <option value="30">30 días</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Máximo de Archivos</label>
+                        <select name="max_uploads">
+                            <option value="5">5 archivos</option>
+                            <option value="10" selected>10 archivos</option>
+                            <option value="20">20 archivos</option>
+                            <option value="50">50 archivos</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" name="enviar_whatsapp" id="enviarWhatsapp" value="1">
+                        <label for="enviarWhatsapp">
+                            <i class="fab fa-whatsapp" style="color: #25D366;"></i> 
+                            Enviar también por WhatsApp
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group" id="telefonoGroup" style="display: none;">
+                    <label>Número de WhatsApp <span class="required">*</span></label>
+                    <input type="tel" name="telefono" id="telefonoInput"
+                           placeholder="Ej: 5215512345678"
+                           value="<?php echo htmlspecialchars($telefono_propietario); ?>">
+                    <div class="help-text">Incluye código de país (ej: 521 para México).</div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn-modal secondary" onclick="cerrarModalEnlace()">
+                    Cancelar
+                </button>
+                <button type="submit" class="btn-modal success">
+                    <i class="fas fa-link"></i> Generar y Enviar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
+// ===== MODAL ENLACE =====
+function abrirModalEnlace() {
+    document.getElementById('modalEnlace').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function cerrarModalEnlace() {
+    document.getElementById('modalEnlace').classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+// Cerrar modal al hacer clic fuera
+document.getElementById('modalEnlace').addEventListener('click', function(e) {
+    if (e.target === this) {
+        cerrarModalEnlace();
+    }
+});
+
+// Mostrar/ocultar campo de teléfono
+document.getElementById('enviarWhatsapp').addEventListener('change', function() {
+    const telefonoGroup = document.getElementById('telefonoGroup');
+    if (this.checked) {
+        telefonoGroup.style.display = 'block';
+        document.getElementById('telefonoInput').required = true;
+    } else {
+        telefonoGroup.style.display = 'none';
+        document.getElementById('telefonoInput').required = false;
+    }
+});
+
+// ===== COPIAR TEXTO =====
+function copiarTexto(texto) {
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(texto).then(() => {
+            mostrarToast('✅ Enlace copiado al portapapeles');
+        }).catch(() => {
+            copiarTextoAlternativo(texto);
+        });
+    } else {
+        copiarTextoAlternativo(texto);
+    }
+}
+
+function copiarTextoAlternativo(texto) {
+    const textarea = document.createElement('textarea');
+    textarea.value = texto;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    mostrarToast('✅ Enlace copiado al portapapeles');
+}
+
+function mostrarToast(mensaje) {
+    // Crear toast si no existe
+    let toast = document.getElementById('toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toast';
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #0f172a;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            z-index: 99999;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        `;
+        document.body.appendChild(toast);
+    }
+    
+    toast.textContent = mensaje;
+    toast.style.opacity = '1';
+    
+    setTimeout(() => {
+        toast.style.opacity = '0';
+    }, 3000);
+}
+
+// ===== MENÚ MÓVIL =====
 document.addEventListener('DOMContentLoaded', function() {
     const menuToggle = document.getElementById('menuToggle');
     const sidebar = document.getElementById('sidebar');
@@ -602,6 +1721,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if(overlay) {
         overlay.addEventListener('click', toggleSidebar);
     }
+
+    // Mostrar toast si hay mensaje de éxito
+    <?php if (!empty($enlace_generado)): ?>
+        setTimeout(() => {
+            mostrarToast('✅ Enlace generado y enviado al cliente');
+        }, 500);
+    <?php endif; ?>
 });
 </script>
 
