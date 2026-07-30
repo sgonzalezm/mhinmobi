@@ -1,13 +1,49 @@
 <?php
 // ========================================
-// guardar_propiedad.php - VERSIÓN PDO
+// guardar_propiedad.php - CON FUNCIONES COMPLETAS
 // ========================================
 require_once 'includes/conexion.php';
 
+// ========================================
+// FUNCIONES PARA OBTENER CATÁLOGOS
+// ========================================
+function obtenerAccesorios() {
+    global $conn;
+    
+    try {
+        $sql = "SELECT id, nombre, icono FROM accesorios WHERE activo = 1 ORDER BY nombre";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute();
+        return $stmt->fetchAll();
+    } catch (PDOException $e) {
+        error_log("Error en obtenerAccesorios: " . $e->getMessage());
+        return [];
+    }
+}
+
+function obtenerBancos() {
+    global $conn;
+    
+    try {
+        $sql = "SELECT id, nombre FROM bancos WHERE activo = 1 ORDER BY nombre";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute();
+        return $stmt->fetchAll();
+    } catch (PDOException $e) {
+        error_log("Error en obtenerBancos: " . $e->getMessage());
+        return [];
+    }
+}
+
+// ========================================
+// FUNCIÓN PRINCIPAL PARA GUARDAR PROPIEDAD
+// ========================================
 function guardarPropiedad($data, $usuario_id) {
     global $conn;
     
     try {
+        $conn->beginTransaction();
+        
         // ========================================
         // 1. INSERTAR EN LA TABLA properties
         // ========================================
@@ -16,17 +52,19 @@ function guardarPropiedad($data, $usuario_id) {
             title, 
             status, 
             operation_type,
+            property_type,
             address_city,
             address_municipality,
             created_at,
             updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())";
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
         
         $stmt = $conn->prepare($sql);
         
         // Extraer datos
         $titulo = $data['titulo'] ?? 'Propiedad sin título';
         $tipo_operacion = $data['tipo_operacion'] ?? 'venta';
+        $tipo_vivienda = $data['tipo_vivienda'] ?? 'casa';
         $ubicacion = $data['ubicacion'] ?? '';
         
         // Separar ciudad y municipio
@@ -39,6 +77,7 @@ function guardarPropiedad($data, $usuario_id) {
             $titulo,
             'activo',
             $tipo_operacion,
+            $tipo_vivienda,
             $ciudad,
             $municipio
         ]);
@@ -53,21 +92,45 @@ function guardarPropiedad($data, $usuario_id) {
             square_meters,
             bedrooms,
             bathrooms,
-            parking_spots
-        ) VALUES (?, ?, ?, ?, ?)";
+            parking_spots,
+            description,
+            legal_status,
+            legal_notes,
+            tipo_casa,
+            nivel_duplex,
+            nivel_departamento,
+            tiene_escrituras,
+            tiene_testamento
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         $stmt_details = $conn->prepare($sql_details);
         $m2 = !empty($data['m2']) ? (float)$data['m2'] : 0;
         $recamaras = !empty($data['recamaras']) ? (int)$data['recamaras'] : 0;
         $banos = !empty($data['banos']) ? (int)$data['banos'] : 0;
         $estacionamiento = !empty($data['estacionamiento']) ? (int)$data['estacionamiento'] : 0;
+        $descripcion = $data['descripcion'] ?? '';
+        $legal_status = $data['legal_status'] ?? 'libre';
+        $legal_notes = $data['legal_status_notes'] ?? '';
+        $tipo_casa = $data['tipo_casa'] ?? null;
+        $nivel_duplex = $data['nivel_duplex'] ?? null;
+        $nivel_departamento = $data['nivel_departamento'] ?? null;
+        $tiene_escrituras = isset($data['tiene_escrituras']) ? (int)$data['tiene_escrituras'] : 0;
+        $tiene_testamento = isset($data['tiene_testamento']) ? (int)$data['tiene_testamento'] : 0;
         
         $stmt_details->execute([
             $property_id,
             $m2,
             $recamaras,
             $banos,
-            $estacionamiento
+            $estacionamiento,
+            $descripcion,
+            $legal_status,
+            $legal_notes,
+            $tipo_casa,
+            $nivel_duplex,
+            $nivel_departamento,
+            $tiene_escrituras,
+            $tiene_testamento
         ]);
         
         // ========================================
@@ -75,19 +138,122 @@ function guardarPropiedad($data, $usuario_id) {
         // ========================================
         $sql_financials = "INSERT INTO property_financials (
             property_id,
-            asking_price
-        ) VALUES (?, ?)";
+            asking_price,
+            min_acceptable_price,
+            commission_percentage,
+            has_debt,
+            debt_type,
+            bank_id,
+            debt_amount,
+            debt_property_type,
+            debt_shared_details
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         $stmt_financials = $conn->prepare($sql_financials);
         $precio = !empty($data['precio']) ? (float)$data['precio'] : 0;
+        $precio_minimo = $precio;
+        $comision = 5.00;
+        $has_debt = isset($data['tiene_adeudo']) ? (int)$data['tiene_adeudo'] : 0;
+        $debt_type = $data['tipo_adeudo'] ?? null;
+        $bank_id = !empty($data['banco_id']) ? (int)$data['banco_id'] : null;
+        $debt_amount = !empty($data['monto_adeudo']) ? (float)$data['monto_adeudo'] : null;
+        $debt_property_type = $data['tipo_adeudo_propiedad'] ?? null;
+        $debt_shared_details = $data['adeudo_compartido_detalles'] ?? null;
         
         $stmt_financials->execute([
             $property_id,
-            $precio
+            $precio,
+            $precio_minimo,
+            $comision,
+            $has_debt,
+            $debt_type,
+            $bank_id,
+            $debt_amount,
+            $debt_property_type,
+            $debt_shared_details
         ]);
         
         // ========================================
-        // 4. INSERTAR IMÁGENES EN property_media
+        // 4. INSERTAR SERVICIOS MUNICIPALES
+        // ========================================
+        $sql_services = "INSERT INTO property_services (
+            property_id,
+            service_type,
+            is_active,
+            has_debt
+        ) VALUES (?, ?, ?, ?)";
+        
+        $stmt_services = $conn->prepare($sql_services);
+        
+        $servicios = [
+            'agua' => [
+                'activo' => $data['servicio_agua_activo'] ?? 0,
+                'adeudo' => isset($data['servicio_agua_adeudo']) ? 1 : 0
+            ],
+            'luz' => [
+                'activo' => $data['servicio_luz_activo'] ?? 0,
+                'adeudo' => isset($data['servicio_luz_adeudo']) ? 1 : 0
+            ],
+            'gas' => [
+                'activo' => $data['servicio_gas_activo'] ?? 0,
+                'adeudo' => isset($data['servicio_gas_adeudo']) ? 1 : 0
+            ],
+            'internet' => [
+                'activo' => $data['servicio_internet_activo'] ?? 0,
+                'adeudo' => isset($data['servicio_internet_adeudo']) ? 1 : 0
+            ],
+            'basura' => [
+                'activo' => $data['servicio_basura_activo'] ?? 0,
+                'adeudo' => isset($data['servicio_basura_adeudo']) ? 1 : 0
+            ]
+        ];
+        
+        foreach ($servicios as $tipo => $estado) {
+            $stmt_services->execute([
+                $property_id,
+                $tipo,
+                (int)$estado['activo'],
+                (int)$estado['adeudo']
+            ]);
+        }
+        
+        // ========================================
+        // 5. INSERTAR ACCESORIOS
+        // ========================================
+        if (!empty($data['accesorios']) && is_array($data['accesorios'])) {
+            $sql_accesorios = "INSERT INTO property_accesorios (
+                property_id,
+                accesorio_id
+            ) VALUES (?, ?)";
+            
+            $stmt_accesorios = $conn->prepare($sql_accesorios);
+            
+            foreach ($data['accesorios'] as $accesorio_id) {
+                $stmt_accesorios->execute([
+                    $property_id,
+                    (int)$accesorio_id
+                ]);
+            }
+        }
+        
+        // ========================================
+        // 6. GUARDAR ACCESORIO "OTRO"
+        // ========================================
+        if (!empty($data['accesorio_otro'])) {
+            $sql_otro = "INSERT INTO property_accesorios_otros (
+                property_id,
+                nombre
+            ) VALUES (?, ?)";
+            
+            $stmt_otro = $conn->prepare($sql_otro);
+            $stmt_otro->execute([
+                $property_id,
+                $data['accesorio_otro']
+            ]);
+        }
+        
+        // ========================================
+        // 7. INSERTAR IMÁGENES EN property_media
         // ========================================
         if (!empty($data['imagenes']) && is_array($data['imagenes'])) {
             $sql_media = "INSERT INTO property_media (
@@ -119,33 +285,36 @@ function guardarPropiedad($data, $usuario_id) {
         }
         
         // ========================================
-        // 5. GUARDAR DATOS LEGALES
+        // 8. INSERTAR EN property_history
         // ========================================
-        if (isset($data['legal_status']) && !empty($data['legal_status'])) {
-            // Verificar si la columna existe
-            try {
-                $check = $conn->query("SHOW COLUMNS FROM property_details LIKE 'legal_status'");
-                if ($check && $check->rowCount() > 0) {
-                    $sql_legal = "UPDATE property_details SET 
-                        legal_status = ?,
-                        legal_notes = ?
-                        WHERE property_id = ?";
-                    
-                    $stmt_legal = $conn->prepare($sql_legal);
-                    $legal_status = $data['legal_status'] ?? 'libre';
-                    $legal_notes = $data['legal_status_notes'] ?? '';
-                    
-                    $stmt_legal->execute([
-                        $legal_status,
-                        $legal_notes,
-                        $property_id
-                    ]);
-                }
-            } catch (PDOException $e) {
-                // La columna no existe, ignorar
-                error_log("Error al guardar datos legales: " . $e->getMessage());
-            }
-        }
+        $sql_history = "INSERT INTO property_history (
+            property_id,
+            user_id,
+            action,
+            details,
+            created_at
+        ) VALUES (?, ?, ?, ?, NOW())";
+        
+        $stmt_history = $conn->prepare($sql_history);
+        $detalles_historial = json_encode([
+            'titulo' => $titulo,
+            'tipo_operacion' => $tipo_operacion,
+            'tipo_vivienda' => $tipo_vivienda,
+            'precio' => $precio,
+            'tiene_adeudo' => $has_debt
+        ]);
+        
+        $stmt_history->execute([
+            $property_id,
+            $usuario_id,
+            'publicacion_inicial',
+            $detalles_historial
+        ]);
+        
+        // ========================================
+        // CONFIRMAR TRANSACCIÓN
+        // ========================================
+        $conn->commit();
         
         return [
             'success' => true,
@@ -154,6 +323,7 @@ function guardarPropiedad($data, $usuario_id) {
         ];
         
     } catch (PDOException $e) {
+        $conn->rollBack();
         error_log("Error en guardarPropiedad: " . $e->getMessage());
         return [
             'success' => false,
@@ -163,7 +333,7 @@ function guardarPropiedad($data, $usuario_id) {
 }
 
 // ========================================
-// FUNCIONES DE AUTENTICACIÓN PARA SOCIOS (PDO)
+// FUNCIONES DE AUTENTICACIÓN
 // ========================================
 function verificarLogin($email, $password) {
     global $conn;
@@ -174,7 +344,6 @@ function verificarLogin($email, $password) {
         $stmt->execute([$email]);
         
         if ($row = $stmt->fetch()) {
-            // Verificar contraseña
             if (password_verify($password, $row['password'])) {
                 return [
                     'id' => $row['id'],
@@ -196,13 +365,12 @@ function registrarUsuario($nombre, $email, $password) {
     global $conn;
     
     try {
-        // Verificar si el email ya existe
         $sql_check = "SELECT id FROM socios WHERE email = ?";
         $stmt_check = $conn->prepare($sql_check);
         $stmt_check->execute([$email]);
         
         if ($stmt_check->rowCount() > 0) {
-            return false; // El email ya está registrado
+            return false;
         }
         
         $password_hash = password_hash($password, PASSWORD_DEFAULT);
@@ -221,7 +389,7 @@ function registrarUsuario($nombre, $email, $password) {
 }
 
 // ========================================
-// FUNCIÓN PARA OBTENER DATOS DEL SOCIO (PDO)
+// FUNCIÓN PARA OBTENER DATOS DEL SOCIO
 // ========================================
 function obtenerSocioActual($conn) {
     if (!isset($_SESSION['usuario_id'])) {

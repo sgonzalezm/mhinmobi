@@ -5,6 +5,7 @@ session_start();
 // INCLUIR FUNCIONES DE BASE DE DATOS
 // ========================================
 require_once 'guardar_propiedad.php';
+require_once 'includes/conexion.php'; // Asegurar que la conexión está disponible
 
 // Inicializar sesión si no existe
 if (!isset($_SESSION['form_venta'])) {
@@ -13,7 +14,13 @@ if (!isset($_SESSION['form_venta'])) {
 
 // Determinar el paso actual
 $paso = isset($_GET['paso']) ? (int)$_GET['paso'] : 1;
-$paso = max(1, min(4, $paso));
+$paso = max(1, min(5, $paso)); // Ahora tenemos 5 pasos
+
+// ========================================
+// OBTENER ACCESORIOS Y BANCOS USANDO LAS FUNCIONES DE guardar_propiedad.php
+// ========================================
+$accesorios_disponibles = obtenerAccesorios();
+$bancos_disponibles = obtenerBancos();
 
 // ========================================
 // PROCESAR POST
@@ -47,6 +54,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     
     // ========================================
+    // PROCESAR ACCESORIOS
+    // ========================================
+    if (isset($_POST['accesorios']) && is_array($_POST['accesorios'])) {
+        $_SESSION['form_venta']['accesorios'] = array_map('intval', $_POST['accesorios']);
+    } else {
+        $_SESSION['form_venta']['accesorios'] = [];
+    }
+    
+    // Procesar "Otro" accesorio
+    if (isset($_POST['accesorio_otro']) && !empty(trim($_POST['accesorio_otro']))) {
+        $_SESSION['form_venta']['accesorio_otro'] = trim($_POST['accesorio_otro']);
+    } else {
+        unset($_SESSION['form_venta']['accesorio_otro']);
+    }
+    
+    // ========================================
     // VALIDACIONES POR PASO
     // ========================================
     switch ($paso_actual) {
@@ -60,6 +83,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (empty($_SESSION['form_venta']['tipo_operacion'])) {
                 $errores[] = 'Selecciona el tipo de operación';
             }
+            // Validar tipo de vivienda
+            if (empty($_SESSION['form_venta']['tipo_vivienda'])) {
+                $errores[] = 'Selecciona el tipo de vivienda';
+            }
+            if ($_SESSION['form_venta']['tipo_vivienda'] == 'casa') {
+                if (empty($_SESSION['form_venta']['tipo_casa'])) {
+                    $errores[] = 'Selecciona el tipo de casa';
+                }
+                if ($_SESSION['form_venta']['tipo_casa'] == 'duplex' && empty($_SESSION['form_venta']['nivel_duplex'])) {
+                    $errores[] = 'Selecciona el nivel del dúplex';
+                }
+            }
+            if ($_SESSION['form_venta']['tipo_vivienda'] == 'departamento' && empty($_SESSION['form_venta']['nivel_departamento'])) {
+                $errores[] = 'Selecciona el nivel del departamento';
+            }
             break;
             
         case 2:
@@ -72,6 +110,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (empty($_SESSION['form_venta']['ubicacion'])) {
                 $errores[] = 'La ubicación es obligatoria';
             }
+            break;
+            
+        case 3:
+            // Validar situación financiera
+            if (isset($_SESSION['form_venta']['tiene_adeudo']) && $_SESSION['form_venta']['tiene_adeudo'] == 1) {
+                if (empty($_SESSION['form_venta']['tipo_adeudo'])) {
+                    $errores[] = 'Selecciona el tipo de adeudo';
+                }
+                if ($_SESSION['form_venta']['tipo_adeudo'] == 'banco' && empty($_SESSION['form_venta']['banco_id'])) {
+                    $errores[] = 'Selecciona el banco';
+                }
+                if (empty($_SESSION['form_venta']['monto_adeudo']) || !is_numeric($_SESSION['form_venta']['monto_adeudo'])) {
+                    $errores[] = 'El monto del adeudo debe ser un número válido';
+                }
+                if (empty($_SESSION['form_venta']['tipo_adeudo_propiedad'])) {
+                    $errores[] = 'Selecciona si el adeudo es individual o compartido';
+                }
+            }
+            break;
+            
+        case 4:
+            // Validaciones del paso legal (opcionales)
             break;
     }
     
@@ -89,7 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['usuario_email'] = $socio['email'];
             $_SESSION['usuario_role'] = $socio['role'];
             
-            header("Location: vender.php?paso=4&login=success");
+            header("Location: vender.php?paso=5&login=success");
             exit();
         } else {
             $errores[] = 'Credenciales incorrectas. Verifica tu email y contraseña.';
@@ -119,7 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['usuario_email'] = $email;
                 $_SESSION['usuario_role'] = 'socio';
                 
-                header("Location: vender.php?paso=4&register=success");
+                header("Location: vender.php?paso=5&register=success");
                 exit();
             } else {
                 $errores[] = 'Error al registrar. El email ya está en uso.';
@@ -150,8 +210,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['siguiente_paso'])) {
         $siguiente = (int)$_POST['siguiente_paso'];
         
-        if ($siguiente == 4 && !isset($_SESSION['usuario_id'])) {
-            header("Location: vender.php?paso=3&show_auth=true");
+        if ($siguiente == 5 && !isset($_SESSION['usuario_id'])) {
+            header("Location: vender.php?paso=4&show_auth=true");
             exit();
         }
         
@@ -165,7 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['confirmar'])) {
         if (!isset($_SESSION['usuario_id'])) {
             $_SESSION['errores'] = ['Debes iniciar sesión para publicar'];
-            header("Location: vender.php?paso=4&show_auth=true");
+            header("Location: vender.php?paso=5&show_auth=true");
             exit();
         }
         
@@ -187,7 +247,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         } else {
             $_SESSION['errores'] = ['Error al publicar la propiedad: ' . $resultado['error']];
-            header("Location: vender.php?paso=4");
+            header("Location: vender.php?paso=5");
             exit();
         }
     }
@@ -207,7 +267,6 @@ $show_auth = isset($_GET['show_auth']) ? true : false;
 $socio = null;
 if (isset($_SESSION['usuario_id'])) {
     try {
-        require_once 'includes/conexion.php';
         $sql = "SELECT id, nombre, email, rol FROM socios WHERE id = ? AND activo = 1";
         $stmt = $conn->prepare($sql);
         $stmt->execute([$_SESSION['usuario_id']]);
@@ -451,6 +510,549 @@ if (isset($_SESSION['usuario_id'])) {
         .btn-success:hover {
             background: #218838;
         }
+
+        /* ===== ESTILOS PARA ACCESORIOS ===== */
+        .accesorios-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 12px;
+            margin-top: 10px;
+        }
+        
+        .accesorio-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            background: #f8f8f8;
+            border-radius: 8px;
+            border: 2px solid #e8e8e8;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .accesorio-item:hover {
+            border-color: #c9a84c;
+            background: #f8f6f0;
+        }
+        
+        .accesorio-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #c9a84c;
+            cursor: pointer;
+        }
+        
+        .accesorio-item label {
+            cursor: pointer;
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .accesorio-item .accesorio-icon {
+            color: #c9a84c;
+            font-size: 18px;
+        }
+        
+        .accesorio-otro {
+            grid-column: 1 / -1;
+        }
+        
+        .accesorio-otro input[type="text"] {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-left: 8px;
+        }
+        
+        .accesorio-otro input[type="text"]:focus {
+            border-color: #c9a84c;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.1);
+        }
+
+        /* ===== ESTILOS PARA SITUACIÓN FINANCIERA ===== */
+        .conditional-group {
+            padding: 15px 20px;
+            background: #f8f8f8;
+            border-radius: 8px;
+            margin-top: 10px;
+            margin-bottom: 15px;
+            border-left: 4px solid #c9a84c;
+        }
+        
+        .conditional-group.hidden {
+            display: none;
+        }
+        
+        .radio-group-inline {
+            display: flex;
+            gap: 20px;
+            margin-top: 5px;
+        }
+        
+        .radio-group-inline label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        /* ===== ESTILOS PARA SERVICIOS MUNICIPALES ===== */
+        .servicios-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 10px;
+        }
+        
+        .servicio-item {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 15px;
+            background: #f8f8f8;
+            border-radius: 8px;
+            border: 1px solid #e8e8e8;
+        }
+        
+        .servicio-item label {
+            font-weight: 600;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .servicio-item .servicio-controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .servicio-item .servicio-controls label {
+            font-weight: normal;
+            font-size: 14px;
+        }
+
+        /* ===== ESTILOS PARA SITUACIÓN LEGAL ===== */
+        .legal-document-group {
+            padding: 15px 20px;
+            background: #f8f8f8;
+            border-radius: 8px;
+            margin-top: 10px;
+            border-left: 4px solid #c9a84c;
+        }
+        
+        .legal-document-group .radio-group {
+            display: flex;
+            gap: 20px;
+            margin-top: 5px;
+        }
+        
+        .legal-document-group .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        /* ===== ESTILOS PARA EL WIZARD ===== */
+        .wizard-layout {
+            display: flex;
+            gap: 30px;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .progress-sidebar {
+            flex: 0 0 220px;
+            background: white;
+            border-radius: 12px;
+            padding: 25px 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            height: fit-content;
+            position: sticky;
+            top: 20px;
+        }
+        
+        .progress-sidebar h3 {
+            color: #1a1a2e;
+            font-size: 16px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            border-radius: 8px;
+            color: #999;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            margin-bottom: 4px;
+            cursor: default;
+        }
+        
+        .step .step-number {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #e8e8e8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 13px;
+            color: #999;
+            flex-shrink: 0;
+            transition: all 0.3s ease;
+        }
+        
+        .step.active {
+            color: #1a1a2e;
+            font-weight: 600;
+            background: #f8f6f0;
+        }
+        
+        .step.active .step-number {
+            background: #c9a84c;
+            color: white;
+        }
+        
+        .step.completed .step-number {
+            background: #28a745;
+            color: white;
+        }
+        
+        .step.completed {
+            color: #1a1a2e;
+        }
+        
+        .wizard-content {
+            flex: 1;
+            background: white;
+            border-radius: 12px;
+            padding: 30px 35px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+        
+        .wizard-content h2 {
+            color: #1a1a2e;
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        
+        .wizard-content .subtitle {
+            color: #888;
+            margin-bottom: 25px;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+        
+        .form-group label .required {
+            color: #dc3545;
+        }
+        
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            border-color: #c9a84c;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.1);
+        }
+        
+        .form-group textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .form-row-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 1px solid #e8e8e8;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 10px 28px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-dorado {
+            background: #c9a84c;
+            color: white;
+        }
+        
+        .btn-dorado:hover {
+            background: #b8963a;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(201, 168, 76, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #e8e8e8;
+            color: #333;
+        }
+        
+        .btn-secondary:hover {
+            background: #d5d5d5;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+        }
+
+        /* ===== MODAL DE AUTENTICACIÓN ===== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 16px;
+            max-width: 480px;
+            width: 90%;
+            padding: 30px;
+            max-height: 90vh;
+            overflow-y: auto;
+            animation: modalFadeIn 0.3s ease;
+        }
+        
+        @keyframes modalFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-header h2 {
+            font-size: 22px;
+            color: #1a1a2e;
+            margin: 0;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 28px;
+            color: #999;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            padding: 0 5px;
+        }
+        
+        .modal-close:hover {
+            color: #333;
+            transform: rotate(90deg);
+        }
+        
+        .auth-tabs {
+            display: flex;
+            border-bottom: 2px solid #e8e8e8;
+            margin-bottom: 20px;
+        }
+        
+        .auth-tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            font-weight: 600;
+            color: #999;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+        }
+        
+        .auth-tab.active {
+            color: #c9a84c;
+            border-bottom-color: #c9a84c;
+        }
+        
+        .auth-tab:hover {
+            color: #c9a84c;
+        }
+        
+        .auth-panel {
+            display: none;
+        }
+        
+        .auth-panel.active {
+            display: block;
+        }
+        
+        .btn-auth {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+        
+        .btn-login {
+            background: #c9a84c;
+            color: white;
+        }
+        
+        .btn-login:hover {
+            background: #b8963a;
+        }
+        
+        .btn-register {
+            background: #1a1a2e;
+            color: white;
+        }
+        
+        .btn-register:hover {
+            background: #2a2a4e;
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 992px) {
+            .wizard-layout {
+                flex-direction: column;
+            }
+            
+            .progress-sidebar {
+                flex: none;
+                position: static;
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 5px;
+                padding: 15px;
+            }
+            
+            .progress-sidebar h3 {
+                grid-column: 1 / -1;
+                margin-bottom: 5px;
+            }
+            
+            .step {
+                padding: 8px 12px;
+                font-size: 12px;
+                margin-bottom: 0;
+            }
+            
+            .step .step-number {
+                width: 24px;
+                height: 24px;
+                font-size: 11px;
+            }
+            
+            .wizard-content {
+                padding: 20px;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .form-row,
+            .form-row-3 {
+                grid-template-columns: 1fr;
+            }
+            
+            .accesorios-grid {
+                grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            }
+            
+            .servicios-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .btn-group {
+                flex-direction: column;
+            }
+            
+            .btn-group .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
     </style>
 </head>
 <body>
@@ -494,11 +1096,16 @@ if (isset($_SESSION['usuario_id'])) {
             
             <div class="step <?php echo $paso >= 3 ? 'active' : ''; ?> <?php echo $paso > 3 ? 'completed' : ''; ?>" data-step="3">
                 <span class="step-number"><span>3</span></span>
-                Legal
+                Financiero
             </div>
             
             <div class="step <?php echo $paso >= 4 ? 'active' : ''; ?> <?php echo $paso > 4 ? 'completed' : ''; ?>" data-step="4">
                 <span class="step-number"><span>4</span></span>
+                Legal
+            </div>
+            
+            <div class="step <?php echo $paso >= 5 ? 'active' : ''; ?> <?php echo $paso > 5 ? 'completed' : ''; ?>" data-step="5">
+                <span class="step-number"><span>5</span></span>
                 Confirmar
             </div>
         </aside>
@@ -563,6 +1170,53 @@ if (isset($_SESSION['usuario_id'])) {
                         </div>
                     </div>
 
+                    <!-- ===== TIPO DE VIVIENDA ===== -->
+                    <div class="form-group">
+                        <label for="tipo_vivienda">Tipo de Vivienda <span class="required">*</span></label>
+                        <select id="tipo_vivienda" name="tipo_vivienda" required>
+                            <option value="">Seleccionar</option>
+                            <option value="casa" <?php echo (isset($data['tipo_vivienda']) && $data['tipo_vivienda'] == 'casa') ? 'selected' : ''; ?>>Casa</option>
+                            <option value="departamento" <?php echo (isset($data['tipo_vivienda']) && $data['tipo_vivienda'] == 'departamento') ? 'selected' : ''; ?>>Departamento</option>
+                            <option value="terreno" <?php echo (isset($data['tipo_vivienda']) && $data['tipo_vivienda'] == 'terreno') ? 'selected' : ''; ?>>Terreno</option>
+                            <option value="local" <?php echo (isset($data['tipo_vivienda']) && $data['tipo_vivienda'] == 'local') ? 'selected' : ''; ?>>Local Comercial</option>
+                        </select>
+                    </div>
+
+                    <!-- ===== SUBTIPOS DE CASA ===== -->
+                    <div id="casa_options" class="conditional-group <?php echo (isset($data['tipo_vivienda']) && $data['tipo_vivienda'] == 'casa') ? '' : 'hidden'; ?>">
+                        <div class="form-group">
+                            <label for="tipo_casa">Tipo de Casa <span class="required">*</span></label>
+                            <select id="tipo_casa" name="tipo_casa">
+                                <option value="">Seleccionar</option>
+                                <option value="una_planta" <?php echo (isset($data['tipo_casa']) && $data['tipo_casa'] == 'una_planta') ? 'selected' : ''; ?>>Una planta</option>
+                                <option value="dos_plantas" <?php echo (isset($data['tipo_casa']) && $data['tipo_casa'] == 'dos_plantas') ? 'selected' : ''; ?>>Dos plantas</option>
+                                <option value="duplex" <?php echo (isset($data['tipo_casa']) && $data['tipo_casa'] == 'duplex') ? 'selected' : ''; ?>>Dúplex</option>
+                            </select>
+                        </div>
+
+                        <!-- Nivel para Dúplex -->
+                        <div id="nivel_duplex_group" class="conditional-group <?php echo (isset($data['tipo_casa']) && $data['tipo_casa'] == 'duplex') ? '' : 'hidden'; ?>">
+                            <div class="form-group">
+                                <label for="nivel_duplex">Nivel del Dúplex <span class="required">*</span></label>
+                                <select id="nivel_duplex" name="nivel_duplex">
+                                    <option value="">Seleccionar</option>
+                                    <option value="primer_nivel" <?php echo (isset($data['nivel_duplex']) && $data['nivel_duplex'] == 'primer_nivel') ? 'selected' : ''; ?>>Primer Nivel</option>
+                                    <option value="segundo_nivel" <?php echo (isset($data['nivel_duplex']) && $data['nivel_duplex'] == 'segundo_nivel') ? 'selected' : ''; ?>>Segundo Nivel</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ===== NIVEL PARA DEPARTAMENTO ===== -->
+                    <div id="departamento_options" class="conditional-group <?php echo (isset($data['tipo_vivienda']) && $data['tipo_vivienda'] == 'departamento') ? '' : 'hidden'; ?>">
+                        <div class="form-group">
+                            <label for="nivel_departamento">Nivel del Departamento <span class="required">*</span></label>
+                            <input type="text" id="nivel_departamento" name="nivel_departamento" 
+                                   value="<?php echo htmlspecialchars($data['nivel_departamento'] ?? ''); ?>" 
+                                   placeholder="Ej: Planta baja, 1er nivel, 3er nivel...">
+                        </div>
+                    </div>
+
                     <div class="form-group">
                         <label for="descripcion">Descripción Breve</label>
                         <textarea id="descripcion" name="descripcion" 
@@ -621,6 +1275,42 @@ if (isset($_SESSION['usuario_id'])) {
                                placeholder="Ciudad, colonia, calle" required>
                     </div>
 
+                    <!-- ===== ACCESORIOS ===== -->
+                    <div class="form-group">
+                        <label>Accesorios de la Propiedad</label>
+                        <p style="font-size: 13px; color: #888; margin-bottom: 10px;">Selecciona los accesorios que incluye la propiedad</p>
+                        
+                        <div class="accesorios-grid">
+                            <?php foreach ($accesorios_disponibles as $accesorio): ?>
+                                <div class="accesorio-item">
+                                    <input type="checkbox" id="acc_<?php echo $accesorio['id']; ?>" 
+                                           name="accesorios[]" value="<?php echo $accesorio['id']; ?>"
+                                           <?php echo (isset($data['accesorios']) && in_array($accesorio['id'], $data['accesorios'])) ? 'checked' : ''; ?>>
+                                    <label for="acc_<?php echo $accesorio['id']; ?>">
+                                        <?php if (!empty($accesorio['icono'])): ?>
+                                            <i class="<?php echo htmlspecialchars($accesorio['icono']); ?> accesorio-icon"></i>
+                                        <?php endif; ?>
+                                        <?php echo htmlspecialchars($accesorio['nombre']); ?>
+                                    </label>
+                                </div>
+                            <?php endforeach; ?>
+                            
+                            <!-- Opción "Otro" -->
+                            <div class="accesorio-item accesorio-otro">
+                                <input type="checkbox" id="acc_otro" name="accesorios_otro_check" 
+                                       <?php echo isset($data['accesorio_otro']) ? 'checked' : ''; ?>>
+                                <label for="acc_otro">
+                                    <i class="fas fa-plus-circle accesorio-icon"></i>
+                                    Otro
+                                </label>
+                                <input type="text" id="accesorio_otro_input" name="accesorio_otro" 
+                                       value="<?php echo htmlspecialchars($data['accesorio_otro'] ?? ''); ?>" 
+                                       placeholder="Especificar..." 
+                                       <?php echo isset($data['accesorio_otro']) ? '' : 'disabled'; ?>>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- ======================================== -->
                     <!-- SISTEMA DE IMÁGENES -->
                     <!-- ======================================== -->
@@ -672,25 +1362,177 @@ if (isset($_SESSION['usuario_id'])) {
                     </div>
 
                 <!-- ======================================== -->
-                <!-- PASO 3: Situación Legal -->
+                <!-- PASO 3: Situación Financiera -->
                 <!-- ======================================== -->
                 <?php elseif ($paso == 3): ?>
-                    <h2>⚖️ Situación Legal</h2>
-                    <p class="subtitle">Información sobre la situación legal de la propiedad</p>
+                    <h2>💰 Situación Financiera</h2>
+                    <p class="subtitle">Información sobre adeudos y situación financiera</p>
 
+                    <!-- ===== ADEUDOS / GRAVAMEN ===== -->
                     <div class="form-group">
-                        <label>¿Tiene algún gravamen o embargo?</label>
-                        <div class="radio-group">
-                            <label><input type="radio" name="has_lien" value="1" <?php echo (isset($data['has_lien']) && $data['has_lien'] == 1) ? 'checked' : ''; ?>> Sí</label>
-                            <label><input type="radio" name="has_lien" value="0" <?php echo (isset($data['has_lien']) && $data['has_lien'] == 0) ? 'checked' : ''; ?> <?php echo !isset($data['has_lien']) ? 'checked' : ''; ?>> No</label>
+                        <label>¿La propiedad tiene algún adeudo o gravamen?</label>
+                        <div class="radio-group-inline">
+                            <label><input type="radio" name="tiene_adeudo" value="1" <?php echo (isset($data['tiene_adeudo']) && $data['tiene_adeudo'] == 1) ? 'checked' : ''; ?> onchange="toggleAdeudo(this.value)"> Sí</label>
+                            <label><input type="radio" name="tiene_adeudo" value="0" <?php echo (isset($data['tiene_adeudo']) && $data['tiene_adeudo'] == 0) ? 'checked' : ''; ?> <?php echo !isset($data['tiene_adeudo']) ? 'checked' : ''; ?> onchange="toggleAdeudo(this.value)"> No</label>
                         </div>
                     </div>
 
-                    <div class="form-group" id="lien_group" style="display: <?php echo (isset($data['has_lien']) && $data['has_lien'] == 1) ? 'block' : 'none'; ?>;">
-                        <label for="debt_amount">Monto de la deuda o descripción del gravamen</label>
-                        <input type="text" id="debt_amount" name="debt_amount" 
-                               value="<?php echo htmlspecialchars($data['debt_amount'] ?? ''); ?>" 
-                               placeholder="Ej: $50,000 o descripción del gravamen">
+                    <!-- ===== DETALLES DE ADEUDO ===== -->
+                    <div id="adeudo_details" class="conditional-group <?php echo (isset($data['tiene_adeudo']) && $data['tiene_adeudo'] == 1) ? '' : 'hidden'; ?>">
+                        <div class="form-group">
+                            <label for="tipo_adeudo">Tipo de Adeudo <span class="required">*</span></label>
+                            <select id="tipo_adeudo" name="tipo_adeudo">
+                                <option value="">Seleccionar</option>
+                                <option value="banco" <?php echo (isset($data['tipo_adeudo']) && $data['tipo_adeudo'] == 'banco') ? 'selected' : ''; ?>>Banco</option>
+                                <option value="particular" <?php echo (isset($data['tipo_adeudo']) && $data['tipo_adeudo'] == 'particular') ? 'selected' : ''; ?>>Particular</option>
+                                <option value="gobierno" <?php echo (isset($data['tipo_adeudo']) && $data['tipo_adeudo'] == 'gobierno') ? 'selected' : ''; ?>>Gobierno</option>
+                                <option value="otros" <?php echo (isset($data['tipo_adeudo']) && $data['tipo_adeudo'] == 'otros') ? 'selected' : ''; ?>>Otros</option>
+                            </select>
+                        </div>
+
+                        <!-- ===== BANCO ===== -->
+                        <div id="banco_group" class="conditional-group <?php echo (isset($data['tipo_adeudo']) && $data['tipo_adeudo'] == 'banco') ? '' : 'hidden'; ?>">
+                            <div class="form-group">
+                                <label for="banco_id">Banco <span class="required">*</span></label>
+                                <select id="banco_id" name="banco_id">
+                                    <option value="">Seleccionar banco</option>
+                                    <?php foreach ($bancos_disponibles as $banco): ?>
+                                        <option value="<?php echo $banco['id']; ?>" <?php echo (isset($data['banco_id']) && $data['banco_id'] == $banco['id']) ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($banco['nombre']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="monto_adeudo">Monto Aproximado del Adeudo <span class="required">*</span></label>
+                            <input type="number" id="monto_adeudo" name="monto_adeudo" 
+                                   value="<?php echo htmlspecialchars($data['monto_adeudo'] ?? ''); ?>" 
+                                   placeholder="0.00" min="0" step="0.01">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Tipo de Adeudo sobre la Propiedad <span class="required">*</span></label>
+                            <div class="radio-group-inline">
+                                <label><input type="radio" name="tipo_adeudo_propiedad" value="individual" <?php echo (isset($data['tipo_adeudo_propiedad']) && $data['tipo_adeudo_propiedad'] == 'individual') ? 'checked' : ''; ?> onchange="toggleAdeudoCompartido(this.value)"> Individual</label>
+                                <label><input type="radio" name="tipo_adeudo_propiedad" value="compartido" <?php echo (isset($data['tipo_adeudo_propiedad']) && $data['tipo_adeudo_propiedad'] == 'compartido') ? 'checked' : ''; ?> onchange="toggleAdeudoCompartido(this.value)"> Compartido</label>
+                            </div>
+                        </div>
+
+                        <!-- ===== DETALLES DE ADEUDO COMPARTIDO ===== -->
+                        <div id="adeudo_compartido_details" class="conditional-group <?php echo (isset($data['tipo_adeudo_propiedad']) && $data['tipo_adeudo_propiedad'] == 'compartido') ? '' : 'hidden'; ?>">
+                            <div class="form-group">
+                                <label for="adeudo_compartido_detalles">Detalles del Adeudo Compartido</label>
+                                <textarea id="adeudo_compartido_detalles" name="adeudo_compartido_detalles" 
+                                          placeholder="Describe los detalles del adeudo compartido (ej: con quién se comparte, porcentaje, etc.)"><?php echo htmlspecialchars($data['adeudo_compartido_detalles'] ?? ''); ?></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ===== SERVICIOS MUNICIPALES ===== -->
+                    <div class="form-group" style="margin-top: 30px;">
+                        <label>Servicios Municipales</label>
+                        <p style="font-size: 13px; color: #888; margin-bottom: 10px;">Estado de los servicios de la propiedad</p>
+                        
+                        <div class="servicios-grid">
+                            <div class="servicio-item">
+                                <label><i class="fas fa-water"></i> Agua</label>
+                                <div class="servicio-controls">
+                                    <label><input type="radio" name="servicio_agua_activo" value="1" <?php echo (isset($data['servicio_agua_activo']) && $data['servicio_agua_activo'] == 1) ? 'checked' : ''; ?>> Activo</label>
+                                    <label><input type="radio" name="servicio_agua_activo" value="0" <?php echo (isset($data['servicio_agua_activo']) && $data['servicio_agua_activo'] == 0) ? 'checked' : ''; ?>> Inactivo</label>
+                                </div>
+                                <div style="display: flex; gap: 15px; align-items: center; margin-top: 5px;">
+                                    <label style="font-weight: normal; font-size: 13px;"><input type="checkbox" name="servicio_agua_adeudo" value="1" <?php echo (isset($data['servicio_agua_adeudo']) && $data['servicio_agua_adeudo'] == 1) ? 'checked' : ''; ?>> Con adeudo</label>
+                                </div>
+                            </div>
+                            
+                            <div class="servicio-item">
+                                <label><i class="fas fa-bolt"></i> Electricidad</label>
+                                <div class="servicio-controls">
+                                    <label><input type="radio" name="servicio_luz_activo" value="1" <?php echo (isset($data['servicio_luz_activo']) && $data['servicio_luz_activo'] == 1) ? 'checked' : ''; ?>> Activo</label>
+                                    <label><input type="radio" name="servicio_luz_activo" value="0" <?php echo (isset($data['servicio_luz_activo']) && $data['servicio_luz_activo'] == 0) ? 'checked' : ''; ?>> Inactivo</label>
+                                </div>
+                                <div style="display: flex; gap: 15px; align-items: center; margin-top: 5px;">
+                                    <label style="font-weight: normal; font-size: 13px;"><input type="checkbox" name="servicio_luz_adeudo" value="1" <?php echo (isset($data['servicio_luz_adeudo']) && $data['servicio_luz_adeudo'] == 1) ? 'checked' : ''; ?>> Con adeudo</label>
+                                </div>
+                            </div>
+                            
+                            <div class="servicio-item">
+                                <label><i class="fas fa-fire"></i> Gas</label>
+                                <div class="servicio-controls">
+                                    <label><input type="radio" name="servicio_gas_activo" value="1" <?php echo (isset($data['servicio_gas_activo']) && $data['servicio_gas_activo'] == 1) ? 'checked' : ''; ?>> Activo</label>
+                                    <label><input type="radio" name="servicio_gas_activo" value="0" <?php echo (isset($data['servicio_gas_activo']) && $data['servicio_gas_activo'] == 0) ? 'checked' : ''; ?>> Inactivo</label>
+                                </div>
+                                <div style="display: flex; gap: 15px; align-items: center; margin-top: 5px;">
+                                    <label style="font-weight: normal; font-size: 13px;"><input type="checkbox" name="servicio_gas_adeudo" value="1" <?php echo (isset($data['servicio_gas_adeudo']) && $data['servicio_gas_adeudo'] == 1) ? 'checked' : ''; ?>> Con adeudo</label>
+                                </div>
+                            </div>
+                            
+                            <div class="servicio-item">
+                                <label><i class="fas fa-wifi"></i> Internet / TV</label>
+                                <div class="servicio-controls">
+                                    <label><input type="radio" name="servicio_internet_activo" value="1" <?php echo (isset($data['servicio_internet_activo']) && $data['servicio_internet_activo'] == 1) ? 'checked' : ''; ?>> Activo</label>
+                                    <label><input type="radio" name="servicio_internet_activo" value="0" <?php echo (isset($data['servicio_internet_activo']) && $data['servicio_internet_activo'] == 0) ? 'checked' : ''; ?>> Inactivo</label>
+                                </div>
+                                <div style="display: flex; gap: 15px; align-items: center; margin-top: 5px;">
+                                    <label style="font-weight: normal; font-size: 13px;"><input type="checkbox" name="servicio_internet_adeudo" value="1" <?php echo (isset($data['servicio_internet_adeudo']) && $data['servicio_internet_adeudo'] == 1) ? 'checked' : ''; ?>> Con adeudo</label>
+                                </div>
+                            </div>
+                            
+                            <div class="servicio-item">
+                                <label><i class="fas fa-trash-alt"></i> Recolección de Basura</label>
+                                <div class="servicio-controls">
+                                    <label><input type="radio" name="servicio_basura_activo" value="1" <?php echo (isset($data['servicio_basura_activo']) && $data['servicio_basura_activo'] == 1) ? 'checked' : ''; ?>> Activo</label>
+                                    <label><input type="radio" name="servicio_basura_activo" value="0" <?php echo (isset($data['servicio_basura_activo']) && $data['servicio_basura_activo'] == 0) ? 'checked' : ''; ?>> Inactivo</label>
+                                </div>
+                                <div style="display: flex; gap: 15px; align-items: center; margin-top: 5px;">
+                                    <label style="font-weight: normal; font-size: 13px;"><input type="checkbox" name="servicio_basura_adeudo" value="1" <?php echo (isset($data['servicio_basura_adeudo']) && $data['servicio_basura_adeudo'] == 1) ? 'checked' : ''; ?>> Con adeudo</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="btn-group">
+                        <a href="?paso=2" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Atrás</a>
+                        <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="4">
+                            Siguiente <i class="fas fa-arrow-right"></i>
+                        </button>
+                    </div>
+
+                <!-- ======================================== -->
+                <!-- PASO 4: Situación Legal -->
+                <!-- ======================================== -->
+                <?php elseif ($paso == 4): ?>
+                    <h2>⚖️ Situación Legal</h2>
+                    <p class="subtitle">Información sobre la situación legal de la propiedad</p>
+
+                    <!-- ===== DOCUMENTOS EN PODER ===== -->
+                    <div class="form-group">
+                        <label>Documentos en su poder</label>
+                        <p style="font-size: 13px; color: #888; margin-bottom: 10px;">Selecciona los documentos que tienes disponibles</p>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div class="legal-document-group">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-weight: 600;">Escrituras</label>
+                                    <div class="radio-group">
+                                        <label><input type="radio" name="tiene_escrituras" value="1" <?php echo (isset($data['tiene_escrituras']) && $data['tiene_escrituras'] == 1) ? 'checked' : ''; ?>> Sí</label>
+                                        <label><input type="radio" name="tiene_escrituras" value="0" <?php echo (isset($data['tiene_escrituras']) && $data['tiene_escrituras'] == 0) ? 'checked' : ''; ?> <?php echo !isset($data['tiene_escrituras']) ? 'checked' : ''; ?>> No</label>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="legal-document-group">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-weight: 600;">Testamento / Intestado</label>
+                                    <div class="radio-group">
+                                        <label><input type="radio" name="tiene_testamento" value="1" <?php echo (isset($data['tiene_testamento']) && $data['tiene_testamento'] == 1) ? 'checked' : ''; ?>> Sí</label>
+                                        <label><input type="radio" name="tiene_testamento" value="0" <?php echo (isset($data['tiene_testamento']) && $data['tiene_testamento'] == 0) ? 'checked' : ''; ?> <?php echo !isset($data['tiene_testamento']) ? 'checked' : ''; ?>> No</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="form-group">
@@ -707,13 +1549,13 @@ if (isset($_SESSION['usuario_id'])) {
                     <div class="form-group">
                         <label for="legal_status_notes">Notas sobre la situación legal</label>
                         <textarea id="legal_status_notes" name="legal_status_notes" 
-                                  placeholder="Describe cualquier aspecto legal relevante"><?php echo htmlspecialchars($data['legal_status_notes'] ?? ''); ?></textarea>
+                                  placeholder="Describe cualquier aspecto legal relevante (ej: situación de la escritura, detalles del intestado, etc.)"><?php echo htmlspecialchars($data['legal_status_notes'] ?? ''); ?></textarea>
                     </div>
 
                     <div class="btn-group">
-                        <a href="?paso=2" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Atrás</a>
+                        <a href="?paso=3" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Atrás</a>
                         <?php if (isset($_SESSION['usuario_id'])): ?>
-                            <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="4">
+                            <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="5">
                                 Siguiente <i class="fas fa-arrow-right"></i>
                             </button>
                         <?php else: ?>
@@ -724,9 +1566,9 @@ if (isset($_SESSION['usuario_id'])) {
                     </div>
 
                 <!-- ======================================== -->
-                <!-- PASO 4: Resumen Final -->
+                <!-- PASO 5: Resumen Final -->
                 <!-- ======================================== -->
-                <?php elseif ($paso == 4): ?>
+                <?php elseif ($paso == 5): ?>
                     <h2>🔐 Resumen Final</h2>
                     <p class="subtitle">Revisa los datos y confirma la publicación</p>
 
@@ -753,7 +1595,7 @@ if (isset($_SESSION['usuario_id'])) {
                         <div style="background: #fff3cd; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #ffc107;">
                             <p style="margin: 0; color: #856404;">
                                 ⚠️ Debes iniciar sesión para publicar. 
-                                <a href="?paso=3&show_auth=true" style="color: #1a1a2e; font-weight: 600;">Iniciar sesión</a>
+                                <a href="?paso=4&show_auth=true" style="color: #1a1a2e; font-weight: 600;">Iniciar sesión</a>
                             </p>
                         </div>
                     <?php endif; ?>
@@ -775,6 +1617,59 @@ if (isset($_SESSION['usuario_id'])) {
                             <span class="label">Precio</span>
                             <span class="value">$<?php echo number_format($data['precio'] ?? 0, 2); ?></span>
                         </div>
+                        
+                        <div class="resumen-item">
+                            <span class="label">Tipo de Vivienda</span>
+                            <span class="value">
+                                <?php 
+                                    $tipos = [
+                                        'casa' => 'Casa',
+                                        'departamento' => 'Departamento',
+                                        'terreno' => 'Terreno',
+                                        'local' => 'Local Comercial'
+                                    ];
+                                    echo htmlspecialchars($tipos[$data['tipo_vivienda'] ?? ''] ?? $data['tipo_vivienda'] ?? 'No especificado');
+                                ?>
+                            </span>
+                        </div>
+                        
+                        <?php if (isset($data['tipo_casa']) && !empty($data['tipo_casa'])): ?>
+                            <div class="resumen-item">
+                                <span class="label">Tipo de Casa</span>
+                                <span class="value">
+                                    <?php 
+                                        $tipos_casa = [
+                                            'una_planta' => 'Una planta',
+                                            'dos_plantas' => 'Dos plantas',
+                                            'duplex' => 'Dúplex'
+                                        ];
+                                        echo htmlspecialchars($tipos_casa[$data['tipo_casa']] ?? $data['tipo_casa']);
+                                    ?>
+                                </span>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <?php if (isset($data['nivel_duplex']) && !empty($data['nivel_duplex'])): ?>
+                            <div class="resumen-item">
+                                <span class="label">Nivel del Dúplex</span>
+                                <span class="value">
+                                    <?php 
+                                        $niveles = [
+                                            'primer_nivel' => 'Primer Nivel',
+                                            'segundo_nivel' => 'Segundo Nivel'
+                                        ];
+                                        echo htmlspecialchars($niveles[$data['nivel_duplex']] ?? $data['nivel_duplex']);
+                                    ?>
+                                </span>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <?php if (isset($data['nivel_departamento']) && !empty($data['nivel_departamento'])): ?>
+                            <div class="resumen-item">
+                                <span class="label">Nivel del Departamento</span>
+                                <span class="value"><?php echo htmlspecialchars($data['nivel_departamento']); ?></span>
+                            </div>
+                        <?php endif; ?>
                         
                         <div class="resumen-item">
                             <span class="label">Metros Cuadrados</span>
@@ -807,10 +1702,74 @@ if (isset($_SESSION['usuario_id'])) {
                             </div>
                         <?php endif; ?>
                         
-                        <?php if (!empty($data['legal_status'])): ?>
+                        <!-- Accesorios en el resumen -->
+                        <?php if (!empty($data['accesorios']) || !empty($data['accesorio_otro'])): ?>
+                            <div class="resumen-item">
+                                <span class="label">Accesorios</span>
+                                <span class="value">
+                                    <?php 
+                                        $nombres_accesorios = [];
+                                        foreach ($accesorios_disponibles as $acc) {
+                                            if (in_array($acc['id'], $data['accesorios'] ?? [])) {
+                                                $nombres_accesorios[] = $acc['nombre'];
+                                            }
+                                        }
+                                        if (!empty($data['accesorio_otro'])) {
+                                            $nombres_accesorios[] = $data['accesorio_otro'];
+                                        }
+                                        echo htmlspecialchars(implode(', ', $nombres_accesorios));
+                                    ?>
+                                </span>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <!-- Situación financiera en el resumen -->
+                        <?php if (isset($data['tiene_adeudo']) && $data['tiene_adeudo'] == 1): ?>
+                            <div class="resumen-item" style="border-color: #ffc107;">
+                                <span class="label">⚠️ Adeudo</span>
+                                <span class="value" style="color: #dc3545;">Sí</span>
+                            </div>
+                            <?php if (!empty($data['tipo_adeudo'])): ?>
+                                <div class="resumen-item">
+                                    <span class="label">Tipo de Adeudo</span>
+                                    <span class="value"><?php echo ucfirst(htmlspecialchars($data['tipo_adeudo'])); ?></span>
+                                </div>
+                            <?php endif; ?>
+                            <?php if (!empty($data['monto_adeudo'])): ?>
+                                <div class="resumen-item">
+                                    <span class="label">Monto</span>
+                                    <span class="value">$<?php echo number_format($data['monto_adeudo'], 2); ?></span>
+                                </div>
+                            <?php endif; ?>
+                            <?php if (!empty($data['tipo_adeudo_propiedad'])): ?>
+                                <div class="resumen-item">
+                                    <span class="label">Tipo de Adeudo</span>
+                                    <span class="value"><?php echo ucfirst(htmlspecialchars($data['tipo_adeudo_propiedad'])); ?></span>
+                                </div>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <div class="resumen-item">
+                                <span class="label">Adeudos</span>
+                                <span class="value" style="color: #28a745;">Sin adeudos</span>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <!-- Situación legal en el resumen -->
+                        <?php if (isset($data['legal_status'])): ?>
                             <div class="resumen-item">
                                 <span class="label">Estado Legal</span>
-                                <span class="value"><?php echo ucfirst(htmlspecialchars($data['legal_status'])); ?></span>
+                                <span class="value">
+                                    <?php 
+                                        $estados = [
+                                            'libre' => 'Libre de gravámenes',
+                                            'intestado' => 'Intestado',
+                                            'sucesion' => 'En proceso de sucesión',
+                                            'litigio' => 'En litigio',
+                                            'otro' => 'Otro'
+                                        ];
+                                        echo htmlspecialchars($estados[$data['legal_status']] ?? $data['legal_status']);
+                                    ?>
+                                </span>
                             </div>
                         <?php endif; ?>
                         
@@ -838,13 +1797,13 @@ if (isset($_SESSION['usuario_id'])) {
                     </div>
 
                     <div class="btn-group">
-                        <a href="?paso=3" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Atrás</a>
+                        <a href="?paso=4" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Atrás</a>
                         <?php if (isset($_SESSION['usuario_id'])): ?>
                             <button type="submit" class="btn btn-success" name="confirmar" value="1" id="btnPublicar">
                                 <i class="fas fa-check-circle"></i> Confirmar y Publicar
                             </button>
                         <?php else: ?>
-                            <button type="button" class="btn btn-success" id="btnOpenAuthFromPaso4">
+                            <button type="button" class="btn btn-success" id="btnOpenAuthFromPaso5">
                                 <i class="fas fa-lock"></i> Iniciar sesión para publicar
                             </button>
                         <?php endif; ?>
@@ -874,7 +1833,7 @@ if (isset($_SESSION['usuario_id'])) {
         <!-- Login Panel -->
         <div class="auth-panel active" id="panelLogin">
             <form method="POST" action="">
-                <input type="hidden" name="paso_actual" value="3">
+                <input type="hidden" name="paso_actual" value="<?php echo $paso; ?>">
                 
                 <div class="form-group">
                     <label for="modal_login_email">Correo Electrónico</label>
@@ -897,7 +1856,7 @@ if (isset($_SESSION['usuario_id'])) {
         <!-- Register Panel -->
         <div class="auth-panel" id="panelRegister">
             <form method="POST" action="">
-                <input type="hidden" name="paso_actual" value="3">
+                <input type="hidden" name="paso_actual" value="<?php echo $paso; ?>">
                 
                 <div class="form-group">
                     <label for="modal_reg_nombre">Nombre Completo</label>
@@ -954,6 +1913,96 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+
+    // ========================================
+    // TIPO DE VIVIENDA - DROPDOWNS CONTEXTUALES
+    // ========================================
+    const tipoVivienda = document.getElementById('tipo_vivienda');
+    const casaOptions = document.getElementById('casa_options');
+    const departamentoOptions = document.getElementById('departamento_options');
+    const tipoCasa = document.getElementById('tipo_casa');
+    const nivelDuplexGroup = document.getElementById('nivel_duplex_group');
+
+    function toggleViviendaOptions() {
+        const selected = tipoVivienda.value;
+        
+        // Ocultar todos
+        if (casaOptions) casaOptions.classList.add('hidden');
+        if (departamentoOptions) departamentoOptions.classList.add('hidden');
+        
+        // Mostrar según selección
+        if (selected === 'casa') {
+            if (casaOptions) casaOptions.classList.remove('hidden');
+            toggleDuplexOptions();
+        } else if (selected === 'departamento') {
+            if (departamentoOptions) departamentoOptions.classList.remove('hidden');
+        }
+    }
+
+    function toggleDuplexOptions() {
+        if (tipoCasa && nivelDuplexGroup) {
+            if (tipoCasa.value === 'duplex') {
+                nivelDuplexGroup.classList.remove('hidden');
+            } else {
+                nivelDuplexGroup.classList.add('hidden');
+            }
+        }
+    }
+
+    if (tipoVivienda) {
+        tipoVivienda.addEventListener('change', toggleViviendaOptions);
+    }
+    if (tipoCasa) {
+        tipoCasa.addEventListener('change', toggleDuplexOptions);
+    }
+
+    // Inicializar al cargar
+    toggleViviendaOptions();
+
+    // ========================================
+    // ADEUDOS - TOGGLE
+    // ========================================
+    function toggleAdeudo(value) {
+        const details = document.getElementById('adeudo_details');
+        if (details) {
+            details.classList.toggle('hidden', value != 1);
+        }
+    }
+
+    function toggleAdeudoCompartido(value) {
+        const details = document.getElementById('adeudo_compartido_details');
+        if (details) {
+            details.classList.toggle('hidden', value != 'compartido');
+        }
+    }
+
+    // Tipo de adeudo - mostrar banco
+    const tipoAdeudo = document.getElementById('tipo_adeudo');
+    if (tipoAdeudo) {
+        tipoAdeudo.addEventListener('change', function() {
+            const bancoGroup = document.getElementById('banco_group');
+            if (bancoGroup) {
+                bancoGroup.classList.toggle('hidden', this.value !== 'banco');
+            }
+        });
+    }
+
+    // ========================================
+    // ACCESORIOS - "OTRO" INPUT
+    // ========================================
+    const accOtroCheck = document.getElementById('acc_otro');
+    const accOtroInput = document.getElementById('accesorio_otro_input');
+    
+    if (accOtroCheck && accOtroInput) {
+        accOtroCheck.addEventListener('change', function() {
+            accOtroInput.disabled = !this.checked;
+            if (!this.checked) {
+                accOtroInput.value = '';
+            } else {
+                accOtroInput.focus();
+            }
+        });
+    }
 
     // ========================================
     // SISTEMA DE IMÁGENES
@@ -1188,9 +2237,9 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    const btnOpenAuthFromPaso4 = document.getElementById('btnOpenAuthFromPaso4');
-    if (btnOpenAuthFromPaso4) {
-        btnOpenAuthFromPaso4.addEventListener('click', function(e) {
+    const btnOpenAuthFromPaso5 = document.getElementById('btnOpenAuthFromPaso5');
+    if (btnOpenAuthFromPaso5) {
+        btnOpenAuthFromPaso5.addEventListener('click', function(e) {
             e.preventDefault();
             openAuthModal();
         });
@@ -1238,20 +2287,6 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     });
-    
-    // ========================================
-    // MOSTRAR/OCULTAR CAMPOS DE GRAVAMEN
-    // ========================================
-    const lienRadios = document.querySelectorAll('input[name="has_lien"]');
-    const lienGroup = document.getElementById('lien_group');
-    
-    if (lienRadios.length > 0 && lienGroup) {
-        lienRadios.forEach(radio => {
-            radio.addEventListener('change', function() {
-                lienGroup.style.display = this.value == 1 ? 'block' : 'none';
-            });
-        });
-    }
     
     // ========================================
     // CONFIRMACIÓN AL PUBLICAR
