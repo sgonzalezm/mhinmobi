@@ -5,19 +5,19 @@ session_start();
 // INCLUIR FUNCIONES DE BASE DE DATOS
 // ========================================
 require_once 'guardar_propiedad.php';
-require_once 'includes/conexion.php'; // Asegurar que la conexión está disponible
+require_once 'includes/conexion.php';
 
-// Inicializar sesión si no existe
+// Inicializar sesión
 if (!isset($_SESSION['form_venta'])) {
     $_SESSION['form_venta'] = [];
 }
 
 // Determinar el paso actual
 $paso = isset($_GET['paso']) ? (int)$_GET['paso'] : 1;
-$paso = max(1, min(5, $paso)); // Ahora tenemos 5 pasos
+$paso = max(1, min(5, $paso));
 
 // ========================================
-// OBTENER ACCESORIOS Y BANCOS USANDO LAS FUNCIONES DE guardar_propiedad.php
+// OBTENER ACCESORIOS Y BANCOS
 // ========================================
 $accesorios_disponibles = obtenerAccesorios();
 $bancos_disponibles = obtenerBancos();
@@ -43,9 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     
-    // ========================================
-    // PROCESAR IMÁGENES SUBIDAS POR AJAX
-    // ========================================
+    // Procesar imágenes
     if (isset($_POST['imagenes_guardadas'])) {
         $imagenes = json_decode($_POST['imagenes_guardadas'], true);
         if (is_array($imagenes) && !empty($imagenes)) {
@@ -53,44 +51,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     
-    // ========================================
-    // PROCESAR ACCESORIOS
-    // ========================================
+    // Procesar accesorios
     if (isset($_POST['accesorios']) && is_array($_POST['accesorios'])) {
         $_SESSION['form_venta']['accesorios'] = array_map('intval', $_POST['accesorios']);
     } else {
         $_SESSION['form_venta']['accesorios'] = [];
     }
     
-    // Procesar "Otro" accesorio
     if (isset($_POST['accesorio_otro']) && !empty(trim($_POST['accesorio_otro']))) {
         $_SESSION['form_venta']['accesorio_otro'] = trim($_POST['accesorio_otro']);
     } else {
         unset($_SESSION['form_venta']['accesorio_otro']);
     }
     
-    // ========================================
-    // VALIDACIONES POR PASO
-    // ========================================
+    // Validaciones
     switch ($paso_actual) {
         case 1:
-            if (empty($_SESSION['form_venta']['titulo'])) {
-                $errores[] = 'El título es obligatorio';
-            }
-            if (empty($_SESSION['form_venta']['precio']) || !is_numeric($_SESSION['form_venta']['precio'])) {
-                $errores[] = 'El precio debe ser un número válido';
-            }
-            if (empty($_SESSION['form_venta']['tipo_operacion'])) {
-                $errores[] = 'Selecciona el tipo de operación';
-            }
-            // Validar tipo de vivienda
-            if (empty($_SESSION['form_venta']['tipo_vivienda'])) {
-                $errores[] = 'Selecciona el tipo de vivienda';
-            }
+            if (empty($_SESSION['form_venta']['titulo'])) $errores[] = 'El título es obligatorio';
+            if (empty($_SESSION['form_venta']['precio']) || !is_numeric($_SESSION['form_venta']['precio'])) $errores[] = 'El precio debe ser un número válido';
+            if (empty($_SESSION['form_venta']['tipo_operacion'])) $errores[] = 'Selecciona el tipo de operación';
+            if (empty($_SESSION['form_venta']['tipo_vivienda'])) $errores[] = 'Selecciona el tipo de vivienda';
+            
             if ($_SESSION['form_venta']['tipo_vivienda'] == 'casa') {
-                if (empty($_SESSION['form_venta']['tipo_casa'])) {
-                    $errores[] = 'Selecciona el tipo de casa';
-                }
+                if (empty($_SESSION['form_venta']['tipo_casa'])) $errores[] = 'Selecciona el tipo de casa';
                 if ($_SESSION['form_venta']['tipo_casa'] == 'duplex' && empty($_SESSION['form_venta']['nivel_duplex'])) {
                     $errores[] = 'Selecciona el nivel del dúplex';
                 }
@@ -101,23 +84,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
             
         case 2:
-            if (empty($_SESSION['form_venta']['m2']) || !is_numeric($_SESSION['form_venta']['m2'])) {
-                $errores[] = 'Los metros cuadrados deben ser un número válido';
-            }
-            if (empty($_SESSION['form_venta']['recamaras']) || !is_numeric($_SESSION['form_venta']['recamaras'])) {
-                $errores[] = 'El número de recámaras debe ser un número válido';
-            }
-            if (empty($_SESSION['form_venta']['ubicacion'])) {
-                $errores[] = 'La ubicación es obligatoria';
-            }
+            if (empty($_SESSION['form_venta']['m2']) || !is_numeric($_SESSION['form_venta']['m2'])) $errores[] = 'Los metros cuadrados deben ser un número válido';
+            if (empty($_SESSION['form_venta']['recamaras']) || !is_numeric($_SESSION['form_venta']['recamaras'])) $errores[] = 'El número de recámaras debe ser un número válido';
+            if (empty($_SESSION['form_venta']['ubicacion'])) $errores[] = 'La ubicación es obligatoria';
             break;
             
         case 3:
-            // Validar situación financiera
             if (isset($_SESSION['form_venta']['tiene_adeudo']) && $_SESSION['form_venta']['tiene_adeudo'] == 1) {
-                if (empty($_SESSION['form_venta']['tipo_adeudo'])) {
-                    $errores[] = 'Selecciona el tipo de adeudo';
-                }
+                if (empty($_SESSION['form_venta']['tipo_adeudo'])) $errores[] = 'Selecciona el tipo de adeudo';
                 if ($_SESSION['form_venta']['tipo_adeudo'] == 'banco' && empty($_SESSION['form_venta']['banco_id'])) {
                     $errores[] = 'Selecciona el banco';
                 }
@@ -129,56 +103,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             break;
-            
-        case 4:
-            // Validaciones del paso legal (opcionales)
-            break;
     }
     
-    // ========================================
-    // MANEJAR LOGIN DE SOCIOS
-    // ========================================
+    // Login
     if (isset($_POST['login_email']) && isset($_POST['login_password'])) {
-        $email = $_POST['login_email'];
-        $password = $_POST['login_password'];
-        
-        $socio = verificarLogin($email, $password);
+        $socio = verificarLogin($_POST['login_email'], $_POST['login_password']);
         if ($socio) {
             $_SESSION['usuario_id'] = $socio['id'];
             $_SESSION['usuario_nombre'] = $socio['name'];
             $_SESSION['usuario_email'] = $socio['email'];
             $_SESSION['usuario_role'] = $socio['role'];
-            
             header("Location: vender.php?paso=5&login=success");
             exit();
         } else {
-            $errores[] = 'Credenciales incorrectas. Verifica tu email y contraseña.';
+            $errores[] = 'Credenciales incorrectas.';
             $_SESSION['errores'] = $errores;
             header("Location: vender.php?paso=" . $paso_actual . "&show_auth=true");
             exit();
         }
     }
     
-    // ========================================
-    // MANEJAR REGISTRO DE SOCIOS
-    // ========================================
+    // Registro
     if (isset($_POST['reg_nombre']) && isset($_POST['reg_email']) && isset($_POST['reg_password'])) {
-        $nombre = $_POST['reg_nombre'];
-        $email = $_POST['reg_email'];
-        $password = $_POST['reg_password'];
-        
-        if (strlen($password) < 6) {
+        if (strlen($_POST['reg_password']) < 6) {
             $errores[] = 'La contraseña debe tener al menos 6 caracteres';
         }
         
         if (empty($errores)) {
-            $socio_id = registrarUsuario($nombre, $email, $password);
+            $socio_id = registrarUsuario($_POST['reg_nombre'], $_POST['reg_email'], $_POST['reg_password']);
             if ($socio_id) {
                 $_SESSION['usuario_id'] = $socio_id;
-                $_SESSION['usuario_nombre'] = $nombre;
-                $_SESSION['usuario_email'] = $email;
+                $_SESSION['usuario_nombre'] = $_POST['reg_nombre'];
+                $_SESSION['usuario_email'] = $_POST['reg_email'];
                 $_SESSION['usuario_role'] = 'socio';
-                
                 header("Location: vender.php?paso=5&register=success");
                 exit();
             } else {
@@ -193,9 +150,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     
-    // ========================================
-    // SI HAY ERRORES, VOLVER AL PASO ACTUAL
-    // ========================================
     if (!empty($errores)) {
         $_SESSION['errores'] = $errores;
         header("Location: vender.php?paso=" . $paso_actual);
@@ -204,24 +158,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     unset($_SESSION['errores']);
     
-    // ========================================
-    // NAVEGACIÓN ENTRE PASOS
-    // ========================================
+    // Navegación
     if (isset($_POST['siguiente_paso'])) {
         $siguiente = (int)$_POST['siguiente_paso'];
-        
         if ($siguiente == 5 && !isset($_SESSION['usuario_id'])) {
             header("Location: vender.php?paso=4&show_auth=true");
             exit();
         }
-        
         header("Location: vender.php?paso=" . $siguiente);
         exit();
     }
     
-    // ========================================
-    // CONFIRMAR Y PUBLICAR
-    // ========================================
+    // Confirmar
     if (isset($_POST['confirmar'])) {
         if (!isset($_SESSION['usuario_id'])) {
             $_SESSION['errores'] = ['Debes iniciar sesión para publicar'];
@@ -229,7 +177,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
         
-        // Asegurar que las imágenes estén en el array
         if (isset($_POST['imagenes_guardadas'])) {
             $imagenes = json_decode($_POST['imagenes_guardadas'], true);
             if (is_array($imagenes)) {
@@ -242,7 +189,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($resultado['success']) {
             $_SESSION['ultima_propiedad_id'] = $resultado['property_id'];
             $_SESSION['mensaje_exito'] = '¡Propiedad publicada exitosamente!';
-            
             header("Location: vender_exito.php");
             exit();
         } else {
@@ -259,11 +205,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $data = $_SESSION['form_venta'];
 $errores = $_SESSION['errores'] ?? [];
 unset($_SESSION['errores']);
-$mensaje_exito = $_SESSION['mensaje_exito'] ?? '';
-unset($_SESSION['mensaje_exito']);
 $show_auth = isset($_GET['show_auth']) ? true : false;
 
-// Obtener datos del socio usando PDO
 $socio = null;
 if (isset($_SESSION['usuario_id'])) {
     try {
@@ -286,7 +229,6 @@ if (isset($_SESSION['usuario_id'])) {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        /* ===== ESTILOS PARA EL SISTEMA DE IMÁGENES ===== */
         .image-upload-container {
             border: 2px dashed #ddd;
             border-radius: 8px;
@@ -296,40 +238,33 @@ if (isset($_SESSION['usuario_id'])) {
             background: #fafafa;
             cursor: pointer;
         }
-        
         .image-upload-container:hover {
             border-color: #c9a84c;
             background: #f8f6f0;
         }
-        
         .image-upload-container.dragover {
             border-color: #c9a84c;
             background: #f0eddf;
             transform: scale(1.01);
         }
-        
         .image-upload-icon {
             font-size: 48px;
             color: #c9a84c;
             margin-bottom: 10px;
         }
-        
         .image-upload-text {
             color: #666;
             font-size: 14px;
         }
-        
         .image-upload-text strong {
             color: #1a1a2e;
         }
-        
         .image-preview-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
             gap: 12px;
             margin-top: 15px;
         }
-        
         .image-preview-item {
             position: relative;
             border-radius: 8px;
@@ -339,19 +274,16 @@ if (isset($_SESSION['usuario_id'])) {
             border: 2px solid #e0e0e0;
             transition: all 0.3s ease;
         }
-        
         .image-preview-item:hover {
             border-color: #c9a84c;
             transform: scale(1.02);
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
-        
         .image-preview-item img {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
-        
         .image-preview-item .remove-image {
             position: absolute;
             top: 5px;
@@ -371,16 +303,13 @@ if (isset($_SESSION['usuario_id'])) {
             opacity: 0;
             z-index: 5;
         }
-        
         .image-preview-item:hover .remove-image {
             opacity: 1;
         }
-        
         .image-preview-item .remove-image:hover {
             background: rgba(200, 0, 0, 0.9);
             transform: scale(1.1);
         }
-        
         .image-preview-item .image-number {
             position: absolute;
             bottom: 5px;
@@ -391,7 +320,6 @@ if (isset($_SESSION['usuario_id'])) {
             border-radius: 12px;
             font-size: 11px;
         }
-        
         .image-preview-item .image-main-badge {
             position: absolute;
             top: 5px;
@@ -404,12 +332,10 @@ if (isset($_SESSION['usuario_id'])) {
             font-weight: bold;
             z-index: 5;
         }
-        
         .upload-progress {
             display: none;
             margin-top: 15px;
         }
-        
         .upload-progress .progress-bar {
             width: 100%;
             height: 6px;
@@ -417,7 +343,6 @@ if (isset($_SESSION['usuario_id'])) {
             border-radius: 3px;
             overflow: hidden;
         }
-        
         .upload-progress .progress-bar .progress-fill {
             height: 100%;
             background: linear-gradient(90deg, #c9a84c, #e8c86a);
@@ -425,14 +350,12 @@ if (isset($_SESSION['usuario_id'])) {
             width: 0%;
             transition: width 0.5s ease;
         }
-        
         .upload-progress .progress-text {
             font-size: 12px;
             color: #666;
             margin-top: 5px;
             text-align: center;
         }
-        
         .resumen-card {
             background: white;
             border-radius: 12px;
@@ -440,28 +363,23 @@ if (isset($_SESSION['usuario_id'])) {
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
             margin-bottom: 20px;
         }
-        
         .resumen-item {
             display: flex;
             justify-content: space-between;
             padding: 10px 0;
             border-bottom: 1px solid #f0f0f0;
         }
-        
         .resumen-item:last-child {
             border-bottom: none;
         }
-        
         .resumen-item .label {
             color: #666;
             font-weight: 500;
         }
-        
         .resumen-item .value {
             color: #1a1a2e;
             font-weight: 600;
         }
-        
         .resumen-total {
             margin-top: 15px;
             padding-top: 15px;
@@ -471,7 +389,6 @@ if (isset($_SESSION['usuario_id'])) {
             font-weight: bold;
             color: #1a1a2e;
         }
-        
         .success-message {
             background: #d4edda;
             padding: 15px;
@@ -479,12 +396,10 @@ if (isset($_SESSION['usuario_id'])) {
             margin-bottom: 20px;
             border-left: 4px solid #28a745;
         }
-        
         .success-message p {
             margin: 0;
             color: #155724;
         }
-        
         .error-list {
             background: #f8d7da;
             padding: 15px;
@@ -492,33 +407,26 @@ if (isset($_SESSION['usuario_id'])) {
             margin-bottom: 20px;
             border-left: 4px solid #dc3545;
         }
-        
         .error-list ul {
             margin: 0;
             padding-left: 20px;
         }
-        
         .error-list li {
             color: #721c24;
         }
-        
         .btn-success {
             background: #28a745;
             color: white;
         }
-        
         .btn-success:hover {
             background: #218838;
         }
-
-        /* ===== ESTILOS PARA ACCESORIOS ===== */
         .accesorios-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
             gap: 12px;
             margin-top: 10px;
         }
-        
         .accesorio-item {
             display: flex;
             align-items: center;
@@ -530,34 +438,28 @@ if (isset($_SESSION['usuario_id'])) {
             transition: all 0.3s ease;
             cursor: pointer;
         }
-        
         .accesorio-item:hover {
             border-color: #c9a84c;
             background: #f8f6f0;
         }
-        
         .accesorio-item input[type="checkbox"] {
             width: 18px;
             height: 18px;
             accent-color: #c9a84c;
             cursor: pointer;
         }
-        
         .accesorio-item label {
             cursor: pointer;
             font-weight: 500;
             color: #333;
         }
-        
         .accesorio-item .accesorio-icon {
             color: #c9a84c;
             font-size: 18px;
         }
-        
         .accesorio-otro {
             grid-column: 1 / -1;
         }
-        
         .accesorio-otro input[type="text"] {
             flex: 1;
             padding: 8px 12px;
@@ -566,14 +468,11 @@ if (isset($_SESSION['usuario_id'])) {
             font-size: 14px;
             margin-left: 8px;
         }
-        
         .accesorio-otro input[type="text"]:focus {
             border-color: #c9a84c;
             outline: none;
             box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.1);
         }
-
-        /* ===== ESTILOS PARA SITUACIÓN FINANCIERA ===== */
         .conditional-group {
             padding: 15px 20px;
             background: #f8f8f8;
@@ -582,32 +481,26 @@ if (isset($_SESSION['usuario_id'])) {
             margin-bottom: 15px;
             border-left: 4px solid #c9a84c;
         }
-        
         .conditional-group.hidden {
             display: none;
         }
-        
         .radio-group-inline {
             display: flex;
             gap: 20px;
             margin-top: 5px;
         }
-        
         .radio-group-inline label {
             display: flex;
             align-items: center;
             gap: 6px;
             cursor: pointer;
         }
-
-        /* ===== ESTILOS PARA SERVICIOS MUNICIPALES ===== */
         .servicios-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
             gap: 15px;
             margin-top: 10px;
         }
-        
         .servicio-item {
             display: flex;
             flex-direction: column;
@@ -617,7 +510,6 @@ if (isset($_SESSION['usuario_id'])) {
             border-radius: 8px;
             border: 1px solid #e8e8e8;
         }
-        
         .servicio-item label {
             font-weight: 600;
             color: #333;
@@ -625,19 +517,15 @@ if (isset($_SESSION['usuario_id'])) {
             align-items: center;
             gap: 8px;
         }
-        
         .servicio-item .servicio-controls {
             display: flex;
             gap: 15px;
             flex-wrap: wrap;
         }
-        
         .servicio-item .servicio-controls label {
             font-weight: normal;
             font-size: 14px;
         }
-
-        /* ===== ESTILOS PARA SITUACIÓN LEGAL ===== */
         .legal-document-group {
             padding: 15px 20px;
             background: #f8f8f8;
@@ -645,21 +533,17 @@ if (isset($_SESSION['usuario_id'])) {
             margin-top: 10px;
             border-left: 4px solid #c9a84c;
         }
-        
         .legal-document-group .radio-group {
             display: flex;
             gap: 20px;
             margin-top: 5px;
         }
-        
         .legal-document-group .radio-group label {
             display: flex;
             align-items: center;
             gap: 6px;
             cursor: pointer;
         }
-
-        /* ===== ESTILOS PARA EL WIZARD ===== */
         .wizard-layout {
             display: flex;
             gap: 30px;
@@ -667,7 +551,6 @@ if (isset($_SESSION['usuario_id'])) {
             margin: 0 auto;
             padding: 20px;
         }
-        
         .progress-sidebar {
             flex: 0 0 220px;
             background: white;
@@ -678,7 +561,6 @@ if (isset($_SESSION['usuario_id'])) {
             position: sticky;
             top: 20px;
         }
-        
         .progress-sidebar h3 {
             color: #1a1a2e;
             font-size: 16px;
@@ -687,7 +569,6 @@ if (isset($_SESSION['usuario_id'])) {
             align-items: center;
             gap: 10px;
         }
-        
         .step {
             display: flex;
             align-items: center;
@@ -700,7 +581,6 @@ if (isset($_SESSION['usuario_id'])) {
             margin-bottom: 4px;
             cursor: default;
         }
-        
         .step .step-number {
             width: 30px;
             height: 30px;
@@ -715,27 +595,22 @@ if (isset($_SESSION['usuario_id'])) {
             flex-shrink: 0;
             transition: all 0.3s ease;
         }
-        
         .step.active {
             color: #1a1a2e;
             font-weight: 600;
             background: #f8f6f0;
         }
-        
         .step.active .step-number {
             background: #c9a84c;
             color: white;
         }
-        
         .step.completed .step-number {
             background: #28a745;
             color: white;
         }
-        
         .step.completed {
             color: #1a1a2e;
         }
-        
         .wizard-content {
             flex: 1;
             background: white;
@@ -743,23 +618,19 @@ if (isset($_SESSION['usuario_id'])) {
             padding: 30px 35px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
         }
-        
         .wizard-content h2 {
             color: #1a1a2e;
             font-size: 24px;
             margin-bottom: 5px;
         }
-        
         .wizard-content .subtitle {
             color: #888;
             margin-bottom: 25px;
             font-size: 14px;
         }
-        
         .form-group {
             margin-bottom: 20px;
         }
-        
         .form-group label {
             display: block;
             font-weight: 600;
@@ -767,11 +638,9 @@ if (isset($_SESSION['usuario_id'])) {
             margin-bottom: 6px;
             font-size: 14px;
         }
-        
         .form-group label .required {
             color: #dc3545;
         }
-        
         .form-group input,
         .form-group select,
         .form-group textarea {
@@ -783,7 +652,6 @@ if (isset($_SESSION['usuario_id'])) {
             transition: all 0.3s ease;
             font-family: inherit;
         }
-        
         .form-group input:focus,
         .form-group select:focus,
         .form-group textarea:focus {
@@ -791,24 +659,15 @@ if (isset($_SESSION['usuario_id'])) {
             outline: none;
             box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.1);
         }
-        
         .form-group textarea {
             min-height: 80px;
             resize: vertical;
         }
-        
         .form-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
         }
-        
-        .form-row-3 {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 20px;
-        }
-        
         .btn-group {
             display: flex;
             gap: 12px;
@@ -817,7 +676,6 @@ if (isset($_SESSION['usuario_id'])) {
             border-top: 1px solid #e8e8e8;
             flex-wrap: wrap;
         }
-        
         .btn {
             padding: 10px 28px;
             border-radius: 8px;
@@ -831,39 +689,31 @@ if (isset($_SESSION['usuario_id'])) {
             align-items: center;
             gap: 8px;
         }
-        
         .btn-dorado {
             background: #c9a84c;
             color: white;
         }
-        
         .btn-dorado:hover {
             background: #b8963a;
             transform: translateY(-2px);
             box-shadow: 0 4px 12px rgba(201, 168, 76, 0.3);
         }
-        
         .btn-secondary {
             background: #e8e8e8;
             color: #333;
         }
-        
         .btn-secondary:hover {
             background: #d5d5d5;
         }
-        
         .btn-success {
             background: #28a745;
             color: white;
         }
-        
         .btn-success:hover {
             background: #218838;
             transform: translateY(-2px);
             box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
         }
-
-        /* ===== MODAL DE AUTENTICACIÓN ===== */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -876,7 +726,6 @@ if (isset($_SESSION['usuario_id'])) {
             align-items: center;
             justify-content: center;
         }
-        
         .modal-content {
             background: white;
             border-radius: 16px;
@@ -887,31 +736,21 @@ if (isset($_SESSION['usuario_id'])) {
             overflow-y: auto;
             animation: modalFadeIn 0.3s ease;
         }
-        
         @keyframes modalFadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(-20px) scale(0.95);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
+            from { opacity: 0; transform: translateY(-20px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
         }
-        
         .modal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
         }
-        
         .modal-header h2 {
             font-size: 22px;
             color: #1a1a2e;
             margin: 0;
         }
-        
         .modal-close {
             background: none;
             border: none;
@@ -921,18 +760,15 @@ if (isset($_SESSION['usuario_id'])) {
             transition: all 0.3s ease;
             padding: 0 5px;
         }
-        
         .modal-close:hover {
             color: #333;
             transform: rotate(90deg);
         }
-        
         .auth-tabs {
             display: flex;
             border-bottom: 2px solid #e8e8e8;
             margin-bottom: 20px;
         }
-        
         .auth-tab {
             padding: 10px 20px;
             background: none;
@@ -945,24 +781,19 @@ if (isset($_SESSION['usuario_id'])) {
             border-bottom: 3px solid transparent;
             margin-bottom: -2px;
         }
-        
         .auth-tab.active {
             color: #c9a84c;
             border-bottom-color: #c9a84c;
         }
-        
         .auth-tab:hover {
             color: #c9a84c;
         }
-        
         .auth-panel {
             display: none;
         }
-        
         .auth-panel.active {
             display: block;
         }
-        
         .btn-auth {
             width: 100%;
             padding: 12px;
@@ -974,31 +805,22 @@ if (isset($_SESSION['usuario_id'])) {
             transition: all 0.3s ease;
             margin-top: 10px;
         }
-        
         .btn-login {
             background: #c9a84c;
             color: white;
         }
-        
         .btn-login:hover {
             background: #b8963a;
         }
-        
         .btn-register {
             background: #1a1a2e;
             color: white;
         }
-        
         .btn-register:hover {
             background: #2a2a4e;
         }
-
-        /* ===== RESPONSIVE ===== */
         @media (max-width: 992px) {
-            .wizard-layout {
-                flex-direction: column;
-            }
-            
+            .wizard-layout { flex-direction: column; }
             .progress-sidebar {
                 flex: none;
                 position: static;
@@ -1007,51 +829,17 @@ if (isset($_SESSION['usuario_id'])) {
                 gap: 5px;
                 padding: 15px;
             }
-            
-            .progress-sidebar h3 {
-                grid-column: 1 / -1;
-                margin-bottom: 5px;
-            }
-            
-            .step {
-                padding: 8px 12px;
-                font-size: 12px;
-                margin-bottom: 0;
-            }
-            
-            .step .step-number {
-                width: 24px;
-                height: 24px;
-                font-size: 11px;
-            }
-            
-            .wizard-content {
-                padding: 20px;
-            }
+            .progress-sidebar h3 { grid-column: 1 / -1; margin-bottom: 5px; }
+            .step { padding: 8px 12px; font-size: 12px; margin-bottom: 0; }
+            .step .step-number { width: 24px; height: 24px; font-size: 11px; }
+            .wizard-content { padding: 20px; }
         }
-        
         @media (max-width: 768px) {
-            .form-row,
-            .form-row-3 {
-                grid-template-columns: 1fr;
-            }
-            
-            .accesorios-grid {
-                grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-            }
-            
-            .servicios-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .btn-group {
-                flex-direction: column;
-            }
-            
-            .btn-group .btn {
-                width: 100%;
-                justify-content: center;
-            }
+            .form-row { grid-template-columns: 1fr; }
+            .accesorios-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+            .servicios-grid { grid-template-columns: 1fr; }
+            .btn-group { flex-direction: column; }
+            .btn-group .btn { width: 100%; justify-content: center; }
         }
     </style>
 </head>
@@ -1059,7 +847,6 @@ if (isset($_SESSION['usuario_id'])) {
 
 <?php include 'sidebar.php'; ?>
 
-<!-- ===== MAIN CONTENT ===== -->
 <main class="main-content">
     <div class="main-header">
         <div class="header-left">
@@ -1078,50 +865,32 @@ if (isset($_SESSION['usuario_id'])) {
         </div>
     </div>
 
-    <!-- ===== WIZARD LAYOUT ===== -->
     <div class="wizard-layout">
-        <!-- Sidebar de progreso -->
         <aside class="progress-sidebar">
             <h3><i class="fas fa-tasks"></i> Progreso</h3>
-            
             <div class="step <?php echo $paso >= 1 ? 'active' : ''; ?> <?php echo $paso > 1 ? 'completed' : ''; ?>" data-step="1">
-                <span class="step-number"><span>1</span></span>
-                Datos Básicos
+                <span class="step-number"><span>1</span></span> Datos Básicos
             </div>
-            
             <div class="step <?php echo $paso >= 2 ? 'active' : ''; ?> <?php echo $paso > 2 ? 'completed' : ''; ?>" data-step="2">
-                <span class="step-number"><span>2</span></span>
-                Detalles
+                <span class="step-number"><span>2</span></span> Detalles
             </div>
-            
             <div class="step <?php echo $paso >= 3 ? 'active' : ''; ?> <?php echo $paso > 3 ? 'completed' : ''; ?>" data-step="3">
-                <span class="step-number"><span>3</span></span>
-                Financiero
+                <span class="step-number"><span>3</span></span> Financiero
             </div>
-            
             <div class="step <?php echo $paso >= 4 ? 'active' : ''; ?> <?php echo $paso > 4 ? 'completed' : ''; ?>" data-step="4">
-                <span class="step-number"><span>4</span></span>
-                Legal
+                <span class="step-number"><span>4</span></span> Legal
             </div>
-            
             <div class="step <?php echo $paso >= 5 ? 'active' : ''; ?> <?php echo $paso > 5 ? 'completed' : ''; ?>" data-step="5">
-                <span class="step-number"><span>5</span></span>
-                Confirmar
+                <span class="step-number"><span>5</span></span> Confirmar
             </div>
         </aside>
 
-        <!-- Contenido del wizard -->
         <div class="wizard-content">
             <?php if (isset($_GET['login']) && $_GET['login'] == 'success'): ?>
-                <div class="success-message">
-                    <p>✅ ¡Sesión iniciada correctamente! Ahora puedes publicar tu propiedad.</p>
-                </div>
+                <div class="success-message"><p>✅ ¡Sesión iniciada correctamente! Ahora puedes publicar tu propiedad.</p></div>
             <?php endif; ?>
-            
             <?php if (isset($_GET['register']) && $_GET['register'] == 'success'): ?>
-                <div class="success-message">
-                    <p>✅ ¡Registro exitoso! Ahora puedes publicar tu propiedad.</p>
-                </div>
+                <div class="success-message"><p>✅ ¡Registro exitoso! Ahora puedes publicar tu propiedad.</p></div>
             <?php endif; ?>
             
             <form method="POST" id="wizardForm" enctype="multipart/form-data" action="">
@@ -1138,28 +907,18 @@ if (isset($_SESSION['usuario_id'])) {
                     </div>
                 <?php endif; ?>
 
-                <!-- ======================================== -->
-                <!-- PASO 1: Datos Básicos -->
-                <!-- ======================================== -->
                 <?php if ($paso == 1): ?>
                     <h2>🏠 Datos Básicos</h2>
                     <p class="subtitle">Cuéntanos sobre tu propiedad</p>
-
                     <div class="form-group">
                         <label for="titulo">Título de la Propiedad <span class="required">*</span></label>
-                        <input type="text" id="titulo" name="titulo" 
-                               value="<?php echo htmlspecialchars($data['titulo'] ?? ''); ?>" 
-                               placeholder="Ej: Hermosa casa en zona residencial" required>
+                        <input type="text" id="titulo" name="titulo" value="<?php echo htmlspecialchars($data['titulo'] ?? ''); ?>" placeholder="Ej: Hermosa casa en zona residencial" required>
                     </div>
-
                     <div class="form-row">
                         <div class="form-group">
                             <label for="precio">Precio (USD) <span class="required">*</span></label>
-                            <input type="number" id="precio" name="precio" 
-                                   value="<?php echo htmlspecialchars($data['precio'] ?? ''); ?>" 
-                                   placeholder="0.00" min="0" step="0.01" required>
+                            <input type="number" id="precio" name="precio" value="<?php echo htmlspecialchars($data['precio'] ?? ''); ?>" placeholder="0.00" min="0" step="0.01" required>
                         </div>
-
                         <div class="form-group">
                             <label for="tipo_operacion">Tipo de Operación <span class="required">*</span></label>
                             <select id="tipo_operacion" name="tipo_operacion" required>
@@ -1169,8 +928,6 @@ if (isset($_SESSION['usuario_id'])) {
                             </select>
                         </div>
                     </div>
-
-                    <!-- ===== TIPO DE VIVIENDA ===== -->
                     <div class="form-group">
                         <label for="tipo_vivienda">Tipo de Vivienda <span class="required">*</span></label>
                         <select id="tipo_vivienda" name="tipo_vivienda" required>
@@ -1181,8 +938,6 @@ if (isset($_SESSION['usuario_id'])) {
                             <option value="local" <?php echo (isset($data['tipo_vivienda']) && $data['tipo_vivienda'] == 'local') ? 'selected' : ''; ?>>Local Comercial</option>
                         </select>
                     </div>
-
-                    <!-- ===== SUBTIPOS DE CASA ===== -->
                     <div id="casa_options" class="conditional-group <?php echo (isset($data['tipo_vivienda']) && $data['tipo_vivienda'] == 'casa') ? '' : 'hidden'; ?>">
                         <div class="form-group">
                             <label for="tipo_casa">Tipo de Casa <span class="required">*</span></label>
@@ -1193,8 +948,6 @@ if (isset($_SESSION['usuario_id'])) {
                                 <option value="duplex" <?php echo (isset($data['tipo_casa']) && $data['tipo_casa'] == 'duplex') ? 'selected' : ''; ?>>Dúplex</option>
                             </select>
                         </div>
-
-                        <!-- Nivel para Dúplex -->
                         <div id="nivel_duplex_group" class="conditional-group <?php echo (isset($data['tipo_casa']) && $data['tipo_casa'] == 'duplex') ? '' : 'hidden'; ?>">
                             <div class="form-group">
                                 <label for="nivel_duplex">Nivel del Dúplex <span class="required">*</span></label>
@@ -1206,86 +959,56 @@ if (isset($_SESSION['usuario_id'])) {
                             </div>
                         </div>
                     </div>
-
-                    <!-- ===== NIVEL PARA DEPARTAMENTO ===== -->
                     <div id="departamento_options" class="conditional-group <?php echo (isset($data['tipo_vivienda']) && $data['tipo_vivienda'] == 'departamento') ? '' : 'hidden'; ?>">
                         <div class="form-group">
                             <label for="nivel_departamento">Nivel del Departamento <span class="required">*</span></label>
-                            <input type="text" id="nivel_departamento" name="nivel_departamento" 
-                                   value="<?php echo htmlspecialchars($data['nivel_departamento'] ?? ''); ?>" 
-                                   placeholder="Ej: Planta baja, 1er nivel, 3er nivel...">
+                            <input type="text" id="nivel_departamento" name="nivel_departamento" value="<?php echo htmlspecialchars($data['nivel_departamento'] ?? ''); ?>" placeholder="Ej: Planta baja, 1er nivel, 3er nivel...">
                         </div>
                     </div>
-
                     <div class="form-group">
                         <label for="descripcion">Descripción Breve</label>
-                        <textarea id="descripcion" name="descripcion" 
-                                  placeholder="Describe tu propiedad en pocas palabras"><?php echo htmlspecialchars($data['descripcion'] ?? ''); ?></textarea>
+                        <textarea id="descripcion" name="descripcion" placeholder="Describe tu propiedad en pocas palabras"><?php echo htmlspecialchars($data['descripcion'] ?? ''); ?></textarea>
                     </div>
-
                     <div class="btn-group">
-                        <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="2">
-                            Siguiente <i class="fas fa-arrow-right"></i>
-                        </button>
+                        <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="2">Siguiente <i class="fas fa-arrow-right"></i></button>
                     </div>
 
-                <!-- ======================================== -->
-                <!-- PASO 2: Detalles -->
-                <!-- ======================================== -->
                 <?php elseif ($paso == 2): ?>
                     <h2>📐 Detalles de la Propiedad</h2>
                     <p class="subtitle">Especifica las características principales</p>
-
                     <div class="form-row">
                         <div class="form-group">
                             <label for="m2">Metros Cuadrados <span class="required">*</span></label>
-                            <input type="number" id="m2" name="m2" 
-                                   value="<?php echo htmlspecialchars($data['m2'] ?? ''); ?>" 
-                                   placeholder="m²" min="1" required>
+                            <input type="number" id="m2" name="m2" value="<?php echo htmlspecialchars($data['m2'] ?? ''); ?>" placeholder="m²" min="1" required>
                         </div>
-
                         <div class="form-group">
                             <label for="recamaras">Número de Recámaras <span class="required">*</span></label>
-                            <input type="number" id="recamaras" name="recamaras" 
-                                   value="<?php echo htmlspecialchars($data['recamaras'] ?? ''); ?>" 
-                                   placeholder="Ej: 3" min="0" max="20" required>
+                            <input type="number" id="recamaras" name="recamaras" value="<?php echo htmlspecialchars($data['recamaras'] ?? ''); ?>" placeholder="Ej: 3" min="0" max="20" required>
                         </div>
                     </div>
-
                     <div class="form-row">
                         <div class="form-group">
                             <label for="banos">Baños</label>
-                            <input type="number" id="banos" name="banos" 
-                                   value="<?php echo htmlspecialchars($data['banos'] ?? ''); ?>" 
-                                   placeholder="Ej: 2" min="0" max="10">
+                            <input type="number" id="banos" name="banos" value="<?php echo htmlspecialchars($data['banos'] ?? ''); ?>" placeholder="Ej: 2" min="0" max="10">
                         </div>
-
                         <div class="form-group">
                             <label for="estacionamiento">Estacionamientos</label>
-                            <input type="number" id="estacionamiento" name="estacionamiento" 
-                                   value="<?php echo htmlspecialchars($data['estacionamiento'] ?? ''); ?>" 
-                                   placeholder="Ej: 2" min="0" max="10">
+                            <input type="number" id="estacionamiento" name="estacionamiento" value="<?php echo htmlspecialchars($data['estacionamiento'] ?? ''); ?>" placeholder="Ej: 2" min="0" max="10">
                         </div>
                     </div>
-
                     <div class="form-group">
                         <label for="ubicacion">Ubicación <span class="required">*</span></label>
-                        <input type="text" id="ubicacion" name="ubicacion" 
-                               value="<?php echo htmlspecialchars($data['ubicacion'] ?? ''); ?>" 
-                               placeholder="Ciudad, colonia, calle" required>
+                        <input type="text" id="ubicacion" name="ubicacion" value="<?php echo htmlspecialchars($data['ubicacion'] ?? ''); ?>" placeholder="Ciudad, colonia, calle" required>
                     </div>
-
-                    <!-- ===== ACCESORIOS ===== -->
+                    
+                    <!-- ACCESORIOS -->
                     <div class="form-group">
                         <label>Accesorios de la Propiedad</label>
                         <p style="font-size: 13px; color: #888; margin-bottom: 10px;">Selecciona los accesorios que incluye la propiedad</p>
-                        
                         <div class="accesorios-grid">
                             <?php foreach ($accesorios_disponibles as $accesorio): ?>
                                 <div class="accesorio-item">
-                                    <input type="checkbox" id="acc_<?php echo $accesorio['id']; ?>" 
-                                           name="accesorios[]" value="<?php echo $accesorio['id']; ?>"
-                                           <?php echo (isset($data['accesorios']) && in_array($accesorio['id'], $data['accesorios'])) ? 'checked' : ''; ?>>
+                                    <input type="checkbox" id="acc_<?php echo $accesorio['id']; ?>" name="accesorios[]" value="<?php echo $accesorio['id']; ?>" <?php echo (isset($data['accesorios']) && in_array($accesorio['id'], $data['accesorios'])) ? 'checked' : ''; ?>>
                                     <label for="acc_<?php echo $accesorio['id']; ?>">
                                         <?php if (!empty($accesorio['icono'])): ?>
                                             <i class="<?php echo htmlspecialchars($accesorio['icono']); ?> accesorio-icon"></i>
@@ -1294,60 +1017,35 @@ if (isset($_SESSION['usuario_id'])) {
                                     </label>
                                 </div>
                             <?php endforeach; ?>
-                            
-                            <!-- Opción "Otro" -->
                             <div class="accesorio-item accesorio-otro">
-                                <input type="checkbox" id="acc_otro" name="accesorios_otro_check" 
-                                       <?php echo isset($data['accesorio_otro']) ? 'checked' : ''; ?>>
-                                <label for="acc_otro">
-                                    <i class="fas fa-plus-circle accesorio-icon"></i>
-                                    Otro
-                                </label>
-                                <input type="text" id="accesorio_otro_input" name="accesorio_otro" 
-                                       value="<?php echo htmlspecialchars($data['accesorio_otro'] ?? ''); ?>" 
-                                       placeholder="Especificar..." 
-                                       <?php echo isset($data['accesorio_otro']) ? '' : 'disabled'; ?>>
+                                <input type="checkbox" id="acc_otro" name="accesorios_otro_check" <?php echo isset($data['accesorio_otro']) ? 'checked' : ''; ?>>
+                                <label for="acc_otro"><i class="fas fa-plus-circle accesorio-icon"></i> Otro</label>
+                                <input type="text" id="accesorio_otro_input" name="accesorio_otro" value="<?php echo htmlspecialchars($data['accesorio_otro'] ?? ''); ?>" placeholder="Especificar..." <?php echo isset($data['accesorio_otro']) ? '' : 'disabled'; ?>>
                             </div>
                         </div>
                     </div>
 
-                    <!-- ======================================== -->
                     <!-- SISTEMA DE IMÁGENES -->
-                    <!-- ======================================== -->
                     <div class="form-group">
                         <label>Fotos de la Propiedad <span style="color: #666; font-weight: normal;">(máximo 10 fotos)</span></label>
                         <div class="image-upload-container" id="imageUploadContainer">
-                            <div class="image-upload-icon">
-                                <i class="fas fa-cloud-upload-alt"></i>
-                            </div>
-                            <div class="image-upload-text">
-                                <strong>Haz clic o arrastra</strong> tus imágenes aquí
-                            </div>
-                            <div style="font-size: 12px; color: #999; margin-top: 5px;">
-                                Formatos: JPG, PNG, GIF, WEBP • Tamaño máximo: 5MB por imagen
-                            </div>
+                            <div class="image-upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                            <div class="image-upload-text"><strong>Haz clic o arrastra</strong> tus imágenes aquí</div>
+                            <div style="font-size: 12px; color: #999; margin-top: 5px;">Formatos: JPG, PNG, GIF, WEBP • Tamaño máximo: 5MB por imagen</div>
                             <input type="file" id="fileInput" name="imagenes[]" multiple accept="image/*" style="display: none;">
                         </div>
-                        
                         <div class="upload-progress" id="uploadProgress">
-                            <div class="progress-bar">
-                                <div class="progress-fill" id="progressFill"></div>
-                            </div>
+                            <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
                             <div class="progress-text" id="progressText">Subiendo imágenes...</div>
                         </div>
-                        
                         <div class="image-preview-grid" id="imagePreviewGrid">
                             <?php if (!empty($data['imagenes'])): ?>
                                 <?php foreach ($data['imagenes'] as $index => $imagen): ?>
                                     <div class="image-preview-item" data-index="<?php echo $index; ?>">
                                         <img src="<?php echo htmlspecialchars($imagen); ?>" alt="Imagen <?php echo $index + 1; ?>">
-                                        <?php if ($index === 0): ?>
-                                            <span class="image-main-badge">Principal</span>
-                                        <?php endif; ?>
+                                        <?php if ($index === 0): ?><span class="image-main-badge">Principal</span><?php endif; ?>
                                         <span class="image-number"><?php echo $index + 1; ?></span>
-                                        <button type="button" class="remove-image" data-index="<?php echo $index; ?>">
-                                            <i class="fas fa-times"></i>
-                                        </button>
+                                        <button type="button" class="remove-image" data-index="<?php echo $index; ?>"><i class="fas fa-times"></i></button>
                                     </div>
                                 <?php endforeach; ?>
                             <?php endif; ?>
@@ -1356,19 +1054,12 @@ if (isset($_SESSION['usuario_id'])) {
 
                     <div class="btn-group">
                         <a href="?paso=1" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Atrás</a>
-                        <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="3">
-                            Siguiente <i class="fas fa-arrow-right"></i>
-                        </button>
+                        <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="3">Siguiente <i class="fas fa-arrow-right"></i></button>
                     </div>
 
-                <!-- ======================================== -->
-                <!-- PASO 3: Situación Financiera -->
-                <!-- ======================================== -->
                 <?php elseif ($paso == 3): ?>
                     <h2>💰 Situación Financiera</h2>
                     <p class="subtitle">Información sobre adeudos y situación financiera</p>
-
-                    <!-- ===== ADEUDOS / GRAVAMEN ===== -->
                     <div class="form-group">
                         <label>¿La propiedad tiene algún adeudo o gravamen?</label>
                         <div class="radio-group-inline">
@@ -1376,8 +1067,6 @@ if (isset($_SESSION['usuario_id'])) {
                             <label><input type="radio" name="tiene_adeudo" value="0" <?php echo (isset($data['tiene_adeudo']) && $data['tiene_adeudo'] == 0) ? 'checked' : ''; ?> <?php echo !isset($data['tiene_adeudo']) ? 'checked' : ''; ?> onchange="toggleAdeudo(this.value)"> No</label>
                         </div>
                     </div>
-
-                    <!-- ===== DETALLES DE ADEUDO ===== -->
                     <div id="adeudo_details" class="conditional-group <?php echo (isset($data['tiene_adeudo']) && $data['tiene_adeudo'] == 1) ? '' : 'hidden'; ?>">
                         <div class="form-group">
                             <label for="tipo_adeudo">Tipo de Adeudo <span class="required">*</span></label>
@@ -1389,29 +1078,21 @@ if (isset($_SESSION['usuario_id'])) {
                                 <option value="otros" <?php echo (isset($data['tipo_adeudo']) && $data['tipo_adeudo'] == 'otros') ? 'selected' : ''; ?>>Otros</option>
                             </select>
                         </div>
-
-                        <!-- ===== BANCO ===== -->
                         <div id="banco_group" class="conditional-group <?php echo (isset($data['tipo_adeudo']) && $data['tipo_adeudo'] == 'banco') ? '' : 'hidden'; ?>">
                             <div class="form-group">
                                 <label for="banco_id">Banco <span class="required">*</span></label>
                                 <select id="banco_id" name="banco_id">
                                     <option value="">Seleccionar banco</option>
                                     <?php foreach ($bancos_disponibles as $banco): ?>
-                                        <option value="<?php echo $banco['id']; ?>" <?php echo (isset($data['banco_id']) && $data['banco_id'] == $banco['id']) ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($banco['nombre']); ?>
-                                        </option>
+                                        <option value="<?php echo $banco['id']; ?>" <?php echo (isset($data['banco_id']) && $data['banco_id'] == $banco['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($banco['nombre']); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
                         </div>
-
                         <div class="form-group">
                             <label for="monto_adeudo">Monto Aproximado del Adeudo <span class="required">*</span></label>
-                            <input type="number" id="monto_adeudo" name="monto_adeudo" 
-                                   value="<?php echo htmlspecialchars($data['monto_adeudo'] ?? ''); ?>" 
-                                   placeholder="0.00" min="0" step="0.01">
+                            <input type="number" id="monto_adeudo" name="monto_adeudo" value="<?php echo htmlspecialchars($data['monto_adeudo'] ?? ''); ?>" placeholder="0.00" min="0" step="0.01">
                         </div>
-
                         <div class="form-group">
                             <label>Tipo de Adeudo sobre la Propiedad <span class="required">*</span></label>
                             <div class="radio-group-inline">
@@ -1419,22 +1100,16 @@ if (isset($_SESSION['usuario_id'])) {
                                 <label><input type="radio" name="tipo_adeudo_propiedad" value="compartido" <?php echo (isset($data['tipo_adeudo_propiedad']) && $data['tipo_adeudo_propiedad'] == 'compartido') ? 'checked' : ''; ?> onchange="toggleAdeudoCompartido(this.value)"> Compartido</label>
                             </div>
                         </div>
-
-                        <!-- ===== DETALLES DE ADEUDO COMPARTIDO ===== -->
                         <div id="adeudo_compartido_details" class="conditional-group <?php echo (isset($data['tipo_adeudo_propiedad']) && $data['tipo_adeudo_propiedad'] == 'compartido') ? '' : 'hidden'; ?>">
                             <div class="form-group">
                                 <label for="adeudo_compartido_detalles">Detalles del Adeudo Compartido</label>
-                                <textarea id="adeudo_compartido_detalles" name="adeudo_compartido_detalles" 
-                                          placeholder="Describe los detalles del adeudo compartido (ej: con quién se comparte, porcentaje, etc.)"><?php echo htmlspecialchars($data['adeudo_compartido_detalles'] ?? ''); ?></textarea>
+                                <textarea id="adeudo_compartido_detalles" name="adeudo_compartido_detalles" placeholder="Describe los detalles del adeudo compartido (ej: con quién se comparte, porcentaje, etc.)"><?php echo htmlspecialchars($data['adeudo_compartido_detalles'] ?? ''); ?></textarea>
                             </div>
                         </div>
                     </div>
-
-                    <!-- ===== SERVICIOS MUNICIPALES ===== -->
                     <div class="form-group" style="margin-top: 30px;">
                         <label>Servicios Municipales</label>
                         <p style="font-size: 13px; color: #888; margin-bottom: 10px;">Estado de los servicios de la propiedad</p>
-                        
                         <div class="servicios-grid">
                             <div class="servicio-item">
                                 <label><i class="fas fa-water"></i> Agua</label>
@@ -1446,7 +1121,6 @@ if (isset($_SESSION['usuario_id'])) {
                                     <label style="font-weight: normal; font-size: 13px;"><input type="checkbox" name="servicio_agua_adeudo" value="1" <?php echo (isset($data['servicio_agua_adeudo']) && $data['servicio_agua_adeudo'] == 1) ? 'checked' : ''; ?>> Con adeudo</label>
                                 </div>
                             </div>
-                            
                             <div class="servicio-item">
                                 <label><i class="fas fa-bolt"></i> Electricidad</label>
                                 <div class="servicio-controls">
@@ -1457,7 +1131,6 @@ if (isset($_SESSION['usuario_id'])) {
                                     <label style="font-weight: normal; font-size: 13px;"><input type="checkbox" name="servicio_luz_adeudo" value="1" <?php echo (isset($data['servicio_luz_adeudo']) && $data['servicio_luz_adeudo'] == 1) ? 'checked' : ''; ?>> Con adeudo</label>
                                 </div>
                             </div>
-                            
                             <div class="servicio-item">
                                 <label><i class="fas fa-fire"></i> Gas</label>
                                 <div class="servicio-controls">
@@ -1468,7 +1141,6 @@ if (isset($_SESSION['usuario_id'])) {
                                     <label style="font-weight: normal; font-size: 13px;"><input type="checkbox" name="servicio_gas_adeudo" value="1" <?php echo (isset($data['servicio_gas_adeudo']) && $data['servicio_gas_adeudo'] == 1) ? 'checked' : ''; ?>> Con adeudo</label>
                                 </div>
                             </div>
-                            
                             <div class="servicio-item">
                                 <label><i class="fas fa-wifi"></i> Internet / TV</label>
                                 <div class="servicio-controls">
@@ -1479,7 +1151,6 @@ if (isset($_SESSION['usuario_id'])) {
                                     <label style="font-weight: normal; font-size: 13px;"><input type="checkbox" name="servicio_internet_adeudo" value="1" <?php echo (isset($data['servicio_internet_adeudo']) && $data['servicio_internet_adeudo'] == 1) ? 'checked' : ''; ?>> Con adeudo</label>
                                 </div>
                             </div>
-                            
                             <div class="servicio-item">
                                 <label><i class="fas fa-trash-alt"></i> Recolección de Basura</label>
                                 <div class="servicio-controls">
@@ -1492,26 +1163,17 @@ if (isset($_SESSION['usuario_id'])) {
                             </div>
                         </div>
                     </div>
-
                     <div class="btn-group">
                         <a href="?paso=2" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Atrás</a>
-                        <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="4">
-                            Siguiente <i class="fas fa-arrow-right"></i>
-                        </button>
+                        <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="4">Siguiente <i class="fas fa-arrow-right"></i></button>
                     </div>
 
-                <!-- ======================================== -->
-                <!-- PASO 4: Situación Legal -->
-                <!-- ======================================== -->
                 <?php elseif ($paso == 4): ?>
                     <h2>⚖️ Situación Legal</h2>
                     <p class="subtitle">Información sobre la situación legal de la propiedad</p>
-
-                    <!-- ===== DOCUMENTOS EN PODER ===== -->
                     <div class="form-group">
                         <label>Documentos en su poder</label>
                         <p style="font-size: 13px; color: #888; margin-bottom: 10px;">Selecciona los documentos que tienes disponibles</p>
-                        
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                             <div class="legal-document-group">
                                 <div class="form-group" style="margin-bottom: 0;">
@@ -1522,7 +1184,6 @@ if (isset($_SESSION['usuario_id'])) {
                                     </div>
                                 </div>
                             </div>
-                            
                             <div class="legal-document-group">
                                 <div class="form-group" style="margin-bottom: 0;">
                                     <label style="font-weight: 600;">Testamento / Intestado</label>
@@ -1534,7 +1195,6 @@ if (isset($_SESSION['usuario_id'])) {
                             </div>
                         </div>
                     </div>
-
                     <div class="form-group">
                         <label for="legal_status">Estado Legal de la Propiedad</label>
                         <select id="legal_status" name="legal_status">
@@ -1545,340 +1205,155 @@ if (isset($_SESSION['usuario_id'])) {
                             <option value="otro" <?php echo (isset($data['legal_status']) && $data['legal_status'] == 'otro') ? 'selected' : ''; ?>>Otro</option>
                         </select>
                     </div>
-
                     <div class="form-group">
                         <label for="legal_status_notes">Notas sobre la situación legal</label>
-                        <textarea id="legal_status_notes" name="legal_status_notes" 
-                                  placeholder="Describe cualquier aspecto legal relevante (ej: situación de la escritura, detalles del intestado, etc.)"><?php echo htmlspecialchars($data['legal_status_notes'] ?? ''); ?></textarea>
+                        <textarea id="legal_status_notes" name="legal_status_notes" placeholder="Describe cualquier aspecto legal relevante (ej: situación de la escritura, detalles del intestado, etc.)"><?php echo htmlspecialchars($data['legal_status_notes'] ?? ''); ?></textarea>
                     </div>
-
                     <div class="btn-group">
                         <a href="?paso=3" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Atrás</a>
                         <?php if (isset($_SESSION['usuario_id'])): ?>
-                            <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="5">
-                                Siguiente <i class="fas fa-arrow-right"></i>
-                            </button>
+                            <button type="submit" class="btn btn-dorado" name="siguiente_paso" value="5">Siguiente <i class="fas fa-arrow-right"></i></button>
                         <?php else: ?>
-                            <button type="button" class="btn btn-dorado" id="btnOpenAuth">
-                                <i class="fas fa-lock"></i> Siguiente (Inicia sesión)
-                            </button>
+                            <button type="button" class="btn btn-dorado" id="btnOpenAuth"><i class="fas fa-lock"></i> Siguiente (Inicia sesión)</button>
                         <?php endif; ?>
                     </div>
 
-                <!-- ======================================== -->
-                <!-- PASO 5: Resumen Final -->
-                <!-- ======================================== -->
                 <?php elseif ($paso == 5): ?>
                     <h2>🔐 Resumen Final</h2>
                     <p class="subtitle">Revisa los datos y confirma la publicación</p>
-
                     <?php if (isset($_SESSION['usuario_id'])): ?>
                         <div style="background: #d4edda; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #28a745;">
-                            <p style="margin: 0; color: #155724;">
-                                ✅ Publicando como <strong><?php echo htmlspecialchars($_SESSION['usuario_nombre']); ?></strong>
-                                <?php if (isset($_SESSION['usuario_role'])): ?>
-                                    <span style="font-size: 12px; background: #155724; color: white; padding: 2px 10px; border-radius: 12px; margin-left: 10px;">
-                                        <?php 
-                                            $role_labels = [
-                                                'admin' => 'Administrador',
-                                                'vendedor' => 'Vendedor',
-                                                'socio' => 'Socio',
-                                                'inmobiliaria' => 'Inmobiliaria'
-                                            ];
-                                            echo $role_labels[$_SESSION['usuario_role']] ?? ucfirst($_SESSION['usuario_role']); 
-                                        ?>
-                                    </span>
-                                <?php endif; ?>
-                            </p>
+                            <p style="margin: 0; color: #155724;">✅ Publicando como <strong><?php echo htmlspecialchars($_SESSION['usuario_nombre']); ?></strong></p>
                         </div>
                     <?php else: ?>
                         <div style="background: #fff3cd; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #ffc107;">
-                            <p style="margin: 0; color: #856404;">
-                                ⚠️ Debes iniciar sesión para publicar. 
-                                <a href="?paso=4&show_auth=true" style="color: #1a1a2e; font-weight: 600;">Iniciar sesión</a>
-                            </p>
+                            <p style="margin: 0; color: #856404;">⚠️ Debes iniciar sesión para publicar. <a href="?paso=4&show_auth=true" style="color: #1a1a2e; font-weight: 600;">Iniciar sesión</a></p>
                         </div>
                     <?php endif; ?>
-
                     <div class="resumen-card">
                         <h4 style="margin-bottom: 1rem; color: #1a1a2e;">📋 Resumen de la Propiedad</h4>
-                        
-                        <div class="resumen-item">
-                            <span class="label">Título</span>
-                            <span class="value"><?php echo htmlspecialchars($data['titulo'] ?? 'No especificado'); ?></span>
-                        </div>
-                        
-                        <div class="resumen-item">
-                            <span class="label">Operación</span>
-                            <span class="value"><?php echo ucfirst(htmlspecialchars($data['tipo_operacion'] ?? 'No especificado')); ?></span>
-                        </div>
-                        
-                        <div class="resumen-item">
-                            <span class="label">Precio</span>
-                            <span class="value">$<?php echo number_format($data['precio'] ?? 0, 2); ?></span>
-                        </div>
-                        
-                        <div class="resumen-item">
-                            <span class="label">Tipo de Vivienda</span>
-                            <span class="value">
-                                <?php 
-                                    $tipos = [
-                                        'casa' => 'Casa',
-                                        'departamento' => 'Departamento',
-                                        'terreno' => 'Terreno',
-                                        'local' => 'Local Comercial'
-                                    ];
-                                    echo htmlspecialchars($tipos[$data['tipo_vivienda'] ?? ''] ?? $data['tipo_vivienda'] ?? 'No especificado');
-                                ?>
-                            </span>
-                        </div>
-                        
+                        <div class="resumen-item"><span class="label">Título</span><span class="value"><?php echo htmlspecialchars($data['titulo'] ?? 'No especificado'); ?></span></div>
+                        <div class="resumen-item"><span class="label">Operación</span><span class="value"><?php echo ucfirst(htmlspecialchars($data['tipo_operacion'] ?? 'No especificado')); ?></span></div>
+                        <div class="resumen-item"><span class="label">Precio</span><span class="value">$<?php echo number_format($data['precio'] ?? 0, 2); ?></span></div>
+                        <div class="resumen-item"><span class="label">Tipo de Vivienda</span><span class="value"><?php echo htmlspecialchars($tipos[$data['tipo_vivienda'] ?? ''] ?? $data['tipo_vivienda'] ?? 'No especificado'); ?></span></div>
                         <?php if (isset($data['tipo_casa']) && !empty($data['tipo_casa'])): ?>
-                            <div class="resumen-item">
-                                <span class="label">Tipo de Casa</span>
-                                <span class="value">
-                                    <?php 
-                                        $tipos_casa = [
-                                            'una_planta' => 'Una planta',
-                                            'dos_plantas' => 'Dos plantas',
-                                            'duplex' => 'Dúplex'
-                                        ];
-                                        echo htmlspecialchars($tipos_casa[$data['tipo_casa']] ?? $data['tipo_casa']);
-                                    ?>
-                                </span>
-                            </div>
+                            <div class="resumen-item"><span class="label">Tipo de Casa</span><span class="value"><?php echo htmlspecialchars($tipos_casa[$data['tipo_casa']] ?? $data['tipo_casa']); ?></span></div>
                         <?php endif; ?>
-                        
                         <?php if (isset($data['nivel_duplex']) && !empty($data['nivel_duplex'])): ?>
-                            <div class="resumen-item">
-                                <span class="label">Nivel del Dúplex</span>
-                                <span class="value">
-                                    <?php 
-                                        $niveles = [
-                                            'primer_nivel' => 'Primer Nivel',
-                                            'segundo_nivel' => 'Segundo Nivel'
-                                        ];
-                                        echo htmlspecialchars($niveles[$data['nivel_duplex']] ?? $data['nivel_duplex']);
-                                    ?>
-                                </span>
-                            </div>
+                            <div class="resumen-item"><span class="label">Nivel del Dúplex</span><span class="value"><?php echo htmlspecialchars($niveles[$data['nivel_duplex']] ?? $data['nivel_duplex']); ?></span></div>
                         <?php endif; ?>
-                        
                         <?php if (isset($data['nivel_departamento']) && !empty($data['nivel_departamento'])): ?>
-                            <div class="resumen-item">
-                                <span class="label">Nivel del Departamento</span>
-                                <span class="value"><?php echo htmlspecialchars($data['nivel_departamento']); ?></span>
-                            </div>
+                            <div class="resumen-item"><span class="label">Nivel del Departamento</span><span class="value"><?php echo htmlspecialchars($data['nivel_departamento']); ?></span></div>
                         <?php endif; ?>
-                        
-                        <div class="resumen-item">
-                            <span class="label">Metros Cuadrados</span>
-                            <span class="value"><?php echo htmlspecialchars($data['m2'] ?? 'No especificado'); ?> m²</span>
-                        </div>
-                        
-                        <div class="resumen-item">
-                            <span class="label">Recámaras</span>
-                            <span class="value"><?php echo htmlspecialchars($data['recamaras'] ?? 'No especificado'); ?></span>
-                        </div>
-                        
+                        <div class="resumen-item"><span class="label">Metros Cuadrados</span><span class="value"><?php echo htmlspecialchars($data['m2'] ?? 'No especificado'); ?> m²</span></div>
+                        <div class="resumen-item"><span class="label">Recámaras</span><span class="value"><?php echo htmlspecialchars($data['recamaras'] ?? 'No especificado'); ?></span></div>
                         <?php if (!empty($data['banos'])): ?>
-                            <div class="resumen-item">
-                                <span class="label">Baños</span>
-                                <span class="value"><?php echo htmlspecialchars($data['banos']); ?></span>
-                            </div>
+                            <div class="resumen-item"><span class="label">Baños</span><span class="value"><?php echo htmlspecialchars($data['banos']); ?></span></div>
                         <?php endif; ?>
-                        
                         <?php if (!empty($data['estacionamiento'])): ?>
-                            <div class="resumen-item">
-                                <span class="label">Estacionamientos</span>
-                                <span class="value"><?php echo htmlspecialchars($data['estacionamiento']); ?></span>
-                            </div>
+                            <div class="resumen-item"><span class="label">Estacionamientos</span><span class="value"><?php echo htmlspecialchars($data['estacionamiento']); ?></span></div>
                         <?php endif; ?>
-                        
                         <?php if (!empty($data['ubicacion'])): ?>
-                            <div class="resumen-item">
-                                <span class="label">Ubicación</span>
-                                <span class="value"><?php echo htmlspecialchars($data['ubicacion']); ?></span>
-                            </div>
+                            <div class="resumen-item"><span class="label">Ubicación</span><span class="value"><?php echo htmlspecialchars($data['ubicacion']); ?></span></div>
                         <?php endif; ?>
-                        
-                        <!-- Accesorios en el resumen -->
                         <?php if (!empty($data['accesorios']) || !empty($data['accesorio_otro'])): ?>
                             <div class="resumen-item">
                                 <span class="label">Accesorios</span>
-                                <span class="value">
-                                    <?php 
-                                        $nombres_accesorios = [];
-                                        foreach ($accesorios_disponibles as $acc) {
-                                            if (in_array($acc['id'], $data['accesorios'] ?? [])) {
-                                                $nombres_accesorios[] = $acc['nombre'];
-                                            }
-                                        }
-                                        if (!empty($data['accesorio_otro'])) {
-                                            $nombres_accesorios[] = $data['accesorio_otro'];
-                                        }
-                                        echo htmlspecialchars(implode(', ', $nombres_accesorios));
-                                    ?>
-                                </span>
+                                <span class="value"><?php 
+                                    $nombres = [];
+                                    foreach ($accesorios_disponibles as $acc) {
+                                        if (in_array($acc['id'], $data['accesorios'] ?? [])) $nombres[] = $acc['nombre'];
+                                    }
+                                    if (!empty($data['accesorio_otro'])) $nombres[] = $data['accesorio_otro'];
+                                    echo htmlspecialchars(implode(', ', $nombres));
+                                ?></span>
                             </div>
                         <?php endif; ?>
-                        
-                        <!-- Situación financiera en el resumen -->
                         <?php if (isset($data['tiene_adeudo']) && $data['tiene_adeudo'] == 1): ?>
-                            <div class="resumen-item" style="border-color: #ffc107;">
-                                <span class="label">⚠️ Adeudo</span>
-                                <span class="value" style="color: #dc3545;">Sí</span>
-                            </div>
+                            <div class="resumen-item" style="border-color: #ffc107;"><span class="label">⚠️ Adeudo</span><span class="value" style="color: #dc3545;">Sí</span></div>
                             <?php if (!empty($data['tipo_adeudo'])): ?>
-                                <div class="resumen-item">
-                                    <span class="label">Tipo de Adeudo</span>
-                                    <span class="value"><?php echo ucfirst(htmlspecialchars($data['tipo_adeudo'])); ?></span>
-                                </div>
+                                <div class="resumen-item"><span class="label">Tipo de Adeudo</span><span class="value"><?php echo ucfirst(htmlspecialchars($data['tipo_adeudo'])); ?></span></div>
                             <?php endif; ?>
                             <?php if (!empty($data['monto_adeudo'])): ?>
-                                <div class="resumen-item">
-                                    <span class="label">Monto</span>
-                                    <span class="value">$<?php echo number_format($data['monto_adeudo'], 2); ?></span>
-                                </div>
+                                <div class="resumen-item"><span class="label">Monto</span><span class="value">$<?php echo number_format($data['monto_adeudo'], 2); ?></span></div>
                             <?php endif; ?>
                             <?php if (!empty($data['tipo_adeudo_propiedad'])): ?>
-                                <div class="resumen-item">
-                                    <span class="label">Tipo de Adeudo</span>
-                                    <span class="value"><?php echo ucfirst(htmlspecialchars($data['tipo_adeudo_propiedad'])); ?></span>
-                                </div>
+                                <div class="resumen-item"><span class="label">Tipo de Adeudo</span><span class="value"><?php echo ucfirst(htmlspecialchars($data['tipo_adeudo_propiedad'])); ?></span></div>
                             <?php endif; ?>
                         <?php else: ?>
-                            <div class="resumen-item">
-                                <span class="label">Adeudos</span>
-                                <span class="value" style="color: #28a745;">Sin adeudos</span>
-                            </div>
+                            <div class="resumen-item"><span class="label">Adeudos</span><span class="value" style="color: #28a745;">Sin adeudos</span></div>
                         <?php endif; ?>
-                        
-                        <!-- Situación legal en el resumen -->
                         <?php if (isset($data['legal_status'])): ?>
-                            <div class="resumen-item">
-                                <span class="label">Estado Legal</span>
-                                <span class="value">
-                                    <?php 
-                                        $estados = [
-                                            'libre' => 'Libre de gravámenes',
-                                            'intestado' => 'Intestado',
-                                            'sucesion' => 'En proceso de sucesión',
-                                            'litigio' => 'En litigio',
-                                            'otro' => 'Otro'
-                                        ];
-                                        echo htmlspecialchars($estados[$data['legal_status']] ?? $data['legal_status']);
-                                    ?>
-                                </span>
-                            </div>
+                            <div class="resumen-item"><span class="label">Estado Legal</span><span class="value"><?php echo htmlspecialchars($estados[$data['legal_status']] ?? $data['legal_status']); ?></span></div>
                         <?php endif; ?>
-                        
                         <?php if (!empty($data['imagenes'])): ?>
-                            <div class="resumen-item">
-                                <span class="label">Imágenes</span>
-                                <span class="value"><?php echo count($data['imagenes']); ?> imágenes subidas</span>
-                            </div>
+                            <div class="resumen-item"><span class="label">Imágenes</span><span class="value"><?php echo count($data['imagenes']); ?> imágenes subidas</span></div>
                             <div style="display: flex; gap: 5px; margin-top: 10px; flex-wrap: wrap;">
                                 <?php foreach (array_slice($data['imagenes'], 0, 5) as $imagen): ?>
-                                    <img src="<?php echo htmlspecialchars($imagen); ?>" 
-                                         style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px; border: 1px solid #e0e0e0;">
+                                    <img src="<?php echo htmlspecialchars($imagen); ?>" style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px; border: 1px solid #e0e0e0;">
                                 <?php endforeach; ?>
                                 <?php if (count($data['imagenes']) > 5): ?>
-                                    <span style="display: flex; align-items: center; justify-content: center; width: 60px; height: 60px; background: #f5f5f5; border-radius: 4px; font-size: 12px; color: #666;">
-                                        +<?php echo count($data['imagenes']) - 5; ?>
-                                    </span>
+                                    <span style="display: flex; align-items: center; justify-content: center; width: 60px; height: 60px; background: #f5f5f5; border-radius: 4px; font-size: 12px; color: #666;">+<?php echo count($data['imagenes']) - 5; ?></span>
                                 <?php endif; ?>
                             </div>
                         <?php endif; ?>
-                        
-                        <div class="resumen-total">
-                            Total: $<?php echo number_format($data['precio'] ?? 0, 2); ?>
-                        </div>
+                        <div class="resumen-total">Total: $<?php echo number_format($data['precio'] ?? 0, 2); ?></div>
                     </div>
-
                     <div class="btn-group">
                         <a href="?paso=4" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Atrás</a>
                         <?php if (isset($_SESSION['usuario_id'])): ?>
-                            <button type="submit" class="btn btn-success" name="confirmar" value="1" id="btnPublicar">
-                                <i class="fas fa-check-circle"></i> Confirmar y Publicar
-                            </button>
+                            <button type="submit" class="btn btn-success" name="confirmar" value="1" id="btnPublicar"><i class="fas fa-check-circle"></i> Confirmar y Publicar</button>
                         <?php else: ?>
-                            <button type="button" class="btn btn-success" id="btnOpenAuthFromPaso5">
-                                <i class="fas fa-lock"></i> Iniciar sesión para publicar
-                            </button>
+                            <button type="button" class="btn btn-success" id="btnOpenAuthFromPaso5"><i class="fas fa-lock"></i> Iniciar sesión para publicar</button>
                         <?php endif; ?>
                     </div>
-
                 <?php endif; ?>
             </form>
         </div>
     </div>
 </main>
 
-<!-- ======================================== -->
 <!-- MODAL DE AUTENTICACIÓN -->
-<!-- ======================================== -->
 <div class="modal-overlay" id="authModal">
     <div class="modal-content">
         <div class="modal-header">
             <h2>🔐 Inicia sesión o regístrate</h2>
             <button class="modal-close" id="closeModal">&times;</button>
         </div>
-        
         <div class="auth-tabs">
             <button class="auth-tab active" data-tab="login">Iniciar Sesión</button>
             <button class="auth-tab" data-tab="register">Registrarse</button>
         </div>
-        
-        <!-- Login Panel -->
         <div class="auth-panel active" id="panelLogin">
             <form method="POST" action="">
                 <input type="hidden" name="paso_actual" value="<?php echo $paso; ?>">
-                
                 <div class="form-group">
                     <label for="modal_login_email">Correo Electrónico</label>
-                    <input type="email" id="modal_login_email" name="login_email" 
-                           placeholder="tu@email.com" required>
+                    <input type="email" id="modal_login_email" name="login_email" placeholder="tu@email.com" required>
                 </div>
-                
                 <div class="form-group">
                     <label for="modal_login_password">Contraseña</label>
-                    <input type="password" id="modal_login_password" name="login_password" 
-                           placeholder="••••••••" required>
+                    <input type="password" id="modal_login_password" name="login_password" placeholder="••••••••" required>
                 </div>
-                
-                <button type="submit" class="btn-auth btn-login">
-                    Iniciar Sesión
-                </button>
+                <button type="submit" class="btn-auth btn-login">Iniciar Sesión</button>
             </form>
         </div>
-        
-        <!-- Register Panel -->
         <div class="auth-panel" id="panelRegister">
             <form method="POST" action="">
                 <input type="hidden" name="paso_actual" value="<?php echo $paso; ?>">
-                
                 <div class="form-group">
                     <label for="modal_reg_nombre">Nombre Completo</label>
-                    <input type="text" id="modal_reg_nombre" name="reg_nombre" 
-                           placeholder="Tu nombre completo" required>
+                    <input type="text" id="modal_reg_nombre" name="reg_nombre" placeholder="Tu nombre completo" required>
                 </div>
-                
                 <div class="form-group">
                     <label for="modal_reg_email">Correo Electrónico</label>
-                    <input type="email" id="modal_reg_email" name="reg_email" 
-                           placeholder="tu@email.com" required>
+                    <input type="email" id="modal_reg_email" name="reg_email" placeholder="tu@email.com" required>
                 </div>
-                
                 <div class="form-group">
                     <label for="modal_reg_password">Contraseña</label>
-                    <input type="password" id="modal_reg_password" name="reg_password" 
-                           placeholder="Mínimo 6 caracteres" required minlength="6">
+                    <input type="password" id="modal_reg_password" name="reg_password" placeholder="Mínimo 6 caracteres" required minlength="6">
                 </div>
-                
-                <button type="submit" class="btn-auth btn-register">
-                    Crear Cuenta
-                </button>
+                <button type="submit" class="btn-auth btn-register">Crear Cuenta</button>
             </form>
         </div>
     </div>
@@ -1915,7 +1390,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // ========================================
-    // TIPO DE VIVIENDA - DROPDOWNS CONTEXTUALES
+    // TIPO DE VIVIENDA
     // ========================================
     const tipoVivienda = document.getElementById('tipo_vivienda');
     const casaOptions = document.getElementById('casa_options');
@@ -1924,71 +1399,45 @@ document.addEventListener('DOMContentLoaded', function() {
     const nivelDuplexGroup = document.getElementById('nivel_duplex_group');
 
     function toggleViviendaOptions() {
-        const selected = tipoVivienda.value;
-        
-        // Ocultar todos
-        if (casaOptions) casaOptions.classList.add('hidden');
-        if (departamentoOptions) departamentoOptions.classList.add('hidden');
-        
-        // Mostrar según selección
-        if (selected === 'casa') {
-            if (casaOptions) casaOptions.classList.remove('hidden');
-            toggleDuplexOptions();
-        } else if (selected === 'departamento') {
-            if (departamentoOptions) departamentoOptions.classList.remove('hidden');
-        }
+        const selected = tipoVivienda ? tipoVivienda.value : '';
+        if (casaOptions) casaOptions.classList.toggle('hidden', selected !== 'casa');
+        if (departamentoOptions) departamentoOptions.classList.toggle('hidden', selected !== 'departamento');
+        if (selected === 'casa') toggleDuplexOptions();
     }
 
     function toggleDuplexOptions() {
         if (tipoCasa && nivelDuplexGroup) {
-            if (tipoCasa.value === 'duplex') {
-                nivelDuplexGroup.classList.remove('hidden');
-            } else {
-                nivelDuplexGroup.classList.add('hidden');
-            }
+            nivelDuplexGroup.classList.toggle('hidden', tipoCasa.value !== 'duplex');
         }
     }
 
-    if (tipoVivienda) {
-        tipoVivienda.addEventListener('change', toggleViviendaOptions);
-    }
-    if (tipoCasa) {
-        tipoCasa.addEventListener('change', toggleDuplexOptions);
-    }
-
-    // Inicializar al cargar
+    if (tipoVivienda) tipoVivienda.addEventListener('change', toggleViviendaOptions);
+    if (tipoCasa) tipoCasa.addEventListener('change', toggleDuplexOptions);
     toggleViviendaOptions();
 
     // ========================================
-    // ADEUDOS - TOGGLE
+    // ADEUDOS
     // ========================================
-    function toggleAdeudo(value) {
+    window.toggleAdeudo = function(value) {
         const details = document.getElementById('adeudo_details');
-        if (details) {
-            details.classList.toggle('hidden', value != 1);
-        }
-    }
+        if (details) details.classList.toggle('hidden', value != 1);
+    };
 
-    function toggleAdeudoCompartido(value) {
+    window.toggleAdeudoCompartido = function(value) {
         const details = document.getElementById('adeudo_compartido_details');
-        if (details) {
-            details.classList.toggle('hidden', value != 'compartido');
-        }
-    }
+        if (details) details.classList.toggle('hidden', value != 'compartido');
+    };
 
-    // Tipo de adeudo - mostrar banco
     const tipoAdeudo = document.getElementById('tipo_adeudo');
     if (tipoAdeudo) {
         tipoAdeudo.addEventListener('change', function() {
             const bancoGroup = document.getElementById('banco_group');
-            if (bancoGroup) {
-                bancoGroup.classList.toggle('hidden', this.value !== 'banco');
-            }
+            if (bancoGroup) bancoGroup.classList.toggle('hidden', this.value !== 'banco');
         });
     }
 
     // ========================================
-    // ACCESORIOS - "OTRO" INPUT
+    // ACCESORIOS - "OTRO"
     // ========================================
     const accOtroCheck = document.getElementById('acc_otro');
     const accOtroInput = document.getElementById('accesorio_otro_input');
@@ -1996,16 +1445,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if (accOtroCheck && accOtroInput) {
         accOtroCheck.addEventListener('change', function() {
             accOtroInput.disabled = !this.checked;
-            if (!this.checked) {
-                accOtroInput.value = '';
-            } else {
-                accOtroInput.focus();
-            }
+            if (!this.checked) accOtroInput.value = '';
+            else accOtroInput.focus();
         });
     }
 
     // ========================================
-    // SISTEMA DE IMÁGENES
+    // SISTEMA DE IMÁGENES - CORREGIDO
     // ========================================
     const uploadContainer = document.getElementById('imageUploadContainer');
     const fileInput = document.getElementById('fileInput');
@@ -2024,12 +1470,22 @@ document.addEventListener('DOMContentLoaded', function() {
             imagenes = existentes;
             renderPreview();
         }
-    } catch (e) {}
+    } catch (e) {
+        console.error('Error al cargar imágenes:', e);
+    }
     
-    // Click en el contenedor
-    if (uploadContainer) {
+    // CLICK EN EL CONTENEDOR - SOLUCIÓN DEFINITIVA
+    if (uploadContainer && fileInput) {
         uploadContainer.addEventListener('click', function(e) {
-            if (e.target.tagName !== 'BUTTON' && !e.target.closest('.remove-image')) {
+            // Si el click es en el botón de eliminar, no hacer nada
+            if (e.target.closest('.remove-image')) return;
+            // Si el click es en el checkbox o label de "Otro", no hacer nada
+            if (e.target.closest('.accesorio-otro')) return;
+            // Si el click es en un input o label dentro del contenedor de accesorios, no hacer nada
+            if (e.target.closest('.accesorio-item')) return;
+            // Si el click es en el contenedor o en los iconos/textos, abrir selector
+            if (e.target.closest('#imageUploadContainer')) {
+                e.preventDefault();
                 fileInput.click();
             }
         });
@@ -2050,11 +1506,8 @@ document.addEventListener('DOMContentLoaded', function() {
         uploadContainer.addEventListener('drop', function(e) {
             e.preventDefault();
             this.classList.remove('dragover');
-            
             const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                processFiles(files);
-            }
+            if (files.length > 0) processFiles(files);
         });
     }
     
@@ -2068,7 +1521,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Procesar archivos
     function processFiles(files) {
         const maxFiles = 10;
         const maxSize = 5 * 1024 * 1024;
@@ -2085,13 +1537,11 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        if (progressContainer) {
-            progressContainer.style.display = 'block';
-        }
+        if (progressContainer) progressContainer.style.display = 'block';
         let processed = 0;
         const total = files.length;
         
-        Array.from(files).forEach((file, index) => {
+        Array.from(files).forEach((file) => {
             if (!allowedTypes.includes(file.type)) {
                 updateProgress(++processed, total, `Formato no soportado: ${file.name}`);
                 return;
@@ -2143,7 +1593,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function renderPreview() {
         if (!previewGrid) return;
         previewGrid.innerHTML = '';
-        
         if (imagenes.length === 0) return;
         
         imagenes.forEach((imagen, index) => {
@@ -2230,44 +1679,20 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     const btnOpenAuth = document.getElementById('btnOpenAuth');
-    if (btnOpenAuth) {
-        btnOpenAuth.addEventListener('click', function(e) {
-            e.preventDefault();
-            openAuthModal();
-        });
-    }
+    if (btnOpenAuth) btnOpenAuth.addEventListener('click', function(e) { e.preventDefault(); openAuthModal(); });
     
     const btnOpenAuthFromPaso5 = document.getElementById('btnOpenAuthFromPaso5');
-    if (btnOpenAuthFromPaso5) {
-        btnOpenAuthFromPaso5.addEventListener('click', function(e) {
-            e.preventDefault();
-            openAuthModal();
-        });
-    }
+    if (btnOpenAuthFromPaso5) btnOpenAuthFromPaso5.addEventListener('click', function(e) { e.preventDefault(); openAuthModal(); });
     
     const closeModalBtn = document.getElementById('closeModal');
-    if (closeModalBtn) {
-        closeModalBtn.addEventListener('click', closeAuthModal);
-    }
+    if (closeModalBtn) closeModalBtn.addEventListener('click', closeAuthModal);
     
     const authModal = document.getElementById('authModal');
-    if (authModal) {
-        authModal.addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeAuthModal();
-            }
-        });
-    }
+    if (authModal) authModal.addEventListener('click', function(e) { if (e.target === this) closeAuthModal(); });
     
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            closeAuthModal();
-        }
-    });
+    document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeAuthModal(); });
     
-    // ========================================
-    // TABS DEL MODAL
-    // ========================================
+    // Tabs del modal
     const tabs = document.querySelectorAll('.auth-tab');
     const panels = {
         login: document.getElementById('panelLogin'),
@@ -2278,12 +1703,9 @@ document.addEventListener('DOMContentLoaded', function() {
         tab.addEventListener('click', function() {
             tabs.forEach(t => t.classList.remove('active'));
             this.classList.add('active');
-            
             const tabName = this.dataset.tab;
             Object.keys(panels).forEach(key => {
-                if (panels[key]) {
-                    panels[key].classList.toggle('active', key === tabName);
-                }
+                if (panels[key]) panels[key].classList.toggle('active', key === tabName);
             });
         });
     });
@@ -2296,7 +1718,6 @@ document.addEventListener('DOMContentLoaded', function() {
         btnPublicar.addEventListener('click', function(e) {
             e.preventDefault();
             
-            // Validar que haya imágenes
             const imagenesActuales = JSON.parse(imagenesGuardadas.value || '[]');
             if (imagenesActuales.length === 0) {
                 Swal.fire({
@@ -2324,20 +1745,14 @@ document.addEventListener('DOMContentLoaded', function() {
                         title: 'Publicando propiedad...',
                         text: 'Por favor espera un momento',
                         allowOutsideClick: false,
-                        didOpen: () => {
-                            Swal.showLoading();
-                        }
+                        didOpen: () => { Swal.showLoading(); }
                     });
-                    
                     document.getElementById('wizardForm').submit();
                 }
             });
         });
     }
     
-    // ========================================
-    // ABRIR MODAL SI HAY ERRORES
-    // ========================================
     <?php if ($show_auth && !isset($_SESSION['usuario_id'])): ?>
         openAuthModal();
     <?php endif; ?>
