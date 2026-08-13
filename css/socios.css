@@ -104,6 +104,31 @@ body {
     margin-top: 5px;
 }
 
+.sidebar .home-link {
+    /* Reset y estructura */
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    
+    /* Estilo minimalista */
+    background: transparent;
+    color: #6b7280;
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    
+    /* Transición suave */
+    transition: all 0.2s ease;
+    
+    /* Posicionamiento */
+    margin: 4px 0;
+    cursor: pointer;
+}
+
+
 .sidebar nav a {
     display: flex;
     align-items: center;

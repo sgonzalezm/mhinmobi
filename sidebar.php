@@ -14,6 +14,11 @@
             <i class="fas fa-user-tag"></i>
             <?php echo $usuario ? (($usuario['activo'] ?? 1) ? 'Activo' : 'Inactivo') : 'No autenticado'; ?>
         </div>
+        <div class="home-link">
+            <a href="index.php">
+                <i class="fas fa-building"></i> Sitio Vera Terra 
+            </a>
+        </div>
     </div>
 
     <nav>

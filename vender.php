@@ -6,6 +6,21 @@ session_start();
 // ========================================
 require_once 'guardar_propiedad.php';
 require_once 'includes/conexion.php';
+require_once 'includes/auth.php';
+
+// Verificar autenticación
+if (!estaLogueado()) {
+    header('Location: login.php');
+    exit;
+}
+
+// Obtener datos del usuario
+$usuario = obtenerUsuarioActual($conn);
+if (!$usuario) {
+    cerrarSesion();
+    header('Location: login.php');
+    exit;
+}
 
 // Inicializar sesión
 if (!isset($_SESSION['form_venta'])) {

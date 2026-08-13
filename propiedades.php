@@ -1,3 +1,228 @@
+<?php
+// ============================================
+// propiedades_portal.php
+// Página pública de propiedades con datos de BD
+// ============================================
+
+session_start();
+require_once 'includes/conexion.php';
+
+// Configuración de paginación
+$itemsPorPagina = 6;
+$pagina_actual = isset($_GET['page']) ? intval($_GET['page']) : 1;
+if ($pagina_actual < 1) $pagina_actual = 1;
+
+// ===== OBTENER FILTROS =====
+$filtro_tipo = isset($_GET['tipo']) ? $_GET['tipo'] : 'all';
+$filtro_categoria = isset($_GET['categoria']) ? $_GET['categoria'] : 'all';
+$filtro_busqueda = isset($_GET['busqueda']) ? trim($_GET['busqueda']) : '';
+
+// ===== CONSTRUIR CONSULTA =====
+$where_conditions = [];
+$params = [];
+
+// Solo propiedades activas
+$where_conditions[] = "p.status = 'activo'";
+
+// Filtro por tipo de operación
+if ($filtro_tipo !== 'all' && in_array($filtro_tipo, ['venta', 'renta'])) {
+    $where_conditions[] = "p.operation_type = ?";
+    $params[] = $filtro_tipo;
+}
+
+// Filtro por categoría (mapeo a tipos de propiedad)
+if ($filtro_categoria !== 'all') {
+    $categoria_map = [
+        'residencial' => ['Casa', 'Departamento', 'Terreno'],
+        'corporativo' => ['Local comercial', 'Oficina', 'Nave industrial'],
+        'lujo' => ['Casa', 'Departamento']
+    ];
+    
+    if (isset($categoria_map[$filtro_categoria])) {
+        $placeholders = implode(',', array_fill(0, count($categoria_map[$filtro_categoria]), '?'));
+        $where_conditions[] = "p.property_type IN ($placeholders)";
+        $params = array_merge($params, $categoria_map[$filtro_categoria]);
+    }
+}
+
+// Búsqueda por ubicación o título
+if (!empty($filtro_busqueda)) {
+    $where_conditions[] = "(p.title LIKE ? OR p.address_city LIKE ? OR p.address_municipality LIKE ?)";
+    $search_param = '%' . $filtro_busqueda . '%';
+    $params[] = $search_param;
+    $params[] = $search_param;
+    $params[] = $search_param;
+}
+
+$where_clause = !empty($where_conditions) ? 'WHERE ' . implode(' AND ', $where_conditions) : '';
+
+// ===== CONSULTA PRINCIPAL CON FEATURING =====
+try {
+    // Contar total de propiedades (para paginación)
+    $count_sql = "
+        SELECT COUNT(DISTINCT p.id) as total
+        FROM properties p
+        LEFT JOIN property_details pd ON p.id = pd.property_id
+        LEFT JOIN property_financials pf ON p.id = pf.property_id
+        $where_clause
+    ";
+    $stmt = $conn->prepare($count_sql);
+    $stmt->execute($params);
+    $total_propiedades = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
+    $total_paginas = ceil($total_propiedades / $itemsPorPagina);
+    
+    // Asegurar página válida
+    if ($pagina_actual > $total_paginas && $total_paginas > 0) {
+        $pagina_actual = $total_paginas;
+    }
+    $offset = ($pagina_actual - 1) * $itemsPorPagina;
+    
+    // ===== CONSULTA DE PROPIEDADES CON FEATURING =====
+    $sql = "
+        SELECT 
+            p.id,
+            p.title,
+            p.operation_type,
+            p.address_city,
+            p.address_municipality,
+            p.status,
+            p.property_type,
+            p.created_at,
+            pd.square_meters,
+            pd.bedrooms,
+            pd.bathrooms,
+            pd.parking_spots,
+            pf.asking_price as price,
+            pf.min_acceptable_price,
+            pf.commission_percentage,
+            -- Featuring
+            f.id as featuring_id,
+            f.start_date as featuring_start,
+            f.end_date as featuring_end,
+            f.dias as featuring_dias,
+            f.status as featuring_status,
+            -- Imagen principal
+            (SELECT file_path FROM property_media 
+             WHERE property_id = p.id AND is_primary = 1 
+             ORDER BY sort_order ASC LIMIT 1) as imagen_principal,
+            -- Conteo de imágenes
+            (SELECT COUNT(*) FROM property_media WHERE property_id = p.id) as total_imagenes
+        FROM properties p
+        LEFT JOIN property_details pd ON p.id = pd.property_id
+        LEFT JOIN property_financials pf ON p.id = pf.property_id
+        LEFT JOIN property_featuring f ON p.id = f.property_id AND f.status = 'active'
+        $where_clause
+        GROUP BY p.id
+        ORDER BY 
+            -- Primero las que tienen featuring activo
+            CASE WHEN f.status = 'active' THEN 0 ELSE 1 END,
+            -- Luego por fecha de creación (más recientes primero)
+            p.created_at DESC
+        LIMIT ? OFFSET ?
+    ";
+    
+    $stmt = $conn->prepare($sql);
+    $params_paginacion = array_merge($params, [$itemsPorPagina, $offset]);
+    $stmt->execute($params_paginacion);
+    $propiedades = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+} catch (PDOException $e) {
+    error_log("Error en propiedades_portal: " . $e->getMessage());
+    $propiedades = [];
+    $total_paginas = 0;
+    $total_propiedades = 0;
+}
+
+// ===== FUNCIONES AUXILIARES =====
+function formatearPrecio($precio) {
+    if ($precio === null || $precio == 0) {
+        return 'Consultar precio';
+    }
+    return '$' . number_format(floatval($precio), 0, ',', '.');
+}
+
+function getTipoClase($tipo) {
+    return strtolower($tipo) === 'venta' ? 'venta' : 'renta';
+}
+
+function getTipoLabel($tipo) {
+    return strtolower($tipo) === 'venta' ? 'En Venta' : 'En Renta';
+}
+
+function getCategoriaIcon($property_type) {
+    $icons = [
+        'Casa' => 'fa-regular fa-house',
+        'Departamento' => 'fa-regular fa-building',
+        'Terreno' => 'fa-regular fa-map',
+        'Local comercial' => 'fa-regular fa-store',
+        'Oficina' => 'fa-regular fa-building-columns',
+        'Nave industrial' => 'fa-regular fa-warehouse'
+    ];
+    return $icons[$property_type] ?? 'fa-regular fa-building';
+}
+
+function getImagenUrl($imagen) {
+    if (empty($imagen)) {
+        return 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=600&q=80';
+    }
+    // Si ya tiene la ruta completa
+    if (strpos($imagen, 'uploads/') === 0) {
+        return htmlspecialchars($imagen);
+    }
+    return 'uploads/propiedades/' . htmlspecialchars($imagen);
+}
+
+function getUbicacionCompleta($propiedad) {
+    $parts = [];
+    if (!empty($propiedad['address_municipality'])) {
+        $parts[] = $propiedad['address_municipality'];
+    }
+    if (!empty($propiedad['address_city'])) {
+        $parts[] = $propiedad['address_city'];
+    }
+    return !empty($parts) ? implode(', ', $parts) : 'Ubicación no especificada';
+}
+
+function tieneFeaturing($propiedad) {
+    return !empty($propiedad['featuring_id']) && $propiedad['featuring_status'] === 'active';
+}
+
+function getDiasRestantesFeaturing($propiedad) {
+    if (!tieneFeaturing($propiedad)) return 0;
+    $end = strtotime($propiedad['featuring_end']);
+    $now = time();
+    return max(0, ceil(($end - $now) / 86400));
+}
+
+// ===== OBTENER CATEGORÍAS DISPONIBLES PARA FILTROS =====
+$categorias_disponibles = [];
+try {
+    $stmt = $conn->prepare("
+        SELECT DISTINCT property_type 
+        FROM properties 
+        WHERE status = 'activo' AND property_type IS NOT NULL AND property_type != ''
+    ");
+    $stmt->execute();
+    $tipos = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    foreach ($tipos as $tipo) {
+        if (in_array($tipo, ['Casa', 'Departamento', 'Terreno'])) {
+            $categorias_disponibles['residencial'][] = $tipo;
+        } elseif (in_array($tipo, ['Local comercial', 'Oficina', 'Nave industrial'])) {
+            $categorias_disponibles['corporativo'][] = $tipo;
+        } elseif (in_array($tipo, ['Casa', 'Departamento'])) {
+            $categorias_disponibles['lujo'][] = $tipo;
+        }
+    }
+} catch (PDOException $e) {
+    // Si hay error, usar categorías por defecto
+    $categorias_disponibles = [
+        'residencial' => ['Casa', 'Departamento', 'Terreno'],
+        'corporativo' => ['Local comercial', 'Oficina', 'Nave industrial'],
+        'lujo' => ['Casa', 'Departamento']
+    ];
+}
+?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -299,11 +524,60 @@
             border: 1px solid rgba(197, 160, 89, 0.12);
             display: flex;
             flex-direction: column;
+            position: relative;
         }
 
         .property-card:hover {
             transform: translateY(-6px);
             box-shadow: 0 15px 40px rgba(11, 31, 58, 0.12);
+        }
+
+        /* ===== FEATURING BADGE ===== */
+        .property-card.featured {
+            border: 2px solid var(--gold);
+            box-shadow: 0 8px 30px rgba(197, 160, 89, 0.2);
+        }
+
+        .property-card.featured::before {
+            content: '⭐ DESTACADA';
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 10;
+            background: var(--gold);
+            color: #fff;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 10px rgba(197, 160, 89, 0.3);
+        }
+
+        .property-card.featured .property-img-container::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(to bottom, rgba(197, 160, 89, 0.1), transparent);
+            pointer-events: none;
+        }
+
+        .featuring-countdown {
+            position: absolute;
+            bottom: 14px;
+            right: 14px;
+            background: rgba(11, 31, 58, 0.85);
+            color: var(--gold);
+            padding: 3px 12px;
+            border-radius: 20px;
+            font-size: 0.6rem;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            border: 1px solid var(--gold);
+            z-index: 5;
         }
 
         .property-img-container {
@@ -338,6 +612,7 @@
             justify-content: center;
             font-size: 0.8rem;
             border: 1px solid var(--gold);
+            z-index: 5;
         }
 
         .property-status {
@@ -352,6 +627,7 @@
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            z-index: 5;
         }
 
         .property-status.venta {
@@ -442,34 +718,45 @@
             flex-wrap: wrap;
         }
 
-        .pagination button {
+        .pagination a,
+        .pagination span {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             padding: 10px 16px;
             border: 1px solid #ddd;
             background: #fff;
             border-radius: 8px;
-            cursor: pointer;
             transition: all var(--transition);
             font-family: 'Montserrat', sans-serif;
             font-weight: 500;
             font-size: 0.85rem;
             color: var(--text-dark);
             min-width: 44px;
+            cursor: pointer;
         }
 
-        .pagination button:hover {
+        .pagination a:hover {
             border-color: var(--gold);
             color: var(--gold);
         }
 
-        .pagination button.active {
+        .pagination a.active {
             background: var(--gold);
             color: #fff;
             border-color: var(--gold);
         }
 
-        .pagination button:disabled {
+        .pagination a.disabled {
             opacity: 0.4;
             cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .pagination .ellipsis {
+            border: none;
+            background: transparent;
+            cursor: default;
         }
 
         /* ===== WHATSAPP FLOATING BUTTON ===== */
@@ -676,7 +963,8 @@
                 gap: 10px;
             }
 
-            .pagination button {
+            .pagination a,
+            .pagination span {
                 padding: 8px 12px;
                 font-size: 0.8rem;
                 min-width: 36px;
@@ -686,30 +974,54 @@
 </head>
 <body>
 
-    <?php include 'navbar.php'; ?>
+    <header id="header">
+        <a href="index.php" class="logo">
+            <div class="logo-icon">VT</div>
+            <div class="logo-text">
+                VERA TERRA
+                <span>Inmobiliaria</span>
+            </div>
+        </a>
+        <nav>
+            <ul>
+                <li><a href="index.php">Inicio</a></li>
+                <li><a href="propiedades_portal.php" class="active">Propiedades</a></li>
+                <li><a href="nosotros.php">Nosotros</a></li>
+                <li><a href="contacto.php">Contacto</a></li>
+            </ul>
+        </nav>
+    </header>
 
     <!-- ===== FILTROS ===== -->
     <section class="filters-section">
         <div class="container">
             <div class="filters-wrapper">
                 <div class="filters-group">
-                    <select id="filterType">
-                        <option value="all">Todos los tipos</option>
-                        <option value="venta">Venta</option>
-                        <option value="renta">Renta</option>
-                    </select>
-                    <select id="filterCategory">
-                        <option value="all">Todas las categorías</option>
-                        <option value="residencial">Residencial</option>
-                        <option value="corporativo">Corporativo</option>
-                        <option value="lujo">Lujo</option>
-                    </select>
-                    <input type="text" id="filterSearch" placeholder="Buscar por ubicación..." />
-                    <button class="btn-outline-gold" id="applyFilters"><i class="fa-regular fa-sliders"></i> Filtrar</button>
-                    <button class="btn-outline-gold" id="resetFilters"><i class="fa-regular fa-rotate"></i> Reiniciar</button>
+                    <form method="GET" action="" id="filterForm" style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; width:100%;">
+                        <select name="tipo" id="filterType">
+                            <option value="all" <?php echo $filtro_tipo === 'all' ? 'selected' : ''; ?>>Todos los tipos</option>
+                            <option value="venta" <?php echo $filtro_tipo === 'venta' ? 'selected' : ''; ?>>Venta</option>
+                            <option value="renta" <?php echo $filtro_tipo === 'renta' ? 'selected' : ''; ?>>Renta</option>
+                        </select>
+                        <select name="categoria" id="filterCategory">
+                            <option value="all" <?php echo $filtro_categoria === 'all' ? 'selected' : ''; ?>>Todas las categorías</option>
+                            <?php if (!empty($categorias_disponibles['residencial'])): ?>
+                                <option value="residencial" <?php echo $filtro_categoria === 'residencial' ? 'selected' : ''; ?>>Residencial</option>
+                            <?php endif; ?>
+                            <?php if (!empty($categorias_disponibles['corporativo'])): ?>
+                                <option value="corporativo" <?php echo $filtro_categoria === 'corporativo' ? 'selected' : ''; ?>>Corporativo</option>
+                            <?php endif; ?>
+                            <?php if (!empty($categorias_disponibles['lujo'])): ?>
+                                <option value="lujo" <?php echo $filtro_categoria === 'lujo' ? 'selected' : ''; ?>>Lujo</option>
+                            <?php endif; ?>
+                        </select>
+                        <input type="text" name="busqueda" id="filterSearch" placeholder="Buscar por ubicación..." value="<?php echo htmlspecialchars($filtro_busqueda); ?>" />
+                        <button type="submit" class="btn-outline-gold"><i class="fa-regular fa-sliders"></i> Filtrar</button>
+                        <a href="propiedades_portal.php" class="btn-outline-gold"><i class="fa-regular fa-rotate"></i> Reiniciar</a>
+                    </form>
                 </div>
                 <div class="results-count">
-                    Mostrando <span id="resultsCount">6</span> propiedades
+                    Mostrando <span><?php echo count($propiedades); ?></span> de <span><?php echo $total_propiedades; ?></span> propiedades
                 </div>
             </div>
         </div>
@@ -722,17 +1034,123 @@
             <p class="section-subtitle">Encuentra la propiedad perfecta para ti, con la asesoría y respaldo que te mereces.</p>
 
             <div class="properties-grid" id="propertiesGrid">
-                <!-- Las tarjetas se generarán con JavaScript -->
+                <?php if (empty($propiedades)): ?>
+                    <div style="grid-column:1/-1; text-align:center; padding:60px 20px; color:var(--text-muted);">
+                        <i class="fa-regular fa-house-circle-exclamation" style="font-size:3rem; color:var(--gold); margin-bottom:15px; display:block;"></i>
+                        <h3 style="font-size:1.2rem; margin-bottom:10px;">No encontramos propiedades</h3>
+                        <p>Intenta ajustar los filtros de búsqueda</p>
+                    </div>
+                <?php else: ?>
+                    <?php foreach ($propiedades as $prop): 
+                        $tiene_featuring = tieneFeaturing($prop);
+                        $dias_featuring = getDiasRestantesFeaturing($prop);
+                        $tipo_clase = getTipoClase($prop['operation_type'] ?? 'venta');
+                        $tipo_label = getTipoLabel($prop['operation_type'] ?? 'venta');
+                        $icono_categoria = getCategoriaIcon($prop['property_type'] ?? '');
+                        $ubicacion = getUbicacionCompleta($prop);
+                        $precio = formatearPrecio($prop['price']);
+                        $imagen = getImagenUrl($prop['imagen_principal']);
+                        $card_class = $tiene_featuring ? 'property-card featured' : 'property-card';
+                    ?>
+                        <div class="<?php echo $card_class; ?>">
+                            <div class="property-img-container">
+                                <img src="<?php echo $imagen; ?>" alt="<?php echo htmlspecialchars($prop['title']); ?>" loading="lazy" />
+                                <div class="property-badge"><i class="<?php echo $icono_categoria; ?>"></i></div>
+                                <div class="property-status <?php echo $tipo_clase; ?>"><?php echo $tipo_label; ?></div>
+                                <?php if ($tiene_featuring && $dias_featuring > 0): ?>
+                                    <div class="featuring-countdown">
+                                        <i class="fa-regular fa-star"></i> <?php echo $dias_featuring; ?> días destacada
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="property-info">
+                                <h3><?php echo htmlspecialchars($prop['title']); ?></h3>
+                                <div class="location"><i class="fa-regular fa-location-dot"></i> <?php echo htmlspecialchars($ubicacion); ?></div>
+                                <div class="price"><?php echo $precio; ?></div>
+                                <div class="features">
+                                    <?php if (!empty($prop['bedrooms']) && $prop['bedrooms'] > 0): ?>
+                                        <span><i class="fa-regular fa-bed"></i> <?php echo $prop['bedrooms']; ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($prop['bathrooms']) && $prop['bathrooms'] > 0): ?>
+                                        <span><i class="fa-regular fa-bath"></i> <?php echo $prop['bathrooms']; ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($prop['square_meters']) && $prop['square_meters'] > 0): ?>
+                                        <span><i class="fa-regular fa-vector-square"></i> <?php echo number_format($prop['square_meters'], 0, ',', '.'); ?> m²</span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($prop['parking_spots']) && $prop['parking_spots'] > 0): ?>
+                                        <span><i class="fa-regular fa-car"></i> <?php echo $prop['parking_spots']; ?></span>
+                                    <?php endif; ?>
+                                    <?php if (empty($prop['bedrooms']) && empty($prop['bathrooms']) && empty($prop['square_meters'])): ?>
+                                        <span style="color: #999; font-style: italic;">Características no especificadas</span>
+                                    <?php endif; ?>
+                                </div>
+                                <?php if ($tiene_featuring): ?>
+                                    <div style="margin-top:6px; font-size:0.7rem; color:var(--gold);">
+                                        <i class="fa-regular fa-star" style="color:var(--gold);"></i> Propiedad destacada
+                                    </div>
+                                <?php endif; ?>
+                                <div class="property-actions">
+                                    <a href="https://wa.me/5213312345678?text=Hola%2C%20me%20interesa%20la%20propiedad%3A%20<?php echo urlencode($prop['title']); ?>%20en%20<?php echo urlencode($ubicacion); ?>%20con%20precio%20<?php echo urlencode($precio); ?>" 
+                                       target="_blank" 
+                                       class="btn-whatsapp">
+                                        <i class="fa-brands fa-whatsapp"></i> Consultar
+                                    </a>
+                                    <a href="propiedad_detalle_portal.php?id=<?php echo $prop['id']; ?>" class="btn-outline-gold">Ver más</a>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
             </div>
 
             <!-- ===== PAGINACIÓN ===== -->
-            <div class="pagination" id="pagination">
-                <button id="prevPage" disabled><i class="fa-regular fa-chevron-left"></i></button>
-                <button class="active">1</button>
-                <button>2</button>
-                <button>3</button>
-                <button id="nextPage"><i class="fa-regular fa-chevron-right"></i></button>
-            </div>
+            <?php if ($total_paginas > 1): ?>
+                <div class="pagination" id="pagination">
+                    <?php if ($pagina_actual > 1): ?>
+                        <a href="?page=<?php echo $pagina_actual - 1; ?>&tipo=<?php echo urlencode($filtro_tipo); ?>&categoria=<?php echo urlencode($filtro_categoria); ?>&busqueda=<?php echo urlencode($filtro_busqueda); ?>">
+                            <i class="fa-regular fa-chevron-left"></i>
+                        </a>
+                    <?php else: ?>
+                        <span class="disabled"><i class="fa-regular fa-chevron-left"></i></span>
+                    <?php endif; ?>
+
+                    <?php
+                    $rango = 2;
+                    $inicio = max(1, $pagina_actual - $rango);
+                    $fin = min($total_paginas, $pagina_actual + $rango);
+
+                    if ($inicio > 1): ?>
+                        <a href="?page=1&tipo=<?php echo urlencode($filtro_tipo); ?>&categoria=<?php echo urlencode($filtro_categoria); ?>&busqueda=<?php echo urlencode($filtro_busqueda); ?>">1</a>
+                        <?php if ($inicio > 2): ?>
+                            <span class="ellipsis">…</span>
+                        <?php endif; ?>
+                    <?php endif; ?>
+
+                    <?php for ($i = $inicio; $i <= $fin; $i++): ?>
+                        <a href="?page=<?php echo $i; ?>&tipo=<?php echo urlencode($filtro_tipo); ?>&categoria=<?php echo urlencode($filtro_categoria); ?>&busqueda=<?php echo urlencode($filtro_busqueda); ?>" 
+                           class="<?php echo $i === $pagina_actual ? 'active' : ''; ?>">
+                            <?php echo $i; ?>
+                        </a>
+                    <?php endfor; ?>
+
+                    <?php if ($fin < $total_paginas): ?>
+                        <?php if ($fin < $total_paginas - 1): ?>
+                            <span class="ellipsis">…</span>
+                        <?php endif; ?>
+                        <a href="?page=<?php echo $total_paginas; ?>&tipo=<?php echo urlencode($filtro_tipo); ?>&categoria=<?php echo urlencode($filtro_categoria); ?>&busqueda=<?php echo urlencode($filtro_busqueda); ?>">
+                            <?php echo $total_paginas; ?>
+                        </a>
+                    <?php endif; ?>
+
+                    <?php if ($pagina_actual < $total_paginas): ?>
+                        <a href="?page=<?php echo $pagina_actual + 1; ?>&tipo=<?php echo urlencode($filtro_tipo); ?>&categoria=<?php echo urlencode($filtro_categoria); ?>&busqueda=<?php echo urlencode($filtro_busqueda); ?>">
+                            <i class="fa-regular fa-chevron-right"></i>
+                        </a>
+                    <?php else: ?>
+                        <span class="disabled"><i class="fa-regular fa-chevron-right"></i></span>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
         </div>
     </section>
 
@@ -745,278 +1163,9 @@
         <span class="tooltip">¡Escríbenos!</span>
     </a>
 
-    <!-- ===== FOOTER ===== -->
-    <footer>
-        <a href="index.html" class="footer-logo">
-            <div class="logo-icon">VT</div>
-            <span>VERA TERRA</span>
-        </a>
-
-        <div class="footer-contact">
-            <span><i class="fa-regular fa-location-dot"></i> Av. Reforma 123, CDMX</span>
-            <span><i class="fa-regular fa-phone"></i> 33 1234 5678</span>
-            <span><i class="fa-regular fa-envelope"></i> contacto@veraterra.com</span>
-        </div>
-
-        <div class="social-links">
-            <a href="#" aria-label="Facebook"><i class="fa-brands fa-facebook-f"></i></a>
-            <a href="#" aria-label="LinkedIn"><i class="fa-brands fa-linkedin-in"></i></a>
-            <a href="#" aria-label="Instagram"><i class="fa-brands fa-instagram"></i></a>
-            <a href="#" aria-label="YouTube"><i class="fa-brands fa-youtube"></i></a>
-        </div>
-    </footer>
+    <?php include 'footer.php'; ?>
 
     <script>
-        // ============================================================
-        //  BASE DE DATOS SIMULADA (REEMPLAZAR CON CONEXIÓN REAL)
-        // ============================================================
-        const propiedadesData = [{
-            id: 1,
-            titulo: 'Penthouse en Polanco',
-            ubicacion: 'Polanco, CDMX',
-            precio: '$2,850,000 MXN',
-            tipo: 'venta',
-            categoria: 'lujo',
-            habitaciones: 3,
-            banos: 3.5,
-            superficie: '260 m²',
-            imagen: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=600&q=80',
-            descripcion: 'Impresionante penthouse con vista panorámica, acabados de lujo y terraza privada.'
-        }, {
-            id: 2,
-            titulo: 'Residencia en Club de Golf',
-            ubicacion: 'Bosques de las Lomas',
-            precio: '$4,200,000 MXN',
-            tipo: 'venta',
-            categoria: 'residencial',
-            habitaciones: 4,
-            banos: 4.5,
-            superficie: '450 m²',
-            imagen: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?auto=format&fit=crop&w=600&q=80',
-            descripcion: 'Espectacular residencia con jardín privado, alberca y acceso al club de golf.'
-        }, {
-            id: 3,
-            titulo: 'Oficina Corporativa en Reforma',
-            ubicacion: 'Av. Reforma, CDMX',
-            precio: '$3,100,000 MXN',
-            tipo: 'venta',
-            categoria: 'corporativo',
-            habitaciones: 0,
-            banos: 2,
-            superficie: '320 m²',
-            imagen: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80',
-            descripcion: 'Moderno espacio corporativo en pleno corazón financiero, con recepción y 2 estacionamientos.'
-        }, {
-            id: 4,
-            titulo: 'Departamento en Condesa',
-            ubicacion: 'Condesa, CDMX',
-            precio: '$18,500 MXN/mes',
-            tipo: 'renta',
-            categoria: 'residencial',
-            habitaciones: 2,
-            banos: 2,
-            superficie: '110 m²',
-            imagen: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=600&q=80',
-            descripcion: 'Hermoso departamento con balcón, excelente ubicación cerca de restaurantes y parques.'
-        }, {
-            id: 5,
-            titulo: 'Casa en Santa Fe',
-            ubicacion: 'Santa Fe, CDMX',
-            precio: '$5,600,000 MXN',
-            tipo: 'venta',
-            categoria: 'lujo',
-            habitaciones: 5,
-            banos: 5,
-            superficie: '520 m²',
-            imagen: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80',
-            descripcion: 'Imponente casa con acabados italianos, alberca climatizada y roof garden.'
-        }, {
-            id: 6,
-            titulo: 'Local Comercial en Roma',
-            ubicacion: 'Roma, CDMX',
-            precio: '$28,000 MXN/mes',
-            tipo: 'renta',
-            categoria: 'corporativo',
-            habitaciones: 0,
-            banos: 1,
-            superficie: '85 m²',
-            imagen: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=600&q=80',
-            descripcion: 'Local con gran visibilidad en calle concurrida, ideal para restaurante o boutique.'
-        }, {
-            id: 7,
-            titulo: 'Terreno en Valle de Bravo',
-            ubicacion: 'Valle de Bravo, EdoMex',
-            precio: '$1,200,000 MXN',
-            tipo: 'venta',
-            categoria: 'residencial',
-            habitaciones: 0,
-            banos: 0,
-            superficie: '1500 m²',
-            imagen: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=600&q=80',
-            descripcion: 'Terreno con vista al lago, ideal para construcción de casa de descanso.'
-        }, {
-            id: 8,
-            titulo: 'Ático en Interlomas',
-            ubicacion: 'Interlomas, Estado de México',
-            precio: '$3,800,000 MXN',
-            tipo: 'venta',
-            categoria: 'lujo',
-            habitaciones: 3,
-            banos: 3,
-            superficie: '310 m²',
-            imagen: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=600&q=80',
-            descripcion: 'Ático con diseño vanguardista, terraza panorámica y acceso a amenities exclusivos.'
-        }];
-
-        // ============================================================
-        //  FUNCIONES PARA RENDERIZAR PROPIEDADES
-        // ============================================================
-        let currentPage = 1;
-        const itemsPerPage = 6;
-        let filteredData = [...propiedadesData];
-
-        function renderProperties(data) {
-            const grid = document.getElementById('propertiesGrid');
-            grid.innerHTML = '';
-
-            if (data.length === 0) {
-                grid.innerHTML = `
-                    <div style="grid-column:1/-1; text-align:center; padding:60px 20px; color:var(--text-muted);">
-                        <i class="fa-regular fa-house-circle-exclamation" style="font-size:3rem; color:var(--gold); margin-bottom:15px; display:block;"></i>
-                        <h3 style="font-size:1.2rem; margin-bottom:10px;">No encontramos propiedades</h3>
-                        <p>Intenta ajustar los filtros de búsqueda</p>
-                    </div>
-                `;
-                return;
-            }
-
-            data.forEach(prop => {
-                const card = document.createElement('div');
-                card.className = 'property-card';
-
-                const statusClass = prop.tipo === 'venta' ? 'venta' : 'renta';
-                const statusLabel = prop.tipo === 'venta' ? 'En Venta' : 'En Renta';
-                const badgeIcon = prop.categoria === 'lujo' ? 'fa-regular fa-gem' : 'fa-regular fa-building';
-
-                card.innerHTML = `
-                    <div class="property-img-container">
-                        <img src="${prop.imagen}" alt="${prop.titulo}" loading="lazy" />
-                        <div class="property-badge"><i class="${badgeIcon}"></i></div>
-                        <div class="property-status ${statusClass}">${statusLabel}</div>
-                    </div>
-                    <div class="property-info">
-                        <h3>${prop.titulo}</h3>
-                        <div class="location"><i class="fa-regular fa-location-dot"></i> ${prop.ubicacion}</div>
-                        <div class="price">${prop.precio}</div>
-                        <div class="features">
-                            ${prop.habitaciones > 0 ? `<span><i class="fa-regular fa-bed"></i> ${prop.habitaciones}</span>` : ''}
-                            ${prop.banos > 0 ? `<span><i class="fa-regular fa-bath"></i> ${prop.banos}</span>` : ''}
-                            <span><i class="fa-regular fa-vector-square"></i> ${prop.superficie}</span>
-                        </div>
-                        <div class="property-actions">
-                            <a href="https://wa.me/5213312345678?text=Hola%2C%20me%20interesa%20la%20propiedad%3A%20${encodeURIComponent(prop.titulo)}%20en%20${encodeURIComponent(prop.ubicacion)}%20con%20precio%20${encodeURIComponent(prop.precio)}" 
-                               target="_blank" 
-                               class="btn-whatsapp">
-                                <i class="fa-brands fa-whatsapp"></i> Consultar
-                            </a>
-                            <a href="#" class="btn-outline-gold">Ver más</a>
-                        </div>
-                    </div>
-                `;
-                grid.appendChild(card);
-            });
-        }
-
-        function updatePagination(data) {
-            const totalPages = Math.ceil(data.length / itemsPerPage);
-            const pagination = document.getElementById('pagination');
-            const prevBtn = document.getElementById('prevPage');
-            const nextBtn = document.getElementById('nextPage');
-
-            // Actualizar botones de página
-            const pageButtons = pagination.querySelectorAll('button:not(#prevPage):not(#nextPage)');
-            pageButtons.forEach(btn => btn.remove());
-
-            for (let i = 1; i <= totalPages; i++) {
-                const btn = document.createElement('button');
-                btn.textContent = i;
-                btn.className = i === currentPage ? 'active' : '';
-                btn.addEventListener('click', () => {
-                    currentPage = i;
-                    applyFiltersAndPagination();
-                });
-                pagination.insertBefore(btn, nextBtn);
-            }
-
-            prevBtn.disabled = currentPage === 1;
-            nextBtn.disabled = currentPage === totalPages || totalPages === 0;
-
-            document.getElementById('resultsCount').textContent = data.length;
-        }
-
-        function applyFiltersAndPagination() {
-            // Aplicar filtros
-            const type = document.getElementById('filterType').value;
-            const category = document.getElementById('filterCategory').value;
-            const search = document.getElementById('filterSearch').value.toLowerCase().trim();
-
-            filteredData = propiedadesData.filter(prop => {
-                const matchType = type === 'all' || prop.tipo === type;
-                const matchCategory = category === 'all' || prop.categoria === category;
-                const matchSearch = prop.ubicacion.toLowerCase().includes(search) ||
-                                   prop.titulo.toLowerCase().includes(search);
-                return matchType && matchCategory && matchSearch;
-            });
-
-            // Paginación
-            const start = (currentPage - 1) * itemsPerPage;
-            const end = start + itemsPerPage;
-            const pageData = filteredData.slice(start, end);
-
-            renderProperties(pageData);
-            updatePagination(filteredData);
-        }
-
-        // ============================================================
-        //  EVENTOS DE FILTROS
-        // ============================================================
-        document.getElementById('applyFilters').addEventListener('click', () => {
-            currentPage = 1;
-            applyFiltersAndPagination();
-        });
-
-        document.getElementById('resetFilters').addEventListener('click', () => {
-            document.getElementById('filterType').value = 'all';
-            document.getElementById('filterCategory').value = 'all';
-            document.getElementById('filterSearch').value = '';
-            currentPage = 1;
-            applyFiltersAndPagination();
-        });
-
-        // Enter en búsqueda
-        document.getElementById('filterSearch').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                currentPage = 1;
-                applyFiltersAndPagination();
-            }
-        });
-
-        // Navegación de página
-        document.getElementById('prevPage').addEventListener('click', () => {
-            if (currentPage > 1) {
-                currentPage--;
-                applyFiltersAndPagination();
-            }
-        });
-
-        document.getElementById('nextPage').addEventListener('click', () => {
-            const totalPages = Math.ceil(filteredData.length / itemsPerPage);
-            if (currentPage < totalPages) {
-                currentPage++;
-                applyFiltersAndPagination();
-            }
-        });
-
         // ============================================================
         //  SCROLL PARA NAVBAR
         // ============================================================
@@ -1029,9 +1178,6 @@
                     header.classList.remove('scrolled');
                 }
             });
-
-            // Render inicial
-            applyFiltersAndPagination();
         });
     </script>
 </body>

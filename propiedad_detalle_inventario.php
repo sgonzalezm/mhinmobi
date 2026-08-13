@@ -1730,9 +1730,6 @@ $base_url = getBaseUrl();
                         target="_blank">
                             <i class="fas fa-user-shield"></i> Subir (Admin)
                         </a>
-                        <a href="gestion_documentos.php?property_id=<?php echo $property_id; ?>" class="btn-detail secondary" style="padding: 4px 12px; font-size: 0.75rem;">
-                            <i class="fas fa-cog"></i> Gestionar
-                        </a>
                     </div>
                 </div>
                 <div class="card-body" style="padding: 10px 20px;">
@@ -1741,7 +1738,7 @@ $base_url = getBaseUrl();
                             <i class="fas fa-file" style="font-size: 40px; display: block; margin-bottom: 10px; opacity: 0.5;"></i>
                             <p style="margin: 0;">No hay documentos asociados a esta propiedad.</p>
                             <p style="font-size: 0.85rem; margin-top: 5px;">
-                                <a href="subir_documento.php?property_id=<?php echo $property_id; ?>" style="color: #1d4ed8; text-decoration: none;">
+                                <a href="upload_documentos.php?id=<?php echo $property_id; ?>" style="color: #1d4ed8; text-decoration: none;">
                                     Subir el primer documento
                                 </a>
                             </p>

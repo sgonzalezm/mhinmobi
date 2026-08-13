@@ -693,9 +693,9 @@
                         <div class="location"><i class="fa-regular fa-location-dot"></i> Polanco, CDMX</div>
                         <div class="price">$2,850,000 MXN</div>
                         <div class="features">
-                            <span><i class="fa-regular fa-bed"></i> 3</span>
-                            <span><i class="fa-regular fa-bath"></i> 3.5</span>
-                            <span><i class="fa-regular fa-vector-square"></i> 260 m²</span>
+                            <span><i class="fas fa-bed"></i> 3</span>
+                            <span><i class="fas fa-bath"></i> 3.5</span>
+                            <span><i class="fas fa-vector-square"></i> 260 m²</span>
                         </div>
                     </div>
                 </div>
@@ -710,9 +710,9 @@
                         <div class="location"><i class="fa-regular fa-location-dot"></i> Bosques de las Lomas</div>
                         <div class="price">$4,200,000 MXN</div>
                         <div class="features">
-                            <span><i class="fa-regular fa-bed"></i> 4</span>
-                            <span><i class="fa-regular fa-bath"></i> 4.5</span>
-                            <span><i class="fa-regular fa-vector-square"></i> 450 m²</span>
+                            <span><i class="fas fa-bed"></i> 4</span>
+                            <span><i class="fas fa-bath"></i> 4.5</span>
+                            <span><i class="fas fa-vector-square"></i> 450 m²</span>
                         </div>
                     </div>
                 </div>
@@ -811,26 +811,7 @@
         </div>
     </section>
 
-    <!-- ===== FOOTER ===== -->
-    <footer>
-        <a href="#" class="footer-logo">
-            <div class="logo-icon">VT</div>
-            <span>VERA TERRA</span>
-        </a>
-
-        <div class="footer-contact">
-            <span><i class="fa-regular fa-location-dot"></i> Av. Reforma 123, CDMX</span>
-            <span><i class="fa-regular fa-phone"></i> 33 1234 5678</span>
-            <span><i class="fa-regular fa-envelope"></i> contacto@veraterra.com</span>
-        </div>
-
-        <div class="social-links">
-            <a href="#" aria-label="Facebook"><i class="fa-brands fa-facebook-f"></i></a>
-            <a href="#" aria-label="LinkedIn"><i class="fa-brands fa-linkedin-in"></i></a>
-            <a href="#" aria-label="Instagram"><i class="fa-brands fa-instagram"></i></a>
-            <a href="#" aria-label="YouTube"><i class="fa-brands fa-youtube"></i></a>
-        </div>
-    </footer>
+    <?php include 'footer.php'; ?>
 
     <!-- ===== SCRIPT para efecto de scroll en navbar ===== -->
     <script>

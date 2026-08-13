@@ -509,66 +509,7 @@ foreach ($propiedades as $p) {
 <!-- Overlay para móvil -->
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
-<!-- ===== SIDEBAR ===== -->
-<aside class="sidebar" id="sidebar">
-    <a href="index.php" class="logo">
-        <i class="fas fa-building"></i>
-        <span>INMOBILIARIA MH</span>
-    </a>
-
-    <div class="user-info">
-        <div class="avatar">
-            <?php echo strtoupper(substr($usuario['nombre'] ?? 'U', 0, 1)); ?>
-        </div>
-        <div class="name"><?php echo htmlspecialchars($usuario['nombre'] ?? 'Usuario'); ?></div>
-        <div class="role">
-            <i class="fas fa-user-tag"></i>
-            <?php echo ($usuario['activo'] ?? 1) ? 'Activo' : 'Inactivo'; ?>
-        </div>
-    </div>
-
-    <nav>
-        <a href="socios_panel.php" class="active">
-            <i class="fas fa-home"></i> Inicio
-        </a>
-        <a href="mis_propiedades.php">
-            <i class="fas fa-building"></i> Mis Propiedades
-            <span class="badge"><?php echo $stats['total']; ?></span>
-        </a>
-        <a href="vender.php">
-            <i class="fas fa-plus-circle"></i> Publicar Propiedad
-        </a>
-        <a href="inventario_maestro.php">
-            <i class="fas fa-warehouse"></i> Inventario Maestro
-        </a>
-        <a href="expediente_legal.php">
-            <i class="fas fa-file-alt"></i> Expediente Legal
-        </a>
-        <a href="crm_clientes.php">
-            <i class="fas fa-users"></i> CRM Clientes
-        </a>
-        <a href="inteligencia_negocios.php">
-            <i class="fas fa-chart-line"></i> Inteligencia de Negocios
-        </a>
-        <a href="mensajes.php" class="notification-badge">
-            <i class="fas fa-envelope"></i> Mensajes
-            <?php if ($total_mensajes_no_leidos > 0): ?>
-                <span class="badge-count <?php echo count($mensajes_urgentes) > 0 ? 'urgent' : ''; ?>">
-                    <?php echo $total_mensajes_no_leidos; ?>
-                </span>
-            <?php endif; ?>
-        </a>
-        <a href="accesos.php">
-            <i class="fas fa-user-cog"></i> Configuración de acceso
-        </a>
-    </nav>
-
-    <div class="logout-section">
-        <a href="logout.php">
-            <i class="fas fa-sign-out-alt"></i> Cerrar Sesión
-        </a>
-    </div>
-</aside>
+<?php include 'sidebar.php'; ?>
 
 <!-- ===== MAIN CONTENT ===== -->
 <main class="main-content">
