@@ -12,7 +12,8 @@
                 <li><a href="index.php" class="active">Inicio</a></li>
                 <li><a href="propiedades.php">Propiedades</a></li>
                 <li><a href="servicios.php">Servicios</a></li>
-                <li><a href="contacto#">Contacto</a></li>
+                <li><a href="contacto.php">Contacto</a></li>
+                <li><a href="login.php">Iniciar sesión</a></li>
                 <li><a href="#" class="search-link"><i class="fa-solid fa-magnifying-glass"></i> Buscar</a></li>
             </ul>
         </nav>

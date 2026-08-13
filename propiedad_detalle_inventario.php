@@ -26,7 +26,7 @@ if (!$usuario) {
 // Obtener ID de la propiedad
 $property_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if ($property_id == 0) {
-    header('Location: inventario.php');
+    header('Location: inventario_maestro.php');
     exit;
 }
 
@@ -182,6 +182,225 @@ function getDocumentStatusLabel($status) {
     return $labels[$status] ?? ['label' => $status, 'class' => ''];
 }
 
+// ============================================
+// NUEVAS FUNCIONES PARA GESTIÓN DE PROPIEDAD
+// ============================================
+
+// Procesar acciones de gestión (activar/desactivar, apartar, borrar, featuring)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_gestion'])) {
+    $accion = $_POST['action_gestion'];
+    $propiedad_id = intval($_POST['property_id'] ?? 0);
+    
+    if ($propiedad_id != $property_id) {
+        $error_msg = "❌ Error: ID de propiedad no coincide.";
+    } else {
+        try {
+            switch ($accion) {
+                case 'cambiar_estado':
+                    $nuevo_estado = $_POST['nuevo_estado'] ?? '';
+                    $estados_validos = ['activo', 'pendiente', 'vendido', 'suspendido'];
+                    if (in_array($nuevo_estado, $estados_validos)) {
+                        $stmt = $conn->prepare("UPDATE properties SET status = ?, updated_at = NOW() WHERE id = ?");
+                        $stmt->execute([$nuevo_estado, $propiedad_id]);
+                        $mensaje_exito = "✅ Estado actualizado a: " . ucfirst($nuevo_estado);
+                    } else {
+                        $error_msg = "❌ Estado no válido.";
+                    }
+                    break;
+                    
+                case 'apartar':
+                    $motivo = trim($_POST['motivo_apartado'] ?? '');
+                    $fecha_apartado = date('Y-m-d H:i:s');
+                    
+                    // Verificar si ya está apartada
+                    $stmt = $conn->prepare("SELECT id FROM property_reservations WHERE property_id = ? AND status = 'active'");
+                    $stmt->execute([$propiedad_id]);
+                    if ($stmt->rowCount() > 0) {
+                        $error_msg = "⚠️ Esta propiedad ya está apartada por otro vendedor.";
+                    } else {
+                        // Insertar reserva
+                        $stmt = $conn->prepare("
+                            INSERT INTO property_reservations 
+                            (property_id, reserved_by, reserved_at, motivo, status) 
+                            VALUES (?, ?, ?, ?, 'active')
+                        ");
+                        $stmt->execute([
+                            $propiedad_id,
+                            $_SESSION['usuario_id'],
+                            $fecha_apartado,
+                            $motivo
+                        ]);
+                        
+                        // Cambiar estado a 'apartada' (opcional)
+                        $stmt = $conn->prepare("UPDATE properties SET status = 'suspendido', updated_at = NOW() WHERE id = ?");
+                        $stmt->execute([$propiedad_id]);
+                        
+                        $mensaje_exito = "✅ Propiedad apartada exitosamente. Otros vendedores no podrán gestionarla.";
+                    }
+                    break;
+                    
+                case 'liberar_apartado':
+                    $stmt = $conn->prepare("
+                        UPDATE property_reservations 
+                        SET status = 'released', released_at = NOW(), released_by = ? 
+                        WHERE property_id = ? AND status = 'active'
+                    ");
+                    $stmt->execute([$_SESSION['usuario_id'], $propiedad_id]);
+                    
+                    // Restaurar estado anterior (si estaba activa)
+                    $stmt = $conn->prepare("UPDATE properties SET status = 'activo', updated_at = NOW() WHERE id = ?");
+                    $stmt->execute([$propiedad_id]);
+                    
+                    $mensaje_exito = "✅ Propiedad liberada. Ya está disponible para otros vendedores.";
+                    break;
+                    
+                case 'borrar':
+                    $confirmacion = $_POST['confirmacion_borrar'] ?? '';
+                    if ($confirmacion === 'ELIMINAR') {
+                        // Verificar si tiene dependencias
+                        $stmt = $conn->prepare("
+                            SELECT COUNT(*) as total FROM property_media WHERE property_id = ?
+                        ");
+                        $stmt->execute([$propiedad_id]);
+                        $media_count = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
+                        
+                        // Eliminar archivos físicos (opcional)
+                        if ($media_count > 0) {
+                            $stmt = $conn->prepare("SELECT file_path FROM property_media WHERE property_id = ?");
+                            $stmt->execute([$propiedad_id]);
+                            $archivos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                            foreach ($archivos as $archivo) {
+                                $ruta = $archivo['file_path'];
+                                if (file_exists($ruta)) {
+                                    unlink($ruta);
+                                }
+                            }
+                        }
+                        
+                        // Eliminar registros
+                        $conn->beginTransaction();
+                        try {
+                            $stmt = $conn->prepare("DELETE FROM property_media WHERE property_id = ?");
+                            $stmt->execute([$propiedad_id]);
+                            
+                            $stmt = $conn->prepare("DELETE FROM property_details WHERE property_id = ?");
+                            $stmt->execute([$propiedad_id]);
+                            
+                            $stmt = $conn->prepare("DELETE FROM property_financials WHERE property_id = ?");
+                            $stmt->execute([$propiedad_id]);
+                            
+                            $stmt = $conn->prepare("DELETE FROM properties WHERE id = ?");
+                            $stmt->execute([$propiedad_id]);
+                            
+                            $conn->commit();
+                            
+                            // Redirigir al inventario
+                            $_SESSION['mensaje_exito'] = "✅ Propiedad eliminada correctamente.";
+                            header('Location: inventario_maestro.php');
+                            exit;
+                            
+                        } catch (Exception $e) {
+                            $conn->rollBack();
+                            $error_msg = "❌ Error al eliminar: " . $e->getMessage();
+                        }
+                    } else {
+                        $error_msg = "❌ Debes escribir 'ELIMINAR' para confirmar el borrado.";
+                    }
+                    break;
+                    
+                case 'featuring':
+                    $dias_featuring = intval($_POST['dias_featuring'] ?? 7);
+                    $precio_featuring = floatval($_POST['precio_featuring'] ?? 0);
+                    $fecha_inicio = date('Y-m-d H:i:s');
+                    $fecha_fin = date('Y-m-d H:i:s', strtotime("+{$dias_featuring} days"));
+                    
+                    // Verificar si ya tiene featuring activo
+                    $stmt = $conn->prepare("SELECT id FROM property_featuring WHERE property_id = ? AND status = 'active'");
+                    $stmt->execute([$propiedad_id]);
+                    if ($stmt->rowCount() > 0) {
+                        $error_msg = "⚠️ Esta propiedad ya tiene un featuring activo.";
+                    } else {
+                        $stmt = $conn->prepare("
+                            INSERT INTO property_featuring 
+                            (property_id, start_date, end_date, dias, precio, status, created_by) 
+                            VALUES (?, ?, ?, ?, ?, 'active', ?)
+                        ");
+                        $stmt->execute([
+                            $propiedad_id,
+                            $fecha_inicio,
+                            $fecha_fin,
+                            $dias_featuring,
+                            $precio_featuring,
+                            $_SESSION['usuario_id']
+                        ]);
+                        
+                        $mensaje_exito = "⭐ Featuring activado por {$dias_featuring} días. La propiedad será destacada en el portal de clientes.";
+                    }
+                    break;
+                    
+                case 'desactivar_featuring':
+                    $stmt = $conn->prepare("
+                        UPDATE property_featuring 
+                        SET status = 'inactive', deactivated_at = NOW() 
+                        WHERE property_id = ? AND status = 'active'
+                    ");
+                    $stmt->execute([$propiedad_id]);
+                    $mensaje_exito = "⭐ Featuring desactivado.";
+                    break;
+                    
+                default:
+                    $error_msg = "❌ Acción no reconocida.";
+            }
+            
+            // Recargar la propiedad para actualizar datos
+            recargarPropiedad($conn, $property_id);
+            
+        } catch (PDOException $e) {
+            $error_msg = "❌ Error al procesar la acción: " . $e->getMessage();
+        }
+    }
+}
+
+// Función para recargar datos de la propiedad
+function recargarPropiedad($conn, $property_id) {
+    global $propiedad;
+    try {
+        $stmt = $conn->prepare("
+            SELECT 
+                p.id,
+                p.owner_id,
+                p.title,
+                p.operation_type,
+                p.address_city,
+                p.address_municipality,
+                p.status,
+                p.created_at,
+                p.updated_at,
+                DATEDIFF(NOW(), p.created_at) as days_active,
+                pd.square_meters,
+                pd.bedrooms,
+                pd.bathrooms,
+                pd.parking_spots,
+                pf.asking_price as price,
+                pf.min_acceptable_price,
+                pf.potential_profit_margin,
+                pf.commission_percentage,
+                (pf.asking_price * pf.commission_percentage / 100) as commission_amount,
+                s.nombre as owner_name,
+                s.email as owner_email
+            FROM properties p
+            LEFT JOIN property_details pd ON p.id = pd.property_id
+            LEFT JOIN property_financials pf ON p.id = pf.property_id
+            LEFT JOIN socios s ON p.owner_id = s.id
+            WHERE p.id = ?
+        ");
+        $stmt->execute([$property_id]);
+        $propiedad = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error al recargar propiedad: " . $e->getMessage());
+    }
+}
+
 // Procesar generación de enlace desde el modal
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'generar_enlace') {
     $email = trim($_POST['email'] ?? '');
@@ -285,37 +504,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $mensaje_exito = "✅ Enlace generado exitosamente y enviado al correo del cliente.";
             
             // Recargar la propiedad para actualizar datos
-            $stmt = $conn->prepare("
-                SELECT 
-                    p.id,
-                    p.owner_id,
-                    p.title,
-                    p.operation_type,
-                    p.address_city,
-                    p.address_municipality,
-                    p.status,
-                    p.created_at,
-                    p.updated_at,
-                    DATEDIFF(NOW(), p.created_at) as days_active,
-                    pd.square_meters,
-                    pd.bedrooms,
-                    pd.bathrooms,
-                    pd.parking_spots,
-                    pf.asking_price as price,
-                    pf.min_acceptable_price,
-                    pf.potential_profit_margin,
-                    pf.commission_percentage,
-                    (pf.asking_price * pf.commission_percentage / 100) as commission_amount,
-                    s.nombre as owner_name,
-                    s.email as owner_email
-                FROM properties p
-                LEFT JOIN property_details pd ON p.id = pd.property_id
-                LEFT JOIN property_financials pf ON p.id = pf.property_id
-                LEFT JOIN socios s ON p.owner_id = s.id
-                WHERE p.id = ?
-            ");
-            $stmt->execute([$property_id]);
-            $propiedad = $stmt->fetch(PDO::FETCH_ASSOC);
+            recargarPropiedad($conn, $property_id);
             
         } catch (PDOException $e) {
             $error_msg = "❌ Error al generar el enlace: " . $e->getMessage();
@@ -325,46 +514,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Si no se ha recargado después de generar, obtener la propiedad
 if (!$propiedad) {
-    try {
-        $stmt = $conn->prepare("
-            SELECT 
-                p.id,
-                p.owner_id,
-                p.title,
-                p.operation_type,
-                p.address_city,
-                p.address_municipality,
-                p.status,
-                p.created_at,
-                p.updated_at,
-                DATEDIFF(NOW(), p.created_at) as days_active,
-                pd.square_meters,
-                pd.bedrooms,
-                pd.bathrooms,
-                pd.parking_spots,
-                pf.asking_price as price,
-                pf.min_acceptable_price,
-                pf.potential_profit_margin,
-                pf.commission_percentage,
-                (pf.asking_price * pf.commission_percentage / 100) as commission_amount,
-                s.nombre as owner_name,
-                s.email as owner_email
-            FROM properties p
-            LEFT JOIN property_details pd ON p.id = pd.property_id
-            LEFT JOIN property_financials pf ON p.id = pf.property_id
-            LEFT JOIN socios s ON p.owner_id = s.id
-            WHERE p.id = ?
-        ");
-        $stmt->execute([$property_id]);
-        $propiedad = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$propiedad) {
-            $error_msg = "Propiedad no encontrada.";
-        }
-    } catch (PDOException $e) {
-        $error_msg = "Error al cargar la propiedad: " . $e->getMessage();
-        error_log("Error en propiedad_detalle_inventario.php: " . $e->getMessage());
-    }
+    recargarPropiedad($conn, $property_id);
 }
 
 // Obtener imagen principal
@@ -414,6 +564,49 @@ if ($propiedad) {
     }
 }
 
+// ===== OBTENER INFORMACIÓN DE APARTADO =====
+$apartado_info = null;
+if ($propiedad) {
+    try {
+        $stmt = $conn->prepare("
+            SELECT 
+                r.*,
+                u.nombre as reservado_por_nombre,
+                u.email as reservado_por_email
+            FROM property_reservations r
+            LEFT JOIN usuarios u ON r.reserved_by = u.id
+            WHERE r.property_id = ? AND r.status = 'active'
+            ORDER BY r.reserved_at DESC
+            LIMIT 1
+        ");
+        $stmt->execute([$property_id]);
+        $apartado_info = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        // Tabla no existe
+    }
+}
+
+// ===== OBTENER INFORMACIÓN DE FEATURING =====
+$featuring_info = null;
+if ($propiedad) {
+    try {
+        $stmt = $conn->prepare("
+            SELECT 
+                f.*,
+                u.nombre as creado_por_nombre
+            FROM property_featuring f
+            LEFT JOIN usuarios u ON f.created_by = u.id
+            WHERE f.property_id = ? AND f.status = 'active'
+            ORDER BY f.start_date DESC
+            LIMIT 1
+        ");
+        $stmt->execute([$property_id]);
+        $featuring_info = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        // Tabla no existe
+    }
+}
+
 // Obtener documentos de la propiedad
 $documentos_propiedad = [];
 if ($propiedad) {
@@ -434,7 +627,8 @@ function getStatusBadge($status) {
         'activo' => 'status-active',
         'pendiente' => 'status-pending',
         'vendido' => 'status-sold',
-        'suspendido' => 'status-suspended'
+        'suspendido' => 'status-suspended',
+        'apartada' => 'status-apartada'
     ];
     return $classes[$status] ?? 'status-other';
 }
@@ -579,6 +773,24 @@ $base_url = getBaseUrl();
             background: #b91c1c;
         }
 
+        .btn-detail.warning {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .btn-detail.warning:hover {
+            background: #d97706;
+        }
+
+        .btn-detail.featured {
+            background: #8b5cf6;
+            color: white;
+        }
+
+        .btn-detail.featured:hover {
+            background: #7c3aed;
+        }
+
         .main-card {
             background: #ffffff;
             border: 1px solid #e8edf4;
@@ -656,6 +868,7 @@ $base_url = getBaseUrl();
         .status-badge.status-pending { background: #fef3c7; color: #92400e; }
         .status-badge.status-sold { background: #dbeafe; color: #1e40af; }
         .status-badge.status-suspended { background: #fee2e2; color: #991b1b; }
+        .status-badge.status-apartada { background: #fef3c7; color: #92400e; }
         .status-badge.status-other { background: #f1f5f9; color: #475569; }
 
         .prop-image {
@@ -838,17 +1051,20 @@ $base_url = getBaseUrl();
         }
 
         .modal-body .form-group input,
-        .modal-body .form-group select {
+        .modal-body .form-group select,
+        .modal-body .form-group textarea {
             width: 100%;
             padding: 10px 14px;
             border: 2px solid #e2e8f0;
             border-radius: 8px;
             font-size: 0.9rem;
             transition: border-color 0.2s;
+            font-family: inherit;
         }
 
         .modal-body .form-group input:focus,
-        .modal-body .form-group select:focus {
+        .modal-body .form-group select:focus,
+        .modal-body .form-group textarea:focus {
             border-color: #1d4ed8;
             outline: none;
         }
@@ -917,6 +1133,33 @@ $base_url = getBaseUrl();
 
         .btn-modal.success:hover {
             background: #15803d;
+        }
+
+        .btn-modal.danger {
+            background: #dc2626;
+            color: white;
+        }
+
+        .btn-modal.danger:hover {
+            background: #b91c1c;
+        }
+
+        .btn-modal.warning {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .btn-modal.warning:hover {
+            background: #d97706;
+        }
+
+        .btn-modal.featured {
+            background: #8b5cf6;
+            color: white;
+        }
+
+        .btn-modal.featured:hover {
+            background: #7c3aed;
         }
 
         /* Enlace generado */
@@ -1054,6 +1297,65 @@ $base_url = getBaseUrl();
             border-left: 3px solid;
         }
 
+        /* ===== BADGE DE FEATURING ===== */
+        .featuring-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            background: #ede9fe;
+            color: #7c3aed;
+        }
+
+        .featuring-badge.active {
+            background: #ede9fe;
+            color: #7c3aed;
+            animation: pulse-featuring 2s infinite;
+        }
+
+        @keyframes pulse-featuring {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        /* ===== BADGE DE APARTADO ===== */
+        .apartado-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        /* ===== TOAST ===== */
+        .toast-container {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 99999;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: #0f172a;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            opacity: 0;
+            transition: opacity 0.3s;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            pointer-events: none;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+
         @media (max-width: 768px) {
             .two-col {
                 grid-template-columns: 1fr;
@@ -1148,11 +1450,25 @@ $base_url = getBaseUrl();
 
         <?php if ($propiedad): 
             $badgeOp = getOperationBadge($propiedad['operation_type'] ?? '');
+            $esta_apartada = $apartado_info !== null;
+            $tiene_featuring = $featuring_info !== null;
         ?>
             <!-- Header -->
             <div class="detail-header">
                 <div class="detail-title">
-                    <h1><?php echo htmlspecialchars($propiedad['title']); ?></h1>
+                    <h1>
+                        <?php echo htmlspecialchars($propiedad['title']); ?>
+                        <?php if ($tiene_featuring): ?>
+                            <span class="featuring-badge active">
+                                <i class="fas fa-star"></i> Destacada
+                            </span>
+                        <?php endif; ?>
+                        <?php if ($esta_apartada): ?>
+                            <span class="apartado-badge">
+                                <i class="fas fa-lock"></i> Apartada
+                            </span>
+                        <?php endif; ?>
+                    </h1>
                     <div class="subtitle">
                         <span class="status-badge <?php echo getStatusBadge($propiedad['status']); ?>">
                             <?php echo ucfirst($propiedad['status'] ?? 'Sin estado'); ?>
@@ -1170,11 +1486,14 @@ $base_url = getBaseUrl();
                     </div>
                 </div>
                 <div class="detail-actions">
-                    <a href="inventario.php" class="btn-detail secondary">
+                    <a href="inventario_maestro.php" class="btn-detail secondary">
                         <i class="fas fa-arrow-left"></i> Volver
                     </a>
                     <button class="btn-detail success" onclick="abrirModalEnlace()">
                         <i class="fas fa-link"></i> Generar Enlace
+                    </button>
+                    <button class="btn-detail warning" onclick="abrirModalGestion()">
+                        <i class="fas fa-cog"></i> Gestionar
                     </button>
                     <a href="propiedad_editar.php?id=<?php echo $property_id; ?>" class="btn-detail primary">
                         <i class="fas fa-edit"></i> Editar
@@ -1398,8 +1717,18 @@ $base_url = getBaseUrl();
                         </span>
                     </h3>
                     <div style="display: flex; gap: 8px;">
+                        <!-- BOTÓN SUBIR - COMENTADO PARA REUTILIZAR CÓDIGO EXISTENTE -->
+                        <!-- 
                         <a href="subir_documento.php?property_id=<?php echo $property_id; ?>" class="btn-detail primary" style="padding: 4px 12px; font-size: 0.75rem;">
                             <i class="fas fa-upload"></i> Subir
+                        </a>
+                        -->
+                        <!-- NUEVO BOTÓN PARA ADMIN -->
+                        <a href="upload_documentos.php?id=<?php echo $property_id; ?>" 
+                        class="btn-detail primary" 
+                        style="padding: 4px 12px; font-size: 0.75rem; background: #8b5cf6;" 
+                        target="_blank">
+                            <i class="fas fa-user-shield"></i> Subir (Admin)
                         </a>
                         <a href="gestion_documentos.php?property_id=<?php echo $property_id; ?>" class="btn-detail secondary" style="padding: 4px 12px; font-size: 0.75rem;">
                             <i class="fas fa-cog"></i> Gestionar
@@ -1611,6 +1940,135 @@ $base_url = getBaseUrl();
     </div>
 </div>
 
+<!-- ===== MODAL PARA GESTIÓN DE PROPIEDAD ===== -->
+<div class="modal-overlay" id="modalGestion">
+    <div class="modal-box" style="max-width: 650px;">
+        <div class="modal-header">
+            <h3><i class="fas fa-cog" style="color: #f59e0b;"></i> Gestionar Propiedad</h3>
+            <button class="modal-close" onclick="cerrarModalGestion()">&times;</button>
+        </div>
+        <form method="POST" action="" id="formGestion">
+            <input type="hidden" name="property_id" value="<?php echo $property_id; ?>">
+            <div class="modal-body">
+                <!-- ===== CAMBIAR ESTADO ===== -->
+                <div style="border-bottom: 1px solid #e8edf4; padding-bottom: 15px; margin-bottom: 15px;">
+                    <h4 style="margin: 0 0 10px 0; font-size: 0.95rem; color: #0f172a;">
+                        <i class="fas fa-exchange-alt" style="color: #1d4ed8;"></i> Cambiar Estado
+                    </h4>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <select name="nuevo_estado" style="width: 100%; padding: 10px 14px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 0.9rem;">
+                            <option value="activo" <?php echo ($propiedad['status'] ?? '') === 'activo' ? 'selected' : ''; ?>>Activo</option>
+                            <option value="pendiente" <?php echo ($propiedad['status'] ?? '') === 'pendiente' ? 'selected' : ''; ?>>Pendiente</option>
+                            <option value="vendido" <?php echo ($propiedad['status'] ?? '') === 'vendido' ? 'selected' : ''; ?>>Vendido</option>
+                            <option value="suspendido" <?php echo ($propiedad['status'] ?? '') === 'suspendido' ? 'selected' : ''; ?>>Suspendido</option>
+                        </select>
+                    </div>
+                    <button type="submit" name="action_gestion" value="cambiar_estado" class="btn-modal primary" style="margin-top: 8px; width: 100%;">
+                        <i class="fas fa-save"></i> Actualizar Estado
+                    </button>
+                </div>
+
+                <!-- ===== APARTAR / LIBERAR ===== -->
+                <div style="border-bottom: 1px solid #e8edf4; padding-bottom: 15px; margin-bottom: 15px;">
+                    <h4 style="margin: 0 0 10px 0; font-size: 0.95rem; color: #0f172a;">
+                        <i class="fas fa-lock" style="color: #f59e0b;"></i> Apartar / Reservar
+                    </h4>
+                    <?php if ($esta_apartada): ?>
+                        <div style="background: #fef3c7; padding: 10px 14px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85rem;">
+                            <strong>⚠️ Esta propiedad está apartada</strong>
+                            <?php if ($apartado_info): ?>
+                                <br>Por: <strong><?php echo htmlspecialchars($apartado_info['reservado_por_nombre'] ?? 'Usuario'); ?></strong>
+                                <br>Motivo: <?php echo htmlspecialchars($apartado_info['motivo'] ?? 'Sin motivo'); ?>
+                                <br>Fecha: <?php echo date('d/m/Y H:i', strtotime($apartado_info['reserved_at'] ?? 'now')); ?>
+                            <?php endif; ?>
+                        </div>
+                        <button type="submit" name="action_gestion" value="liberar_apartado" class="btn-modal warning" style="width: 100%;">
+                            <i class="fas fa-unlock"></i> Liberar Propiedad
+                        </button>
+                    <?php else: ?>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Motivo del apartado</label>
+                            <textarea name="motivo_apartado" rows="2" placeholder="Ej: Negociación en curso con cliente interesado" style="width: 100%; padding: 10px 14px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 0.9rem; font-family: inherit;"></textarea>
+                        </div>
+                        <button type="submit" name="action_gestion" value="apartar" class="btn-modal warning" style="width: 100%; margin-top: 8px;">
+                            <i class="fas fa-lock"></i> Apartar Propiedad
+                        </button>
+                        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">
+                            Al apartar, la propiedad se bloqueará para otros vendedores.
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <!-- ===== FEATURING ===== -->
+                <div style="border-bottom: 1px solid #e8edf4; padding-bottom: 15px; margin-bottom: 15px;">
+                    <h4 style="margin: 0 0 10px 0; font-size: 0.95rem; color: #0f172a;">
+                        <i class="fas fa-star" style="color: #8b5cf6;"></i> Featuring (Destacar)
+                    </h4>
+                    <?php if ($tiene_featuring): ?>
+                        <div style="background: #ede9fe; padding: 10px 14px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85rem;">
+                            <strong>⭐ Featuring activo</strong>
+                            <?php if ($featuring_info): ?>
+                                <br>Duración: <?php echo $featuring_info['dias']; ?> días
+                                <br>Precio: $<?php echo number_format($featuring_info['precio'] ?? 0, 0, ',', '.'); ?>
+                                <br>Vence: <?php echo date('d/m/Y', strtotime($featuring_info['end_date'])); ?>
+                            <?php endif; ?>
+                        </div>
+                        <button type="submit" name="action_gestion" value="desactivar_featuring" class="btn-modal secondary" style="width: 100%;">
+                            <i class="fas fa-star-half-alt"></i> Desactivar Featuring
+                        </button>
+                    <?php else: ?>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>Días</label>
+                                <select name="dias_featuring">
+                                    <option value="3">3 días</option>
+                                    <option value="7" selected>7 días</option>
+                                    <option value="15">15 días</option>
+                                    <option value="30">30 días</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>Precio</label>
+                                <input type="number" name="precio_featuring" placeholder="0.00" step="0.01" value="0.00">
+                            </div>
+                        </div>
+                        <button type="submit" name="action_gestion" value="featuring" class="btn-modal featured" style="width: 100%; margin-top: 8px;">
+                            <i class="fas fa-star"></i> Activar Featuring
+                        </button>
+                        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">
+                            La propiedad aparecerá destacada en el portal de clientes.
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <!-- ===== ELIMINAR ===== -->
+                <div>
+                    <h4 style="margin: 0 0 10px 0; font-size: 0.95rem; color: #dc2626;">
+                        <i class="fas fa-trash-alt" style="color: #dc2626;"></i> Eliminar Propiedad
+                    </h4>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label style="color: #dc2626;">
+                            Confirma escribiendo <strong>"ELIMINAR"</strong> <span class="required">*</span>
+                        </label>
+                        <input type="text" name="confirmacion_borrar" placeholder="Escribe ELIMINAR para confirmar" style="border-color: #fca5a5;">
+                        <div class="help-text" style="color: #dc2626;">
+                            ⚠️ Esta acción es irreversible. Se eliminarán todos los datos y archivos asociados.
+                        </div>
+                    </div>
+                    <button type="submit" name="action_gestion" value="borrar" class="btn-modal danger" style="width: 100%; margin-top: 8px;">
+                        <i class="fas fa-trash-alt"></i> Eliminar Permanentemente
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer">
+    <div class="toast" id="toast">Mensaje</div>
+</div>
+
 <script>
 // ===== MODAL ENLACE =====
 function abrirModalEnlace() {
@@ -1642,6 +2100,23 @@ document.getElementById('enviarWhatsapp').addEventListener('change', function() 
     }
 });
 
+// ===== MODAL GESTIÓN =====
+function abrirModalGestion() {
+    document.getElementById('modalGestion').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function cerrarModalGestion() {
+    document.getElementById('modalGestion').classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+document.getElementById('modalGestion').addEventListener('click', function(e) {
+    if (e.target === this) {
+        cerrarModalGestion();
+    }
+});
+
 // ===== COPIAR TEXTO =====
 function copiarTexto(texto) {
     if (navigator.clipboard) {
@@ -1667,36 +2142,19 @@ function copiarTextoAlternativo(texto) {
     mostrarToast('✅ Enlace copiado al portapapeles');
 }
 
+// ===== TOAST =====
 function mostrarToast(mensaje) {
-    // Crear toast si no existe
-    let toast = document.getElementById('toast');
-    if (!toast) {
-        toast = document.createElement('div');
-        toast.id = 'toast';
-        toast.style.cssText = `
-            position: fixed;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #0f172a;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            z-index: 99999;
-            opacity: 0;
-            transition: opacity 0.3s;
-            pointer-events: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        `;
-        document.body.appendChild(toast);
-    }
+    const toast = document.getElementById('toast');
+    const container = document.getElementById('toastContainer');
     
     toast.textContent = mensaje;
-    toast.style.opacity = '1';
+    toast.classList.add('show');
     
-    setTimeout(() => {
-        toast.style.opacity = '0';
+    container.style.pointerEvents = 'none';
+    
+    clearTimeout(toast._timeout);
+    toast._timeout = setTimeout(() => {
+        toast.classList.remove('show');
     }, 3000);
 }
 

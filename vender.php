@@ -207,6 +207,35 @@ $errores = $_SESSION['errores'] ?? [];
 unset($_SESSION['errores']);
 $show_auth = isset($_GET['show_auth']) ? true : false;
 
+// ========================================
+// MAPEOS PARA MOSTRAR EN RESUMEN - DEFINIDOS AQUÍ
+// ========================================
+$tipos = [
+    'casa' => 'Casa',
+    'departamento' => 'Departamento',
+    'terreno' => 'Terreno',
+    'local' => 'Local Comercial'
+];
+
+$tipos_casa = [
+    'una_planta' => 'Una planta',
+    'dos_plantas' => 'Dos plantas',
+    'duplex' => 'Dúplex'
+];
+
+$niveles = [
+    'primer_nivel' => 'Primer Nivel',
+    'segundo_nivel' => 'Segundo Nivel'
+];
+
+$estados = [
+    'libre' => 'Libre de gravámenes',
+    'intestado' => 'Intestado (sin testamento)',
+    'sucesion' => 'En proceso de sucesión',
+    'litigio' => 'En litigio',
+    'otro' => 'Otro'
+];
+
 $socio = null;
 if (isset($_SESSION['usuario_id'])) {
     try {

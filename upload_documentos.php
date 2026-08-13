@@ -4,7 +4,6 @@
 // Página para que los clientes suban documentos
 // ============================================
 
-
 session_start();
 require_once 'includes/conexion.php';
 
@@ -16,125 +15,206 @@ if (!$conn) {
     die("Error de conexión a la base de datos");
 }
 
-// Verificar token
-$token = $_GET['token'] ?? '';
-if (empty($token)) {
-    die("
-    <!DOCTYPE html>
-    <html>
-    <head><title>Error - Enlace Inválido</title></head>
-    <body style='font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f7fa;'>
-        <div style='background: white; padding: 40px; border-radius: 12px; text-align: center; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);'>
-            <div style='font-size: 60px; margin-bottom: 20px;'>🔒</div>
-            <h2 style='color: #e74c3c;'>Token no válido</h2>
-            <p style='color: #666;'>No se ha proporcionado un enlace válido.</p>
-            <p style='color: #999; font-size: 14px; margin-top: 20px;'>Contacta con el agente inmobiliario para obtener un nuevo enlace.</p>
-        </div>
-    </body>
-    </html>
-    ");
-}
+// ============================================================
+// NUEVO: VERIFICAR SI ES ACCESO ADMINISTRATIVO (CON ID)
+// ============================================================
+$modo_admin = false;
+$admin_property_id = 0;
+$admin_property_title = '';
 
-// Validar token en la base de datos
-try {
-    $stmt = $conn->prepare("
-        SELECT t.*, p.title as property_title, p.id as property_id 
-        FROM document_upload_tokens t
-        JOIN properties p ON t.property_id = p.id
-        WHERE t.token = ? 
-        AND t.is_used = 0 
-        AND t.expires_at > NOW()
-    ");
-    $stmt->execute([$token]);
-    $token_data = $stmt->fetch(PDO::FETCH_ASSOC);
+// Si viene con 'id' en lugar de 'token', es un acceso administrativo
+if (isset($_GET['id']) && is_numeric($_GET['id']) && !isset($_GET['token'])) {
+    // Verificar que el usuario está logueado
+    if (!isset($_SESSION['usuario_id'])) {
+        header('Location: login.php');
+        exit;
+    }
     
-    if (!$token_data) {
-        // Verificar si existe pero está expirado o usado
-        $stmt2 = $conn->prepare("
-            SELECT t.*, p.title as property_title 
-            FROM document_upload_tokens t
-            JOIN properties p ON t.property_id = p.id
-            WHERE t.token = ?
+    $admin_property_id = intval($_GET['id']);
+    $modo_admin = true;
+    
+    // Obtener datos de la propiedad
+    try {
+        $stmt = $conn->prepare("
+            SELECT id, title, address_city, address_municipality 
+            FROM properties 
+            WHERE id = ?
         ");
-        $stmt2->execute([$token]);
-        $token_check = $stmt2->fetch(PDO::FETCH_ASSOC);
+        $stmt->execute([$admin_property_id]);
+        $propiedad_admin = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        if ($token_check) {
-            $error_msg = "El enlace ya no es válido.";
-            if ($token_check['is_used'] == 1) {
-                $error_msg = "Este enlace ya ha sido utilizado. ";
-                if ($token_check['upload_count'] >= $token_check['max_uploads']) {
-                    $error_msg .= "Se alcanzó el límite de " . $token_check['max_uploads'] . " archivos.";
-                }
-            } elseif (strtotime($token_check['expires_at']) < time()) {
-                $error_msg .= "El enlace expiró el " . date('d/m/Y H:i', strtotime($token_check['expires_at']));
-            }
+        if (!$propiedad_admin) {
             die("
             <!DOCTYPE html>
             <html>
-            <head><title>Enlace Expirado</title></head>
-            <body style='font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f7fa;'>
-                <div style='background: white; padding: 40px; border-radius: 12px; text-align: center; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);'>
-                    <div style='font-size: 60px; margin-bottom: 20px;'>⏰</div>
-                    <h2 style='color: #e74c3c;'>Enlace No Válido</h2>
-                    <p style='color: #666;'>$error_msg</p>
-                    <p style='color: #999; font-size: 14px; margin-top: 20px;'>Por favor, solicita un nuevo enlace al agente inmobiliario.</p>
-                </div>
-            </body>
-            </html>
-            ");
-        } else {
-            die("
-            <!DOCTYPE html>
-            <html>
-            <head><title>Error</title></head>
+            <head><title>Error - Propiedad no encontrada</title></head>
             <body style='font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f7fa;'>
                 <div style='background: white; padding: 40px; border-radius: 12px; text-align: center; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);'>
                     <div style='font-size: 60px; margin-bottom: 20px;'>🔍</div>
-                    <h2 style='color: #e74c3c;'>Token Inválido</h2>
-                    <p style='color: #666;'>El enlace proporcionado no es válido.</p>
+                    <h2 style='color: #e74c3c;'>Propiedad no encontrada</h2>
+                    <p style='color: #666;'>La propiedad que buscas no existe o fue eliminada.</p>
+                    <a href='inventario.php' style='display: inline-block; margin-top: 15px; color: #3498db; text-decoration: none; font-weight: 600;'>
+                        <i class='fas fa-arrow-left'></i> Volver al inventario
+                    </a>
                 </div>
             </body>
             </html>
             ");
         }
+        
+        $admin_property_title = $propiedad_admin['title'];
+        
+    } catch (PDOException $e) {
+        die("Error al cargar la propiedad");
     }
-    
-    if ($token_data['upload_count'] >= $token_data['max_uploads']) {
+}
+
+// ============================================================
+// FLUJO NORMAL: VERIFICAR TOKEN (SOLO SI NO ES MODO ADMIN)
+// ============================================================
+$token = $_GET['token'] ?? '';
+$token_data = null;
+$usar_token_real = false;
+
+if (!$modo_admin) {
+    // === FLUJO NORMAL CON TOKEN ===
+    if (empty($token)) {
         die("
         <!DOCTYPE html>
         <html>
-        <head><title>Límite Alcanzado</title></head>
+        <head><title>Error - Enlace Inválido</title></head>
         <body style='font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f7fa;'>
             <div style='background: white; padding: 40px; border-radius: 12px; text-align: center; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);'>
-                <div style='font-size: 60px; margin-bottom: 20px;'>📁</div>
-                <h2 style='color: #f39c12;'>Límite Alcanzado</h2>
-                <p style='color: #666;'>Has subido el máximo de " . $token_data['max_uploads'] . " documentos permitidos.</p>
-                <p style='color: #999; font-size: 14px;'>Los documentos están en revisión por parte del equipo inmobiliario.</p>
+                <div style='font-size: 60px; margin-bottom: 20px;'>🔒</div>
+                <h2 style='color: #e74c3c;'>Token no válido</h2>
+                <p style='color: #666;'>No se ha proporcionado un enlace válido.</p>
+                <p style='color: #999; font-size: 14px; margin-top: 20px;'>Contacta con el agente inmobiliario para obtener un nuevo enlace.</p>
             </div>
         </body>
         </html>
         ");
     }
-    
-} catch (PDOException $e) {
-    die("
-    <!DOCTYPE html>
-    <html>
-    <head><title>Error</title></head>
-    <body style='font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f7fa;'>
-        <div style='background: white; padding: 40px; border-radius: 12px; text-align: center; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);'>
-            <div style='font-size: 60px; margin-bottom: 20px;'>❌</div>
-            <h2 style='color: #e74c3c;'>Error del Sistema</h2>
-            <p style='color: #666;'>Ha ocurrido un error al validar el enlace.</p>
-            <p style='color: #999; font-size: 14px;'>Por favor, contacta al administrador del sistema.</p>
-        </div>
-    </body>
-    </html>
-    ");
+
+    // Validar token en la base de datos
+    try {
+        $stmt = $conn->prepare("
+            SELECT t.*, p.title as property_title, p.id as property_id 
+            FROM document_upload_tokens t
+            JOIN properties p ON t.property_id = p.id
+            WHERE t.token = ? 
+            AND t.is_used = 0 
+            AND t.expires_at > NOW()
+        ");
+        $stmt->execute([$token]);
+        $token_data = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$token_data) {
+            // Verificar si existe pero está expirado o usado
+            $stmt2 = $conn->prepare("
+                SELECT t.*, p.title as property_title 
+                FROM document_upload_tokens t
+                JOIN properties p ON t.property_id = p.id
+                WHERE t.token = ?
+            ");
+            $stmt2->execute([$token]);
+            $token_check = $stmt2->fetch(PDO::FETCH_ASSOC);
+            
+            if ($token_check) {
+                $error_msg = "El enlace ya no es válido.";
+                if ($token_check['is_used'] == 1) {
+                    $error_msg = "Este enlace ya ha sido utilizado. ";
+                    if ($token_check['upload_count'] >= $token_check['max_uploads']) {
+                        $error_msg .= "Se alcanzó el límite de " . $token_check['max_uploads'] . " archivos.";
+                    }
+                } elseif (strtotime($token_check['expires_at']) < time()) {
+                    $error_msg .= "El enlace expiró el " . date('d/m/Y H:i', strtotime($token_check['expires_at']));
+                }
+                die("
+                <!DOCTYPE html>
+                <html>
+                <head><title>Enlace Expirado</title></head>
+                <body style='font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f7fa;'>
+                    <div style='background: white; padding: 40px; border-radius: 12px; text-align: center; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);'>
+                        <div style='font-size: 60px; margin-bottom: 20px;'>⏰</div>
+                        <h2 style='color: #e74c3c;'>Enlace No Válido</h2>
+                        <p style='color: #666;'>$error_msg</p>
+                        <p style='color: #999; font-size: 14px; margin-top: 20px;'>Por favor, solicita un nuevo enlace al agente inmobiliario.</p>
+                    </div>
+                </body>
+                </html>
+                ");
+            } else {
+                die("
+                <!DOCTYPE html>
+                <html>
+                <head><title>Error</title></head>
+                <body style='font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f7fa;'>
+                    <div style='background: white; padding: 40px; border-radius: 12px; text-align: center; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);'>
+                        <div style='font-size: 60px; margin-bottom: 20px;'>🔍</div>
+                        <h2 style='color: #e74c3c;'>Token Inválido</h2>
+                        <p style='color: #666;'>El enlace proporcionado no es válido.</p>
+                    </div>
+                </body>
+                </html>
+                ");
+            }
+        }
+        
+        if ($token_data['upload_count'] >= $token_data['max_uploads']) {
+            die("
+            <!DOCTYPE html>
+            <html>
+            <head><title>Límite Alcanzado</title></head>
+            <body style='font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f7fa;'>
+                <div style='background: white; padding: 40px; border-radius: 12px; text-align: center; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);'>
+                    <div style='font-size: 60px; margin-bottom: 20px;'>📁</div>
+                    <h2 style='color: #f39c12;'>Límite Alcanzado</h2>
+                    <p style='color: #666;'>Has subido el máximo de " . $token_data['max_uploads'] . " documentos permitidos.</p>
+                    <p style='color: #999; font-size: 14px;'>Los documentos están en revisión por parte del equipo inmobiliario.</p>
+                </div>
+            </body>
+            </html>
+            ");
+        }
+        
+        $usar_token_real = true;
+        
+    } catch (PDOException $e) {
+        die("
+        <!DOCTYPE html>
+        <html>
+        <head><title>Error</title></head>
+        <body style='font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f7fa;'>
+            <div style='background: white; padding: 40px; border-radius: 12px; text-align: center; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);'>
+                <div style='font-size: 60px; margin-bottom: 20px;'>❌</div>
+                <h2 style='color: #e74c3c;'>Error del Sistema</h2>
+                <p style='color: #666;'>Ha ocurrido un error al validar el enlace.</p>
+                <p style='color: #999; font-size: 14px;'>Por favor, contacta al administrador del sistema.</p>
+            </div>
+        </body>
+        </html>
+        ");
+    }
+} else {
+    // === MODO ADMIN: CREAR TOKEN VIRTUAL PARA COMPATIBILIDAD ===
+    $token_data = [
+        'id' => 0,
+        'property_id' => $admin_property_id,
+        'property_title' => $admin_property_title,
+        'client_name' => 'Administrador',
+        'client_email' => $_SESSION['usuario_email'] ?? 'admin@inmobiliariamh.com',
+        'max_uploads' => 999, // Sin límite para admin
+        'upload_count' => 0,
+        'expires_at' => date('Y-m-d H:i:s', strtotime('+1 year')),
+        'is_used' => 0,
+        'token' => 'admin_' . $admin_property_id
+    ];
+    $usar_token_real = false;
 }
 
-// Procesar subida de archivos
+// ============================================================
+// PROCESAR SUBIDA DE ARCHIVOS (MODIFICADO PARA ADMIN)
+// ============================================================
 $mensaje = '';
 $mensaje_tipo = '';
 $archivo_subido = false;
@@ -164,7 +244,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['documento'])) {
                 $nombre_limpio = preg_replace('/[^a-zA-Z0-9._-]/', '', pathinfo($archivo['name'], PATHINFO_FILENAME));
                 $nombre_archivo = $timestamp . '_' . $nombre_limpio . '.' . $extension;
                 
-                // Crear directorio si no existe
+                // Crear directorio
                 $directorio = 'uploads/clientes/' . $token_data['property_id'] . '/';
                 if (!file_exists($directorio)) {
                     mkdir($directorio, 0777, true);
@@ -174,14 +254,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['documento'])) {
                 
                 if (move_uploaded_file($archivo['tmp_name'], $ruta_destino)) {
                     try {
+                        // En modo admin, usar token_id = 0 o NULL
+                        $token_id = $usar_token_real ? $token_data['id'] : 0;
+                        
                         $stmt = $conn->prepare("
                             INSERT INTO client_uploaded_documents 
-                            (property_id, token_id, document_type, file_name, file_path, file_size, mime_type, description, client_ip, user_agent) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            (property_id, token_id, document_type, file_name, file_path, file_size, mime_type, description, client_ip, user_agent, status) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ");
                         $stmt->execute([
                             $token_data['property_id'],
-                            $token_data['id'],
+                            $token_id,
                             $document_type,
                             $archivo['name'],
                             $ruta_destino,
@@ -189,33 +272,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['documento'])) {
                             $archivo['type'],
                             $description,
                             $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0',
-                            $_SERVER['HTTP_USER_AGENT'] ?? ''
+                            $_SERVER['HTTP_USER_AGENT'] ?? '',
+                            'pending_review'
                         ]);
                         
                         $document_id = $conn->lastInsertId();
                         
-                        // Actualizar contador de archivos
-                        $stmt = $conn->prepare("UPDATE document_upload_tokens SET upload_count = upload_count + 1 WHERE id = ?");
-                        $stmt->execute([$token_data['id']]);
-                        
-                        // Marcar como usado si llegó al límite
-                        $new_count = $token_data['upload_count'] + 1;
-                        if ($new_count >= $token_data['max_uploads']) {
-                            $stmt = $conn->prepare("UPDATE document_upload_tokens SET is_used = 1, used_at = NOW() WHERE id = ?");
+                        // Actualizar contador SOLO si es token real
+                        if ($usar_token_real) {
+                            $stmt = $conn->prepare("UPDATE document_upload_tokens SET upload_count = upload_count + 1 WHERE id = ?");
                             $stmt->execute([$token_data['id']]);
+                            
+                            // Marcar como usado si llegó al límite
+                            $new_count = $token_data['upload_count'] + 1;
+                            if ($new_count >= $token_data['max_uploads']) {
+                                $stmt = $conn->prepare("UPDATE document_upload_tokens SET is_used = 1, used_at = NOW() WHERE id = ?");
+                                $stmt->execute([$token_data['id']]);
+                            }
+                            
+                            $token_data['upload_count'] = $new_count;
                         }
                         
                         $mensaje = "¡Documento subido exitosamente!";
                         $mensaje_tipo = 'success';
                         $archivo_subido = true;
                         
-                        // Actualizar datos del token
-                        $token_data['upload_count'] = $new_count;
-                        
                     } catch (PDOException $e) {
                         $mensaje = "Error al guardar en la base de datos: " . $e->getMessage();
                         $mensaje_tipo = 'error';
-                        // Eliminar archivo si falló la BD
                         if (file_exists($ruta_destino)) {
                             unlink($ruta_destino);
                         }
@@ -241,23 +325,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['documento'])) {
     }
 }
 
-// Obtener documentos subidos
+// Obtener documentos subidos (MODIFICADO PARA ADMIN)
 $documentos = [];
 try {
-    $stmt = $conn->prepare("
-        SELECT * FROM client_uploaded_documents 
-        WHERE token_id = ? 
-        ORDER BY uploaded_at DESC
-    ");
-    $stmt->execute([$token_data['id']]);
+    if ($usar_token_real) {
+        // Si es token real, obtener por token_id
+        $stmt = $conn->prepare("
+            SELECT * FROM client_uploaded_documents 
+            WHERE token_id = ? 
+            ORDER BY uploaded_at DESC
+        ");
+        $stmt->execute([$token_data['id']]);
+    } else {
+        // Si es admin, obtener todos los documentos de la propiedad
+        $stmt = $conn->prepare("
+            SELECT * FROM client_uploaded_documents 
+            WHERE property_id = ? 
+            ORDER BY uploaded_at DESC
+        ");
+        $stmt->execute([$token_data['property_id']]);
+    }
     $documentos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $documentos = [];
 }
 
-$archivos_restantes = $token_data['max_uploads'] - $token_data['upload_count'];
-$expira_en = (strtotime($token_data['expires_at']) - time()) / 86400;
-$expira_en = ceil($expira_en);
+// Calcular archivos restantes
+if ($usar_token_real) {
+    $archivos_restantes = $token_data['max_uploads'] - $token_data['upload_count'];
+    $expira_en = (strtotime($token_data['expires_at']) - time()) / 86400;
+    $expira_en = ceil($expira_en);
+} else {
+    $archivos_restantes = 999; // Sin límite para admin
+    $expira_en = 365; // 1 año
+}
+
+// ============================================================
+// HTML (CON BARRA ADMIN SI CORRESPONDE)
+// ============================================================
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -267,6 +372,7 @@ $expira_en = ceil($expira_en);
     <title>Subir Documentos - <?php echo htmlspecialchars($token_data['property_title']); ?></title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
+        /* ... todos tus estilos existentes ... */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
@@ -276,14 +382,56 @@ $expira_en = ceil($expira_en);
         }
         .container { max-width: 900px; width: 100%; margin: 0 auto; }
         
+        /* ===== BARRA ADMIN ===== */
+        .admin-bar {
+            background: #1d4ed8;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 12px 12px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 0;
+        }
+        .admin-bar .admin-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .admin-bar .admin-info i {
+            font-size: 20px;
+        }
+        .admin-bar .admin-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .admin-bar .admin-actions a {
+            color: white;
+            text-decoration: none;
+            background: rgba(255,255,255,0.2);
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .admin-bar .admin-actions a:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
         .card { 
             background: white; 
-            border-radius: 16px; 
+            border-radius: 0 0 16px 16px; 
             box-shadow: 0 20px 60px rgba(0,0,0,0.1); 
             padding: 40px;
             margin-bottom: 20px;
         }
         
+        /* ... resto de tus estilos existentes ... */
         .header { text-align: center; margin-bottom: 30px; }
         .header .icon { 
             font-size: 60px; 
@@ -512,11 +660,45 @@ $expira_en = ceil($expira_en);
             .file-item .file-time { margin-left: 38px; }
             .drop-zone { padding: 30px 15px; }
             .drop-zone i { font-size: 40px; }
+            .admin-bar {
+                flex-direction: column;
+                text-align: center;
+                padding: 12px 16px;
+            }
+            .admin-bar .admin-actions {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
         }
     </style>
 </head>
 <body>
 <div class="container">
+
+    <?php if ($modo_admin): ?>
+    <!-- ===== BARRA ADMINISTRADOR ===== -->
+    <div class="admin-bar">
+        <div class="admin-info">
+            <i class="fas fa-user-shield"></i>
+            <span>
+                <strong>Modo Administrador</strong> · 
+                Gestionando: <?php echo htmlspecialchars($token_data['property_title']); ?>
+                <span style="font-size: 12px; opacity: 0.8; margin-left: 8px;">
+                    <i class="fas fa-hashtag"></i> ID: <?php echo $token_data['property_id']; ?>
+                </span>
+            </span>
+        </div>
+        <div class="admin-actions">
+            <a href="propiedad_detalle_inventario.php?id=<?php echo $token_data['property_id']; ?>">
+                <i class="fas fa-arrow-left"></i> Volver a detalles
+            </a>
+            <a href="inventario.php">
+                <i class="fas fa-th-list"></i> Inventario
+            </a>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="card">
         <div class="header">
             <div class="icon"><i class="fas fa-file-upload"></i></div>
@@ -524,6 +706,11 @@ $expira_en = ceil($expira_en);
             <p>
                 Para la propiedad: 
                 <span class="property-title"><?php echo htmlspecialchars($token_data['property_title']); ?></span>
+                <?php if ($modo_admin): ?>
+                    <span style="display: inline-block; background: #1d4ed8; color: white; padding: 2px 10px; border-radius: 12px; font-size: 11px; margin-left: 8px;">
+                        <i class="fas fa-user-shield"></i> Admin
+                    </span>
+                <?php endif; ?>
             </p>
         </div>
 
@@ -535,22 +722,34 @@ $expira_en = ceil($expira_en);
             <div class="info-item">
                 <div class="label">📄 Archivos Restantes</div>
                 <div class="value <?php echo $archivos_restantes <= 2 ? 'urgent' : ($archivos_restantes <= 5 ? 'warning' : 'success'); ?>">
-                    <?php echo $archivos_restantes; ?> / <?php echo $token_data['max_uploads']; ?>
+                    <?php 
+                        if ($modo_admin) {
+                            echo '∞ (Admin)';
+                        } else {
+                            echo $archivos_restantes . ' / ' . $token_data['max_uploads'];
+                        }
+                    ?>
                 </div>
             </div>
             <div class="info-item">
                 <div class="label">⏰ Expira en</div>
                 <div class="value <?php echo $expira_en <= 1 ? 'urgent' : ($expira_en <= 3 ? 'warning' : ''); ?>">
                     <?php 
-                        if ($expira_en <= 0) echo "Hoy";
-                        elseif ($expira_en == 1) echo "Mañana";
-                        else echo $expira_en . " días";
+                        if ($modo_admin) {
+                            echo '∞ (Admin)';
+                        } elseif ($expira_en <= 0) {
+                            echo "Hoy";
+                        } elseif ($expira_en == 1) {
+                            echo "Mañana";
+                        } else {
+                            echo $expira_en . " días";
+                        }
                     ?>
                 </div>
             </div>
             <div class="info-item">
                 <div class="label">📁 Subidos</div>
-                <div class="value"><?php echo $token_data['upload_count']; ?></div>
+                <div class="value"><?php echo count($documentos); ?></div>
             </div>
         </div>
 
@@ -561,7 +760,7 @@ $expira_en = ceil($expira_en);
             </div>
         <?php endif; ?>
 
-        <?php if ($archivos_restantes > 0): ?>
+        <?php if ($archivos_restantes > 0 || $modo_admin): ?>
         <form method="POST" enctype="multipart/form-data" id="uploadForm">
             <div class="form-group">
                 <label for="document_type">Tipo de Documento <span class="required">*</span></label>
@@ -661,6 +860,12 @@ $expira_en = ceil($expira_en);
                         <span class="file-time">
                             <?php echo date('d/m/Y H:i', strtotime($doc['uploaded_at'])); ?>
                         </span>
+                        <?php if ($modo_admin): ?>
+                            <a href="<?php echo htmlspecialchars($doc['file_path']); ?>" target="_blank" 
+                               style="color: #3498db; font-size: 13px; text-decoration: none; background: #e8f0fe; padding: 2px 10px; border-radius: 4px;">
+                                <i class="fas fa-eye"></i> Ver
+                            </a>
+                        <?php endif; ?>
                     </div>
                 </div>
             <?php endforeach; ?>

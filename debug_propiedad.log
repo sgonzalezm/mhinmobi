@@ -1,0 +1,505 @@
+[2026-08-13 02:03:25] ========== INICIO DE EJECUCIÓN ==========
+[2026-08-13 02:03:25] Método HTTP: GET
+[2026-08-13 02:03:25] POST recibido: - Array
+(
+)
+
+[2026-08-13 02:03:25] FILES recibido: - Array
+(
+)
+
+[2026-08-13 02:03:25] No es petición POST
+[2026-08-13 02:04:22] ========== INICIO DE EJECUCIÓN ==========
+[2026-08-13 02:04:22] Método HTTP: GET
+[2026-08-13 02:04:22] POST recibido: - Array
+(
+)
+
+[2026-08-13 02:04:22] FILES recibido: - Array
+(
+)
+
+[2026-08-13 02:04:22] No es petición POST
+[2026-08-13 02:06:59] ========== INICIO DE EJECUCIÓN ==========
+[2026-08-13 02:06:59] Método HTTP: GET
+[2026-08-13 02:06:59] POST recibido: - Array
+(
+)
+
+[2026-08-13 02:06:59] FILES recibido: - Array
+(
+)
+
+[2026-08-13 02:06:59] ADVERTENCIA: Petición GET recibida - deberías usar POST
+[2026-08-13 02:06:59] Sesión iniciada. Contenido: - Array
+(
+    [usuario_id] => 1
+    [usuario_nombre] => diego
+    [usuario_email] => diego@inmobiliariamh.com
+    [usuario_activo] => 1
+    [form_venta] => Array
+        (
+            [imagenes_guardadas] => [&quot;uploads\/propiedades\/6a7d00e69dc42.jpg&quot;]
+            [titulo] => Departamento de prueba 3
+            [precio] => 700000
+            [tipo_operacion] => venta
+            [tipo_vivienda] => departamento
+            [tipo_casa] => 
+            [nivel_duplex] => 
+            [nivel_departamento] => 2do nivel
+            [descripcion] => Departamento en zona de alta plusvalia
+            [accesorios] => Array
+                (
+                )
+
+            [m2] => 52
+            [recamaras] => 2
+            [banos] => 1
+            [estacionamiento] => 1
+            [ubicacion] => Hacienda Nogalera 123
+            [accesorios_otro_check] => on
+            [imagenes] => Array
+                (
+                    [0] => uploads/propiedades/6a7d00e69dc42.jpg
+                )
+
+            [tiene_adeudo] => 0
+            [tipo_adeudo] => 
+            [banco_id] => 
+            [monto_adeudo] => 
+            [adeudo_compartido_detalles] => 
+            [servicio_agua_activo] => 1
+            [servicio_agua_adeudo] => 1
+            [servicio_luz_activo] => 1
+            [servicio_luz_adeudo] => 1
+            [servicio_gas_activo] => 0
+            [servicio_internet_activo] => 0
+            [servicio_basura_activo] => 0
+            [tiene_escrituras] => 0
+            [tiene_testamento] => 0
+            [legal_status] => libre
+            [legal_status_notes] => Escritura en notaria
+        )
+
+)
+
+[2026-08-13 02:06:59] Usuario ID: 1
+[2026-08-13 02:06:59] Usuario encontrado: - Array
+(
+    [id] => 1
+    [nombre] => diego
+    [email] => diego@inmobiliariamh.com
+)
+
+[2026-08-13 02:06:59] Usando datos GET en lugar de POST
+[2026-08-13 02:06:59] ERROR: Campos requeridos faltantes: titulo, tipo_operacion, tipo_vivienda
+[2026-08-13 02:08:31] ========== INICIO DE EJECUCIÓN ==========
+[2026-08-13 02:08:31] Método HTTP: GET
+[2026-08-13 02:08:31] POST recibido: - Array
+(
+)
+
+[2026-08-13 02:08:31] GET recibido: - Array
+(
+)
+
+[2026-08-13 02:08:31] FILES recibido: - Array
+(
+)
+
+[2026-08-13 02:08:31] Contenido de php://input: - 
+[2026-08-13 02:08:31] ADVERTENCIA: Petición GET recibida - deberías usar POST
+[2026-08-13 02:08:31] Sesión actual: - Array
+(
+    [usuario_id] => 1
+    [usuario_nombre] => diego
+    [usuario_email] => diego@inmobiliariamh.com
+    [usuario_activo] => 1
+    [form_venta] => Array
+        (
+            [imagenes_guardadas] => [&quot;uploads\/propiedades\/6a7d00e69dc42.jpg&quot;]
+            [titulo] => Departamento de prueba 3
+            [precio] => 700000
+            [tipo_operacion] => venta
+            [tipo_vivienda] => departamento
+            [tipo_casa] => 
+            [nivel_duplex] => 
+            [nivel_departamento] => 2do nivel
+            [descripcion] => Departamento en zona de alta plusvalia
+            [accesorios] => Array
+                (
+                )
+
+            [m2] => 52
+            [recamaras] => 2
+            [banos] => 1
+            [estacionamiento] => 1
+            [ubicacion] => Hacienda Nogalera 123
+            [accesorios_otro_check] => on
+            [imagenes] => Array
+                (
+                    [0] => uploads/propiedades/6a7d00e69dc42.jpg
+                )
+
+            [tiene_adeudo] => 0
+            [tipo_adeudo] => 
+            [banco_id] => 
+            [monto_adeudo] => 
+            [adeudo_compartido_detalles] => 
+            [servicio_agua_activo] => 1
+            [servicio_agua_adeudo] => 1
+            [servicio_luz_activo] => 1
+            [servicio_luz_adeudo] => 1
+            [servicio_gas_activo] => 0
+            [servicio_internet_activo] => 0
+            [servicio_basura_activo] => 0
+            [tiene_escrituras] => 0
+            [tiene_testamento] => 0
+            [legal_status] => libre
+            [legal_status_notes] => Escritura en notaria
+        )
+
+)
+
+[2026-08-13 02:08:31] Usuario ID: 1
+[2026-08-13 02:08:31] Usuario encontrado: - Array
+(
+    [id] => 1
+    [nombre] => diego
+    [email] => diego@inmobiliariamh.com
+)
+
+[2026-08-13 02:08:31] Usando datos GET (solo para pruebas)
+[2026-08-13 02:08:31] DATOS FINALES A PROCESAR: - Array
+(
+)
+
+[2026-08-13 02:08:31] ERROR: Campos requeridos faltantes: titulo, tipo_operacion, tipo_vivienda
+[2026-08-13 02:08:48] ========== INICIO DE EJECUCIÓN ==========
+[2026-08-13 02:08:48] Método HTTP: GET
+[2026-08-13 02:08:48] POST recibido: - Array
+(
+)
+
+[2026-08-13 02:08:48] GET recibido: - Array
+(
+)
+
+[2026-08-13 02:08:48] FILES recibido: - Array
+(
+)
+
+[2026-08-13 02:08:48] Contenido de php://input: - 
+[2026-08-13 02:08:48] ADVERTENCIA: Petición GET recibida - deberías usar POST
+[2026-08-13 02:08:48] Sesión actual: - Array
+(
+    [usuario_id] => 1
+    [usuario_nombre] => diego
+    [usuario_email] => diego@inmobiliariamh.com
+    [usuario_activo] => 1
+    [form_venta] => Array
+        (
+            [imagenes_guardadas] => [&quot;uploads\/propiedades\/6a7d00e69dc42.jpg&quot;]
+            [titulo] => Departamento de prueba 3
+            [precio] => 700000
+            [tipo_operacion] => venta
+            [tipo_vivienda] => departamento
+            [tipo_casa] => 
+            [nivel_duplex] => 
+            [nivel_departamento] => 2do nivel
+            [descripcion] => Departamento en zona de alta plusvalia
+            [accesorios] => Array
+                (
+                )
+
+            [m2] => 52
+            [recamaras] => 2
+            [banos] => 1
+            [estacionamiento] => 1
+            [ubicacion] => Hacienda Nogalera 123
+            [accesorios_otro_check] => on
+            [imagenes] => Array
+                (
+                    [0] => uploads/propiedades/6a7d00e69dc42.jpg
+                )
+
+            [tiene_adeudo] => 0
+            [tipo_adeudo] => 
+            [banco_id] => 
+            [monto_adeudo] => 
+            [adeudo_compartido_detalles] => 
+            [servicio_agua_activo] => 1
+            [servicio_agua_adeudo] => 1
+            [servicio_luz_activo] => 1
+            [servicio_luz_adeudo] => 1
+            [servicio_gas_activo] => 0
+            [servicio_internet_activo] => 0
+            [servicio_basura_activo] => 0
+            [tiene_escrituras] => 0
+            [tiene_testamento] => 0
+            [legal_status] => libre
+            [legal_status_notes] => Escritura en notaria
+        )
+
+)
+
+[2026-08-13 02:08:48] Usuario ID: 1
+[2026-08-13 02:08:48] Usuario encontrado: - Array
+(
+    [id] => 1
+    [nombre] => diego
+    [email] => diego@inmobiliariamh.com
+)
+
+[2026-08-13 02:08:48] Usando datos GET (solo para pruebas)
+[2026-08-13 02:08:48] DATOS FINALES A PROCESAR: - Array
+(
+)
+
+[2026-08-13 02:08:48] ERROR: Campos requeridos faltantes: titulo, tipo_operacion, tipo_vivienda
+[2026-08-13 02:08:49] ========== INICIO DE EJECUCIÓN ==========
+[2026-08-13 02:08:49] Método HTTP: GET
+[2026-08-13 02:08:49] POST recibido: - Array
+(
+)
+
+[2026-08-13 02:08:49] GET recibido: - Array
+(
+)
+
+[2026-08-13 02:08:49] FILES recibido: - Array
+(
+)
+
+[2026-08-13 02:08:49] Contenido de php://input: - 
+[2026-08-13 02:08:49] ADVERTENCIA: Petición GET recibida - deberías usar POST
+[2026-08-13 02:08:49] Sesión actual: - Array
+(
+    [usuario_id] => 1
+    [usuario_nombre] => diego
+    [usuario_email] => diego@inmobiliariamh.com
+    [usuario_activo] => 1
+    [form_venta] => Array
+        (
+            [imagenes_guardadas] => [&quot;uploads\/propiedades\/6a7d00e69dc42.jpg&quot;]
+            [titulo] => Departamento de prueba 3
+            [precio] => 700000
+            [tipo_operacion] => venta
+            [tipo_vivienda] => departamento
+            [tipo_casa] => 
+            [nivel_duplex] => 
+            [nivel_departamento] => 2do nivel
+            [descripcion] => Departamento en zona de alta plusvalia
+            [accesorios] => Array
+                (
+                )
+
+            [m2] => 52
+            [recamaras] => 2
+            [banos] => 1
+            [estacionamiento] => 1
+            [ubicacion] => Hacienda Nogalera 123
+            [accesorios_otro_check] => on
+            [imagenes] => Array
+                (
+                    [0] => uploads/propiedades/6a7d00e69dc42.jpg
+                )
+
+            [tiene_adeudo] => 0
+            [tipo_adeudo] => 
+            [banco_id] => 
+            [monto_adeudo] => 
+            [adeudo_compartido_detalles] => 
+            [servicio_agua_activo] => 1
+            [servicio_agua_adeudo] => 1
+            [servicio_luz_activo] => 1
+            [servicio_luz_adeudo] => 1
+            [servicio_gas_activo] => 0
+            [servicio_internet_activo] => 0
+            [servicio_basura_activo] => 0
+            [tiene_escrituras] => 0
+            [tiene_testamento] => 0
+            [legal_status] => libre
+            [legal_status_notes] => Escritura en notaria
+        )
+
+)
+
+[2026-08-13 02:08:49] Usuario ID: 1
+[2026-08-13 02:08:49] Usuario encontrado: - Array
+(
+    [id] => 1
+    [nombre] => diego
+    [email] => diego@inmobiliariamh.com
+)
+
+[2026-08-13 02:08:49] Usando datos GET (solo para pruebas)
+[2026-08-13 02:08:49] DATOS FINALES A PROCESAR: - Array
+(
+)
+
+[2026-08-13 02:08:49] ERROR: Campos requeridos faltantes: titulo, tipo_operacion, tipo_vivienda
+[2026-08-13 02:08:49] ========== INICIO DE EJECUCIÓN ==========
+[2026-08-13 02:08:49] Método HTTP: GET
+[2026-08-13 02:08:49] POST recibido: - Array
+(
+)
+
+[2026-08-13 02:08:49] GET recibido: - Array
+(
+)
+
+[2026-08-13 02:08:49] FILES recibido: - Array
+(
+)
+
+[2026-08-13 02:08:49] Contenido de php://input: - 
+[2026-08-13 02:08:49] ADVERTENCIA: Petición GET recibida - deberías usar POST
+[2026-08-13 02:08:49] Sesión actual: - Array
+(
+    [usuario_id] => 1
+    [usuario_nombre] => diego
+    [usuario_email] => diego@inmobiliariamh.com
+    [usuario_activo] => 1
+    [form_venta] => Array
+        (
+            [imagenes_guardadas] => [&quot;uploads\/propiedades\/6a7d00e69dc42.jpg&quot;]
+            [titulo] => Departamento de prueba 3
+            [precio] => 700000
+            [tipo_operacion] => venta
+            [tipo_vivienda] => departamento
+            [tipo_casa] => 
+            [nivel_duplex] => 
+            [nivel_departamento] => 2do nivel
+            [descripcion] => Departamento en zona de alta plusvalia
+            [accesorios] => Array
+                (
+                )
+
+            [m2] => 52
+            [recamaras] => 2
+            [banos] => 1
+            [estacionamiento] => 1
+            [ubicacion] => Hacienda Nogalera 123
+            [accesorios_otro_check] => on
+            [imagenes] => Array
+                (
+                    [0] => uploads/propiedades/6a7d00e69dc42.jpg
+                )
+
+            [tiene_adeudo] => 0
+            [tipo_adeudo] => 
+            [banco_id] => 
+            [monto_adeudo] => 
+            [adeudo_compartido_detalles] => 
+            [servicio_agua_activo] => 1
+            [servicio_agua_adeudo] => 1
+            [servicio_luz_activo] => 1
+            [servicio_luz_adeudo] => 1
+            [servicio_gas_activo] => 0
+            [servicio_internet_activo] => 0
+            [servicio_basura_activo] => 0
+            [tiene_escrituras] => 0
+            [tiene_testamento] => 0
+            [legal_status] => libre
+            [legal_status_notes] => Escritura en notaria
+        )
+
+)
+
+[2026-08-13 02:08:49] Usuario ID: 1
+[2026-08-13 02:08:49] Usuario encontrado: - Array
+(
+    [id] => 1
+    [nombre] => diego
+    [email] => diego@inmobiliariamh.com
+)
+
+[2026-08-13 02:08:49] Usando datos GET (solo para pruebas)
+[2026-08-13 02:08:49] DATOS FINALES A PROCESAR: - Array
+(
+)
+
+[2026-08-13 02:08:49] ERROR: Campos requeridos faltantes: titulo, tipo_operacion, tipo_vivienda
+[2026-08-13 02:08:55] ========== INICIO DE EJECUCIÓN ==========
+[2026-08-13 02:08:55] Método HTTP: GET
+[2026-08-13 02:08:55] POST recibido: - Array
+(
+)
+
+[2026-08-13 02:08:55] GET recibido: - Array
+(
+)
+
+[2026-08-13 02:08:55] FILES recibido: - Array
+(
+)
+
+[2026-08-13 02:08:55] Contenido de php://input: - 
+[2026-08-13 02:08:55] ADVERTENCIA: Petición GET recibida - deberías usar POST
+[2026-08-13 02:08:55] Sesión actual: - Array
+(
+    [usuario_id] => 1
+    [usuario_nombre] => diego
+    [usuario_email] => diego@inmobiliariamh.com
+    [usuario_activo] => 1
+    [form_venta] => Array
+        (
+            [imagenes_guardadas] => [&quot;uploads\/propiedades\/6a7d00e69dc42.jpg&quot;]
+            [titulo] => Departamento de prueba 3
+            [precio] => 700000
+            [tipo_operacion] => venta
+            [tipo_vivienda] => departamento
+            [tipo_casa] => 
+            [nivel_duplex] => 
+            [nivel_departamento] => 2do nivel
+            [descripcion] => Departamento en zona de alta plusvalia
+            [accesorios] => Array
+                (
+                )
+
+            [m2] => 52
+            [recamaras] => 2
+            [banos] => 1
+            [estacionamiento] => 1
+            [ubicacion] => Hacienda Nogalera 123
+            [accesorios_otro_check] => on
+            [imagenes] => Array
+                (
+                    [0] => uploads/propiedades/6a7d00e69dc42.jpg
+                )
+
+            [tiene_adeudo] => 0
+            [tipo_adeudo] => 
+            [banco_id] => 
+            [monto_adeudo] => 
+            [adeudo_compartido_detalles] => 
+            [servicio_agua_activo] => 1
+            [servicio_agua_adeudo] => 1
+            [servicio_luz_activo] => 1
+            [servicio_luz_adeudo] => 1
+            [servicio_gas_activo] => 0
+            [servicio_internet_activo] => 0
+            [servicio_basura_activo] => 0
+            [tiene_escrituras] => 0
+            [tiene_testamento] => 0
+            [legal_status] => libre
+            [legal_status_notes] => Escritura en notaria
+        )
+
+)
+
+[2026-08-13 02:08:55] Usuario ID: 1
+[2026-08-13 02:08:55] Usuario encontrado: - Array
+(
+    [id] => 1
+    [nombre] => diego
+    [email] => diego@inmobiliariamh.com
+)
+
+[2026-08-13 02:08:55] Usando datos GET (solo para pruebas)
+[2026-08-13 02:08:55] DATOS FINALES A PROCESAR: - Array
+(
+)
+
+[2026-08-13 02:08:55] ERROR: Campos requeridos faltantes: titulo, tipo_operacion, tipo_vivienda

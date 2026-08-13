@@ -237,4 +237,94 @@ function registrarUsuario($nombre, $email, $password) {
         return false;
     }
 }
+
+// ========================================
+// EL CÓDIGO DE ABAJO SOLO SE EJECUTA SI SE LLAMA DIRECTAMENTE
+// ========================================
+
+// Verificar si se está llamando directamente (no desde vender.php)
+// Si se llama desde vender.php, NO se ejecuta este código
+if (basename($_SERVER['SCRIPT_FILENAME']) === 'guardar_propiedad.php') {
+    // Iniciar sesión si no está iniciada
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    // Verificar si el usuario está autenticado
+    if (!isset($_SESSION['usuario_id'])) {
+        echo json_encode(['success' => false, 'error' => 'Usuario no autenticado']);
+        exit;
+    }
+
+    $usuario_id = $_SESSION['usuario_id'];
+
+    // Verificar que el usuario existe en la BD
+    try {
+        $sql = "SELECT id, nombre, email FROM socios WHERE id = ? AND activo = 1";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute([$usuario_id]);
+        $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$usuario) {
+            echo json_encode(['success' => false, 'error' => 'Usuario no válido']);
+            exit;
+        }
+    } catch (PDOException $e) {
+        echo json_encode(['success' => false, 'error' => 'Error al verificar usuario']);
+        exit;
+    }
+
+    // Obtener datos de la sesión
+    $data = [];
+    if (isset($_SESSION['form_venta']) && is_array($_SESSION['form_venta']) && !empty($_SESSION['form_venta'])) {
+        $data = $_SESSION['form_venta'];
+    }
+
+    // Verificar que tenemos datos
+    if (empty($data)) {
+        echo json_encode([
+            'success' => false, 
+            'error' => 'No se encontraron datos para guardar',
+            'debug' => [
+                'session_form_venta' => isset($_SESSION['form_venta']) ? 'existe' : 'no existe',
+                'session_keys' => array_keys($_SESSION),
+                'post' => $_POST,
+                'get' => $_GET,
+                'method' => $_SERVER['REQUEST_METHOD']
+            ]
+        ]);
+        exit;
+    }
+
+    // Verificar campos mínimos
+    $campos_requeridos = ['titulo', 'tipo_operacion', 'tipo_vivienda'];
+    $faltantes = [];
+    foreach ($campos_requeridos as $campo) {
+        if (empty($data[$campo])) {
+            $faltantes[] = $campo;
+        }
+    }
+
+    if (!empty($faltantes)) {
+        echo json_encode([
+            'success' => false, 
+            'error' => 'Campos requeridos faltantes: ' . implode(', ', $faltantes),
+            'datos_recibidos' => $data
+        ]);
+        exit;
+    }
+
+    // Intentar guardar la propiedad
+    $resultado = guardarPropiedad($data, $usuario_id);
+
+    // Si se guardó correctamente, limpiar la sesión
+    if ($resultado['success']) {
+        unset($_SESSION['form_venta']);
+    }
+
+    // Devolver respuesta
+    header('Content-Type: application/json');
+    echo json_encode($resultado);
+    exit;
+}
 ?>
