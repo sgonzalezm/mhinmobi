@@ -28,7 +28,7 @@
         <a href="mis_propiedades.php">
             <i class="fas fa-building"></i> Mis Propiedades
         </a>
-        <a href="vender.php" class="active">
+        <a href="vender.php">
             <i class="fas fa-plus-circle"></i> Publicar Propiedad
         </a>
         <a href="inventario_maestro.php">

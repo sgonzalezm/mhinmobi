@@ -239,8 +239,8 @@ $tipos_casa = [
 ];
 
 $niveles = [
-    'primer_nivel' => 'Primer Nivel',
-    'segundo_nivel' => 'Segundo Nivel'
+    'planta_baja' => 'Planta Baja',
+    'planta_alta' => 'Planta Alta'
 ];
 
 $estados = [
@@ -997,8 +997,8 @@ if (isset($_SESSION['usuario_id'])) {
                                 <label for="nivel_duplex">Nivel del Dúplex <span class="required">*</span></label>
                                 <select id="nivel_duplex" name="nivel_duplex">
                                     <option value="">Seleccionar</option>
-                                    <option value="primer_nivel" <?php echo (isset($data['nivel_duplex']) && $data['nivel_duplex'] == 'primer_nivel') ? 'selected' : ''; ?>>Primer Nivel</option>
-                                    <option value="segundo_nivel" <?php echo (isset($data['nivel_duplex']) && $data['nivel_duplex'] == 'segundo_nivel') ? 'selected' : ''; ?>>Segundo Nivel</option>
+                                    <option value="planta_baja" <?php echo (isset($data['nivel_duplex']) && $data['nivel_duplex'] == 'planta_baja') ? 'selected' : ''; ?>>Planta Baja</option>
+                                    <option value="planta_alta" <?php echo (isset($data['nivel_duplex']) && $data['nivel_duplex'] == 'planta_alta') ? 'selected' : ''; ?>>Planta Alta</option>
                                 </select>
                             </div>
                         </div>

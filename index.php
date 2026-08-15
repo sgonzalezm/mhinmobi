@@ -776,32 +776,6 @@
         </div>
     </section>
 
-    <!-- ===== TESTIMONIOS (nuevo) ===== -->
-    <section class="testimonials-section" id="testimonios">
-        <div class="container">
-            <h2 class="section-title">Lo que dicen nuestros clientes</h2>
-            <p class="section-subtitle">La confianza de quienes han confiado en nosotros es nuestro mejor respaldo.</p>
-            <div class="testimonials-grid">
-
-                <div class="testimonial-card">
-                    <p>“El equipo de Vera Terra nos acompañó en cada paso. Su asesoría jurídica fue impecable y logramos cerrar la compra de nuestra casa en tiempo récord.”</p>
-                    <div class="author">Laura Méndez <span>– Cliente residencial</span></div>
-                </div>
-
-                <div class="testimonial-card">
-                    <p>“Gracias a su valoración de activos pudimos identificar el verdadero potencial de nuestra inversión. Profesionalismo y transparencia total.”</p>
-                    <div class="author">Carlos Herrera <span>– Inversionista</span></div>
-                </div>
-
-                <div class="testimonial-card">
-                    <p>“Nos encargaron la gestión de varias oficinas corporativas y el resultado fue excelente. Siempre atentos y con soluciones rápidas.”</p>
-                    <div class="author">Ana Sofía Torres <span>– Directora de Operaciones</span></div>
-                </div>
-
-            </div>
-        </div>
-    </section>
-
     <!-- ===== CTA / CONTACTO (nuevo) ===== -->
     <section class="cta-section" id="contacto">
         <div class="container">
