@@ -182,6 +182,95 @@ function getDocumentStatusLabel($status) {
     return $labels[$status] ?? ['label' => $status, 'class' => ''];
 }
 
+// ===== FUNCIÓN PARA OBTENER NOMBRE DEL DEDO =====
+function obtenerNombreDedo($dedo) {
+    $nombres = [
+        'pulgar_derecho' => 'Pulgar Derecho',
+        'indice_derecho' => 'Índice Derecho',
+        'medio_derecho' => 'Medio Derecho',
+        'anular_derecho' => 'Anular Derecho',
+        'menique_derecho' => 'Meñique Derecho',
+        'pulgar_izquierdo' => 'Pulgar Izquierdo',
+        'indice_izquierdo' => 'Índice Izquierdo',
+        'medio_izquierdo' => 'Medio Izquierdo',
+        'anular_izquierdo' => 'Anular Izquierdo',
+        'menique_izquierdo' => 'Meñique Izquierdo',
+        'firma' => 'Firma'
+    ];
+    return $nombres[$dedo] ?? $dedo;
+}
+
+// ============================================
+// NUEVAS FUNCIONES PARA BIOMÉTRICOS
+// ============================================
+
+// ===== FUNCIÓN PARA GENERAR TOKEN BIOMÉTRICO =====
+function generarTokenBiometrico($conn, $property_id, $email, $nombre, $dias_validez = 7) {
+    $token = bin2hex(random_bytes(32));
+    $expires_at = date('Y-m-d H:i:s', strtotime("+{$dias_validez} days"));
+    
+    $stmt = $conn->prepare("
+        INSERT INTO biometric_upload_tokens 
+        (property_id, client_email, client_name, token, expires_at, created_by) 
+        VALUES (?, ?, ?, ?, ?, ?)
+    ");
+    $stmt->execute([
+        $property_id, 
+        $email, 
+        $nombre, 
+        $token, 
+        $expires_at, 
+        $_SESSION['usuario_id']
+    ]);
+    
+    return $token;
+}
+
+// ===== FUNCIÓN PARA OBTENER TOKENS BIOMÉTRICOS =====
+function getBiometricTokens($conn, $property_id) {
+    try {
+        $stmt = $conn->prepare("
+            SELECT 
+                t.*,
+                DATEDIFF(t.expires_at, NOW()) as dias_restantes,
+                CASE 
+                    WHEN t.is_used = 1 THEN 'Usado'
+                    WHEN t.expires_at < NOW() THEN 'Expirado'
+                    ELSE 'Activo'
+                END as estado
+            FROM biometric_upload_tokens t
+            WHERE t.property_id = ?
+            ORDER BY t.created_at DESC
+            LIMIT 5
+        ");
+        $stmt->execute([$property_id]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        return [];
+    }
+}
+
+// ===== FUNCIÓN PARA OBTENER DATOS BIOMÉTRICOS DE LA PROPIEDAD =====
+function getPropertyBiometricData($conn, $property_id) {
+    try {
+        $stmt = $conn->prepare("
+            SELECT 
+                b.*,
+                CASE 
+                    WHEN b.dedo IS NOT NULL AND b.dedo != '' THEN b.dedo
+                    ELSE b.tipo_biometrico
+                END as identificador
+            FROM client_biometric_data b
+            WHERE b.property_id = ?
+            ORDER BY b.created_at DESC
+        ");
+        $stmt->execute([$property_id]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        return [];
+    }
+}
+
 // ============================================
 // NUEVAS FUNCIONES PARA GESTIÓN DE PROPIEDAD
 // ============================================
@@ -401,7 +490,7 @@ function recargarPropiedad($conn, $property_id) {
     }
 }
 
-// Procesar generación de enlace desde el modal
+// Procesar generación de enlace desde el modal de documentos
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'generar_enlace') {
     $email = trim($_POST['email'] ?? '');
     $nombre = trim($_POST['nombre'] ?? '');
@@ -512,6 +601,101 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// ===== PROCESAR GENERACIÓN DE ENLACE BIOMÉTRICO =====
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'generar_enlace_biometrico') {
+    $email = trim($_POST['email_biometrico'] ?? '');
+    $nombre = trim($_POST['nombre_biometrico'] ?? '');
+    $dias_validez = (int)($_POST['dias_validez_biometrico'] ?? 7);
+    $enviar_whatsapp = isset($_POST['enviar_whatsapp_biometrico']) ? 1 : 0;
+    $telefono = trim($_POST['telefono_biometrico'] ?? '');
+    
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error_msg = "❌ Email inválido. Por favor, ingresa un email válido.";
+    } else {
+        try {
+            // Generar token biométrico
+            $token = generarTokenBiometrico($conn, $property_id, $email, $nombre, $dias_validez);
+            
+            // Generar URL
+            $base_url = getBaseUrl();
+            $enlace = $base_url . "upload_biometricos.php?token=" . $token;
+            $enlace_generado = $enlace;
+            
+            // Enviar email
+            $mensaje_email = "
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .header { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+                    .content { padding: 20px; background: #f8f9fa; border-radius: 0 0 8px 8px; }
+                    .btn { background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; }
+                    .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+                    .highlight { color: #667eea; font-weight: 600; }
+                </style>
+            </head>
+            <body>
+                <div class='container'>
+                    <div class='header'>
+                        <h2>🖐️ Captura Biométrica</h2>
+                    </div>
+                    <div class='content'>
+                        <p>Hola " . htmlspecialchars($nombre ?: 'Cliente') . ",</p>
+                        <p>Has sido invitado a capturar tus datos biométricos para la propiedad: <strong>" . htmlspecialchars($propiedad['title'] ?? 'Propiedad') . "</strong></p>
+                        <p>Esto incluye:</p>
+                        <ul>
+                            <li>✍️ Firma digital</li>
+                            <li>🖐️ Huellas dactilares (10 dedos)</li>
+                        </ul>
+                        <p>Para comenzar, haz clic en el siguiente enlace:</p>
+                        <p style='text-align: center; margin: 30px 0;'>
+                            <a href='" . $enlace . "' class='btn'>🖐️ Capturar Biométricos</a>
+                        </p>
+                        <p><strong>⏰ Este enlace expirará en " . $dias_validez . " días.</strong></p>
+                        <p style='font-size: 12px; color: #666;'>
+                            <small>Si el botón no funciona, copia y pega este enlace en tu navegador:</small><br>
+                            <span style='word-break: break-all;'>" . $enlace . "</span>
+                        </p>
+                    </div>
+                    <div class='footer'>
+                        Este es un mensaje automático de Inmobiliaria MH.
+                    </div>
+                </div>
+            </body>
+            </html>
+            ";
+            
+            $headers = "MIME-Version: 1.0\r\n";
+            $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+            $headers .= "From: Inmobiliaria MH <no-reply@inmobiliariamh.com>\r\n";
+            
+            mail($email, "Captura Biométrica - Inmobiliaria MH", $mensaje_email, $headers);
+            
+            // Si se solicitó enviar por WhatsApp
+            if ($enviar_whatsapp && !empty($telefono)) {
+                $telefono_limpio = preg_replace('/[^0-9]/', '', $telefono);
+                if (strlen($telefono_limpio) >= 10) {
+                    $_SESSION['whatsapp_link_biometrico'] = "https://wa.me/" . $telefono_limpio . "?text=" . urlencode(
+                        "Hola, te comparto el enlace para capturar tus datos biométricos de la propiedad:\n\n" . 
+                        $enlace . "\n\n" .
+                        "Esto incluye: Firma digital y 10 huellas dactilares.\n" .
+                        "Este enlace expira en " . $dias_validez . " días.\n" .
+                        "Saludos, equipo Inmobiliaria MH."
+                    );
+                }
+            }
+            
+            $mensaje_exito = "✅ Enlace biométrico generado exitosamente y enviado al correo del cliente.";
+            
+            recargarPropiedad($conn, $property_id);
+            
+        } catch (PDOException $e) {
+            $error_msg = "❌ Error al generar el enlace biométrico: " . $e->getMessage();
+        }
+    }
+}
+
 // Si no se ha recargado después de generar, obtener la propiedad
 if (!$propiedad) {
     recargarPropiedad($conn, $property_id);
@@ -563,6 +747,27 @@ if ($propiedad) {
         // Tabla aún no existe
     }
 }
+
+// Obtener tokens biométricos generados
+$tokens_biometricos = [];
+if ($propiedad) {
+    $tokens_biometricos = getBiometricTokens($conn, $property_id);
+}
+
+// Obtener datos biométricos capturados
+$datos_biometricos = [];
+if ($propiedad) {
+    $datos_biometricos = getPropertyBiometricData($conn, $property_id);
+}
+
+// Contar huellas por dedo
+$huellas_por_dedo = [];
+foreach ($datos_biometricos as $bio) {
+    if ($bio['tipo_biometrico'] === 'huella' && !empty($bio['dedo'])) {
+        $huellas_por_dedo[$bio['dedo']] = true;
+    }
+}
+$total_huellas = count($huellas_por_dedo);
 
 // ===== OBTENER INFORMACIÓN DE APARTADO =====
 $apartado_info = null;
@@ -789,6 +994,24 @@ $base_url = getBaseUrl();
 
         .btn-detail.featured:hover {
             background: #7c3aed;
+        }
+
+        .btn-detail.biometric {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-detail.biometric:hover {
+            background: #5a67d8;
+        }
+
+        .btn-detail.biometric-admin {
+            background: #7c3aed;
+            color: white;
+        }
+
+        .btn-detail.biometric-admin:hover {
+            background: #6d28d9;
         }
 
         .main-card {
@@ -1162,6 +1385,15 @@ $base_url = getBaseUrl();
             background: #7c3aed;
         }
 
+        .btn-modal.biometric {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-modal.biometric:hover {
+            background: #5a67d8;
+        }
+
         /* Enlace generado */
         .link-generated {
             background: #f0fdf4;
@@ -1356,6 +1588,46 @@ $base_url = getBaseUrl();
             opacity: 1;
         }
 
+        /* ===== ESTILOS BIOMÉTRICOS ===== */
+        .biometric-dots {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        .biometric-dot {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid #e2e8f0;
+            font-size: 10px;
+            text-align: center;
+            line-height: 20px;
+            font-weight: 600;
+            background: #f8fafc;
+            color: #94a3b8;
+            transition: all 0.3s;
+        }
+
+        .biometric-dot.captured {
+            background: #22c55e;
+            border-color: #16a34a;
+            color: white;
+        }
+
+        .biometric-dot.captured-finger {
+            background: #22c55e;
+            border-color: #16a34a;
+            color: white;
+        }
+
+        .biometric-dot.missing {
+            background: #f8fafc;
+            border-color: #e2e8f0;
+            color: #94a3b8;
+        }
+
         @media (max-width: 768px) {
             .two-col {
                 grid-template-columns: 1fr;
@@ -1409,6 +1681,13 @@ $base_url = getBaseUrl();
                 padding: 2px 6px;
                 font-size: 0.65rem;
             }
+
+            .biometric-dot {
+                width: 20px;
+                height: 20px;
+                font-size: 8px;
+                line-height: 16px;
+            }
         }
     </style>
 </head>
@@ -1446,6 +1725,19 @@ $base_url = getBaseUrl();
                 </span>
             </div>
             <?php unset($_SESSION['whatsapp_link']); ?>
+        <?php endif; ?>
+
+        <?php if (isset($_SESSION['whatsapp_link_biometrico'])): ?>
+            <div class="message-box info" style="border-color: #667eea;">
+                <i class="fab fa-whatsapp" style="color: #667eea;"></i>
+                <span>
+                    Enlace biométrico generado. 
+                    <a href="<?php echo $_SESSION['whatsapp_link_biometrico']; ?>" target="_blank" style="color: #667eea; font-weight: 600;">
+                        <i class="fab fa-whatsapp"></i> Enviar por WhatsApp ahora
+                    </a>
+                </span>
+            </div>
+            <?php unset($_SESSION['whatsapp_link_biometrico']); ?>
         <?php endif; ?>
 
         <?php if ($propiedad): 
@@ -1491,6 +1783,9 @@ $base_url = getBaseUrl();
                     </a>
                     <button class="btn-detail success" onclick="abrirModalEnlace()">
                         <i class="fas fa-link"></i> Generar Enlace
+                    </button>
+                    <button class="btn-detail biometric" onclick="abrirModalEnlaceBiometrico()">
+                        <i class="fas fa-fingerprint"></i> Enlace Biométrico
                     </button>
                     <button class="btn-detail warning" onclick="abrirModalGestion()">
                         <i class="fas fa-cog"></i> Gestionar
@@ -1657,11 +1952,11 @@ $base_url = getBaseUrl();
                         </div>
                     </div>
 
-                    <!-- ===== SECCIÓN: ENLACES GENERADOS ===== -->
+                    <!-- ===== SECCIÓN: ENLACES GENERADOS (DOCUMENTOS) ===== -->
                     <?php if (!empty($tokens_generados)): ?>
                     <div class="main-card">
                         <div class="card-header">
-                            <h3><i class="fas fa-history"></i> Enlaces Generados</h3>
+                            <h3><i class="fas fa-file-alt"></i> Enlaces de Documentos</h3>
                             <span style="font-size: 0.75rem; color: #94a3b8;">Últimos 5</span>
                         </div>
                         <div class="card-body">
@@ -1699,6 +1994,46 @@ $base_url = getBaseUrl();
                         </div>
                     </div>
                     <?php endif; ?>
+
+                    <!-- ===== SECCIÓN: ENLACES BIOMÉTRICOS GENERADOS ===== -->
+                    <?php if (!empty($tokens_biometricos)): ?>
+                    <div class="main-card" style="border-top: 3px solid #667eea;">
+                        <div class="card-header" style="background: #f5f3ff;">
+                            <h3><i class="fas fa-fingerprint" style="color: #667eea;"></i> Enlaces Biométricos</h3>
+                            <span style="font-size: 0.75rem; color: #94a3b8;">Últimos 5</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="tokens-list">
+                                <?php foreach ($tokens_biometricos as $token): ?>
+                                    <div class="token-item" style="border-left: 3px solid #667eea; padding-left: 12px;">
+                                        <div class="token-info">
+                                            <span class="token-badge <?php echo strtolower($token['estado']); ?>">
+                                                <?php echo $token['estado']; ?>
+                                            </span>
+                                            <span class="email">
+                                                <i class="fas fa-envelope"></i> <?php echo htmlspecialchars($token['client_email']); ?>
+                                            </span>
+                                            <span class="date">
+                                                <i class="fas fa-calendar"></i> <?php echo date('d/m/Y', strtotime($token['created_at'])); ?>
+                                            </span>
+                                            <?php if ($token['estado'] === 'Activo'): ?>
+                                                <span style="font-size: 0.7rem; color: #16a34a;">
+                                                    <?php echo $token['dias_restantes']; ?> días
+                                                </span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <?php if ($token['estado'] === 'Activo'): ?>
+                                            <button onclick="copiarTexto('<?php echo $base_url; ?>upload_biometricos.php?token=<?php echo $token['token']; ?>')" 
+                                                    style="background: none; border: none; color: #667eea; cursor: pointer; font-size: 0.8rem;">
+                                                <i class="fas fa-copy"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -1717,17 +2052,10 @@ $base_url = getBaseUrl();
                         </span>
                     </h3>
                     <div style="display: flex; gap: 8px;">
-                        <!-- BOTÓN SUBIR - COMENTADO PARA REUTILIZAR CÓDIGO EXISTENTE -->
-                        <!-- 
-                        <a href="subir_documento.php?property_id=<?php echo $property_id; ?>" class="btn-detail primary" style="padding: 4px 12px; font-size: 0.75rem;">
-                            <i class="fas fa-upload"></i> Subir
-                        </a>
-                        -->
-                        <!-- NUEVO BOTÓN PARA ADMIN -->
                         <a href="upload_documentos.php?id=<?php echo $property_id; ?>" 
-                        class="btn-detail primary" 
-                        style="padding: 4px 12px; font-size: 0.75rem; background: #8b5cf6;" 
-                        target="_blank">
+                           class="btn-detail primary" 
+                           style="padding: 4px 12px; font-size: 0.75rem; background: #8b5cf6;" 
+                           target="_blank">
                             <i class="fas fa-user-shield"></i> Subir (Admin)
                         </a>
                     </div>
@@ -1842,11 +2170,150 @@ $base_url = getBaseUrl();
                 </div>
             </div>
 
+            <!-- ===== SECCIÓN: DATOS BIOMÉTRICOS ===== -->
+            <div class="main-card" style="border-top: 3px solid #667eea;">
+                <div class="card-header" style="background: #f5f3ff;">
+                    <h3>
+                        <i class="fas fa-fingerprint" style="color: #667eea;"></i> Datos Biométricos
+                        <span style="font-size: 0.75rem; font-weight: 400; color: #94a3b8; margin-left: 8px;">
+                            (<?php echo $total_huellas; ?> / 10 huellas • <?php echo count(array_filter($datos_biometricos, function($d) { return $d['tipo_biometrico'] === 'firma'; })); ?> firmas)
+                        </span>
+                        <?php if ($total_huellas > 0): ?>
+                            <span style="background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 10px; margin-left: 5px; font-size: 0.7rem;">
+                                <i class="fas fa-check-circle"></i> <?php echo $total_huellas; ?>/10
+                            </span>
+                        <?php endif; ?>
+                    </h3>
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="abrirModalEnlaceBiometrico()" class="btn-detail biometric" style="padding: 4px 12px; font-size: 0.75rem;">
+                            <i class="fas fa-link"></i> Generar Enlace
+                        </button>
+                        <a href="upload_biometricos.php?id=<?php echo $property_id; ?>" 
+                           class="btn-detail biometric-admin" 
+                           style="padding: 4px 12px; font-size: 0.75rem; text-decoration: none;"
+                           target="_blank">
+                            <i class="fas fa-user-shield"></i> Capturar (Admin)
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body" style="padding: 10px 20px;">
+                    <?php if (empty($datos_biometricos)): ?>
+                        <div style="text-align: center; padding: 30px 20px; color: #94a3b8;">
+                            <i class="fas fa-fingerprint" style="font-size: 40px; display: block; margin-bottom: 10px; opacity: 0.5;"></i>
+                            <p style="margin: 0;">No hay datos biométricos capturados para esta propiedad.</p>
+                            <p style="font-size: 0.85rem; margin-top: 5px;">
+                                <a href="upload_biometricos.php?id=<?php echo $property_id; ?>" style="color: #667eea; text-decoration: none;">
+                                    <i class="fas fa-plus-circle"></i> Capturar datos biométricos
+                                </a>
+                            </p>
+                        </div>
+                    <?php else: ?>
+                        <!-- Resumen de huellas -->
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-bottom: 15px;">
+                            <div style="background: #f8fafc; padding: 10px 14px; border-radius: 8px; border: 1px solid #e8edf4;">
+                                <span style="font-size: 0.7rem; color: #94a3b8; text-transform: uppercase;">Huellas</span>
+                                <div style="font-size: 1.2rem; font-weight: 700; color: #0f172a;"><?php echo $total_huellas; ?> <span style="font-size: 0.8rem; font-weight: 400; color: #94a3b8;">/ 10</span></div>
+                                <div class="biometric-dots" style="margin-top: 4px;">
+                                    <?php
+                                    $dedos_orden = ['pulgar_derecho', 'indice_derecho', 'medio_derecho', 'anular_derecho', 'menique_derecho', 'pulgar_izquierdo', 'indice_izquierdo', 'medio_izquierdo', 'anular_izquierdo', 'menique_izquierdo'];
+                                    foreach ($dedos_orden as $dedo):
+                                        $capturado = isset($huellas_por_dedo[$dedo]);
+                                        $nombre_corto = str_replace('_', ' ', $dedo);
+                                    ?>
+                                        <span class="biometric-dot <?php echo $capturado ? 'captured' : 'missing'; ?>" 
+                                              title="<?php echo ucfirst($nombre_corto); ?> <?php echo $capturado ? '✓ Capturado' : '✗ Pendiente'; ?>">
+                                            <?php echo $capturado ? '✓' : '·'; ?>
+                                        </span>
+                                    <?php endforeach; ?>
+                                </div>
+                                <div style="font-size: 0.6rem; color: #94a3b8; margin-top: 4px;">
+                                    <?php if ($total_huellas >= 10): ?>
+                                        <span style="color: #16a34a;">✅ Todas las huellas capturadas</span>
+                                    <?php else: ?>
+                                        <span>Faltan <?php echo 10 - $total_huellas; ?> huellas por capturar</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <div style="background: #f8fafc; padding: 10px 14px; border-radius: 8px; border: 1px solid #e8edf4;">
+                                <span style="font-size: 0.7rem; color: #94a3b8; text-transform: uppercase;">Firmas</span>
+                                <div style="font-size: 1.2rem; font-weight: 700; color: #0f172a;"><?php echo count(array_filter($datos_biometricos, function($d) { return $d['tipo_biometrico'] === 'firma'; })); ?></div>
+                                <div style="font-size: 0.6rem; color: #94a3b8; margin-top: 4px;">
+                                    <?php $firmas_count = count(array_filter($datos_biometricos, function($d) { return $d['tipo_biometrico'] === 'firma'; })); ?>
+                                    <?php if ($firmas_count > 0): ?>
+                                        <span style="color: #16a34a;">✅ Firma capturada</span>
+                                    <?php else: ?>
+                                        <span>⚠️ Sin firma capturada</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <div style="background: #f8fafc; padding: 10px 14px; border-radius: 8px; border: 1px solid #e8edf4;">
+                                <span style="font-size: 0.7rem; color: #94a3b8; text-transform: uppercase;">Estado</span>
+                                <div style="font-size: 1rem; font-weight: 600; color: <?php echo $total_huellas >= 10 ? '#16a34a' : '#f59e0b'; ?>;">
+                                    <?php echo $total_huellas >= 10 ? '✅ Completo' : '⏳ En progreso'; ?>
+                                </div>
+                                <div style="font-size: 0.6rem; color: #94a3b8; margin-top: 4px;">
+                                    <?php if ($total_huellas >= 10): ?>
+                                        <span>Listo para firma digital</span>
+                                    <?php else: ?>
+                                        <span>Faltan <?php echo 10 - $total_huellas; ?> huellas</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Lista de datos biométricos -->
+                        <div style="display: grid; grid-template-columns: 1fr; gap: 4px; margin-top: 12px;">
+                            <h4 style="font-size: 0.8rem; color: #64748b; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px;">
+                                <i class="fas fa-list"></i> Detalle de Capturas
+                                <span style="font-weight: 400; font-size: 0.7rem; color: #94a3b8;">(<?php echo count($datos_biometricos); ?>)</span>
+                            </h4>
+                            <?php foreach ($datos_biometricos as $bio): 
+                                $es_huella = $bio['tipo_biometrico'] === 'huella';
+                                $icono = $es_huella ? 'fa-fingerprint' : 'fa-pen';
+                                $color = $es_huella ? '#667eea' : '#f59e0b';
+                                $nombre_dedo = $es_huella ? obtenerNombreDedo($bio['dedo'] ?? '') : 'Firma';
+                            ?>
+                                <div class="doc-item" style="display: flex; align-items: center; padding: 8px 12px; background: <?php echo $es_huella ? '#f5f3ff' : '#fefce8'; ?>; border-radius: 6px; border-left: 3px solid <?php echo $color; ?>;">
+                                    <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+                                        <i class="fas <?php echo $icono; ?>" style="color: <?php echo $color; ?>; font-size: 18px; width: 20px;"></i>
+                                        <div style="flex: 1; min-width: 0;">
+                                            <div style="font-size: 0.85rem; font-weight: 500;">
+                                                <?php echo htmlspecialchars($nombre_dedo); ?>
+                                                <?php if ($bio['created_by'] === 'admin'): ?>
+                                                    <span style="font-size: 0.65rem; background: #8b5cf6; color: white; padding: 1px 8px; border-radius: 10px; margin-left: 4px;">Admin</span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <div style="font-size: 0.7rem; color: #94a3b8;">
+                                                <?php echo ucfirst($bio['tipo_biometrico']); ?>
+                                                • <?php echo date('d/m/Y H:i', strtotime($bio['created_at'])); ?>
+                                                <?php if ($es_huella && !empty($bio['datos_huella'])): ?>
+                                                    • <span style="color: #16a34a;">Capturada</span>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: 8px;">
+                                        <span style="font-size: 0.65rem; padding: 2px 8px; border-radius: 10px; <?php echo $es_huella ? 'background: #dcfce7; color: #166534;' : 'background: #dbeafe; color: #1e40af;'; ?>">
+                                            <?php echo $es_huella ? '✅ Capturada' : '✍️ Firmada'; ?>
+                                        </span>
+                                        <?php if (!empty($bio['file_path']) && file_exists($bio['file_path'])): ?>
+                                            <a href="<?php echo htmlspecialchars($bio['file_path']); ?>" target="_blank" class="btn-detail secondary" style="padding: 2px 8px; font-size: 0.7rem;" title="Ver">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+
         <?php endif; ?>
     </div>
 </main>
 
-<!-- ===== MODAL PARA GENERAR ENLACE ===== -->
+<!-- ===== MODAL PARA GENERAR ENLACE (DOCUMENTOS) ===== -->
 <div class="modal-overlay" id="modalEnlace">
     <div class="modal-box">
         <div class="modal-header">
@@ -1931,6 +2398,84 @@ $base_url = getBaseUrl();
                 </button>
                 <button type="submit" class="btn-modal success">
                     <i class="fas fa-link"></i> Generar y Enviar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ===== MODAL PARA GENERAR ENLACE BIOMÉTRICO ===== -->
+<div class="modal-overlay" id="modalEnlaceBiometrico">
+    <div class="modal-box">
+        <div class="modal-header" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white;">
+            <h3 style="color: white;"><i class="fas fa-fingerprint" style="color: white;"></i> Generar Enlace Biométrico</h3>
+            <button class="modal-close" onclick="cerrarModalEnlaceBiometrico()" style="color: white;">&times;</button>
+        </div>
+        <form method="POST" action="" id="formEnlaceBiometrico">
+            <input type="hidden" name="action" value="generar_enlace_biometrico">
+            <div class="modal-body">
+                <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 20px;">
+                    Genera un enlace seguro para que el cliente pueda capturar <strong>firma digital y 10 huellas dactilares</strong> desde su dispositivo.
+                </p>
+
+                <div class="form-group">
+                    <label>Email del Cliente <span class="required">*</span></label>
+                    <input type="email" name="email_biometrico" required 
+                           placeholder="cliente@email.com"
+                           value="<?php echo htmlspecialchars($propiedad['owner_email'] ?? ''); ?>">
+                    <div class="help-text">El enlace se enviará automáticamente a este correo.</div>
+                </div>
+
+                <div class="form-group">
+                    <label>Nombre del Cliente</label>
+                    <input type="text" name="nombre_biometrico" 
+                           placeholder="Nombre completo"
+                           value="<?php echo htmlspecialchars($propiedad['owner_name'] ?? ''); ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Días de Validez</label>
+                    <select name="dias_validez_biometrico">
+                        <option value="1">1 día</option>
+                        <option value="3">3 días</option>
+                        <option value="7" selected>7 días</option>
+                        <option value="15">15 días</option>
+                        <option value="30">30 días</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" name="enviar_whatsapp_biometrico" id="enviarWhatsappBiometrico" value="1">
+                        <label for="enviarWhatsappBiometrico">
+                            <i class="fab fa-whatsapp" style="color: #25D366;"></i> 
+                            Enviar también por WhatsApp
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group" id="telefonoGroupBiometrico" style="display: none;">
+                    <label>Número de WhatsApp <span class="required">*</span></label>
+                    <input type="tel" name="telefono_biometrico" id="telefonoInputBiometrico"
+                           placeholder="Ej: 5215512345678"
+                           value="<?php echo htmlspecialchars($telefono_propietario); ?>">
+                    <div class="help-text">Incluye código de país (ej: 521 para México).</div>
+                </div>
+
+                <div style="background: #f5f3ff; padding: 12px 16px; border-radius: 8px; margin-top: 12px; border: 1px solid #ede9fe;">
+                    <p style="margin: 0; font-size: 0.85rem; color: #5b21b6;">
+                        <i class="fas fa-info-circle"></i> 
+                        El cliente podrá capturar <strong>firma digital</strong> y <strong>10 huellas dactilares</strong> (pulgares, índices, medios, anulares y meñiques).
+                    </p>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn-modal secondary" onclick="cerrarModalEnlaceBiometrico()">
+                    Cancelar
+                </button>
+                <button type="submit" class="btn-modal biometric">
+                    <i class="fas fa-fingerprint"></i> Generar Enlace Biométrico
                 </button>
             </div>
         </form>
@@ -2067,7 +2612,7 @@ $base_url = getBaseUrl();
 </div>
 
 <script>
-// ===== MODAL ENLACE =====
+// ===== MODAL ENLACE DOCUMENTOS =====
 function abrirModalEnlace() {
     document.getElementById('modalEnlace').classList.add('active');
     document.body.style.overflow = 'hidden';
@@ -2078,7 +2623,6 @@ function cerrarModalEnlace() {
     document.body.style.overflow = '';
 }
 
-// Cerrar modal al hacer clic fuera
 document.getElementById('modalEnlace').addEventListener('click', function(e) {
     if (e.target === this) {
         cerrarModalEnlace();
@@ -2094,6 +2638,35 @@ document.getElementById('enviarWhatsapp').addEventListener('change', function() 
     } else {
         telefonoGroup.style.display = 'none';
         document.getElementById('telefonoInput').required = false;
+    }
+});
+
+// ===== MODAL ENLACE BIOMÉTRICO =====
+function abrirModalEnlaceBiometrico() {
+    document.getElementById('modalEnlaceBiometrico').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function cerrarModalEnlaceBiometrico() {
+    document.getElementById('modalEnlaceBiometrico').classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+document.getElementById('modalEnlaceBiometrico').addEventListener('click', function(e) {
+    if (e.target === this) {
+        cerrarModalEnlaceBiometrico();
+    }
+});
+
+// Mostrar/ocultar campo de teléfono para biométrico
+document.getElementById('enviarWhatsappBiometrico').addEventListener('change', function() {
+    const telefonoGroup = document.getElementById('telefonoGroupBiometrico');
+    if (this.checked) {
+        telefonoGroup.style.display = 'block';
+        document.getElementById('telefonoInputBiometrico').required = true;
+    } else {
+        telefonoGroup.style.display = 'none';
+        document.getElementById('telefonoInputBiometrico').required = false;
     }
 });
 
