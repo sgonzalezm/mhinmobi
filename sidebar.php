@@ -34,14 +34,8 @@
         <a href="inventario_maestro.php">
             <i class="fas fa-warehouse"></i> Inventario Maestro
         </a>
-        <a href="expediente_legal.php">
-            <i class="fas fa-file-alt"></i> Expediente Legal
-        </a>
         <a href="crm_clientes.php">
             <i class="fas fa-users"></i> CRM Clientes
-        </a>
-        <a href="inteligencia_negocios.php">
-            <i class="fas fa-chart-line"></i> Inteligencia de Negocios
         </a>
         <a href="mensajes.php">
             <i class="fas fa-envelope"></i> Mensajes
