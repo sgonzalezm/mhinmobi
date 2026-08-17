@@ -528,7 +528,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             // ===== GENERAR URL CORRECTA =====
             $base_url = getBaseUrl();
-            $enlace = $base_url . "upload_documentos.php?token=" . $token;
+            $enlace = $base_url . "/upload_documentos.php?token=" . $token;
             $enlace_generado = $enlace;
             
             // Enviar email al cliente
@@ -618,7 +618,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             // Generar URL
             $base_url = getBaseUrl();
-            $enlace = $base_url . "upload_biometricos.php?token=" . $token;
+            $enlace = $base_url . "/upload_biometricos.php?token=" . $token;
             $enlace_generado = $enlace;
             
             // Enviar email
@@ -1983,7 +1983,7 @@ $base_url = getBaseUrl();
                                             <?php endif; ?>
                                         </div>
                                         <?php if ($token['estado'] === 'Activo'): ?>
-                                            <button onclick="copiarTexto('<?php echo $base_url; ?>upload_documentos.php?token=<?php echo $token['token']; ?>')" 
+                                            <button onclick="copiarTexto('<?php echo $base_url; ?>/upload_documentos.php?token=<?php echo $token['token']; ?>')" 
                                                     style="background: none; border: none; color: #1d4ed8; cursor: pointer; font-size: 0.8rem;">
                                                 <i class="fas fa-copy"></i>
                                             </button>
@@ -2023,7 +2023,7 @@ $base_url = getBaseUrl();
                                             <?php endif; ?>
                                         </div>
                                         <?php if ($token['estado'] === 'Activo'): ?>
-                                            <button onclick="copiarTexto('<?php echo $base_url; ?>upload_biometricos.php?token=<?php echo $token['token']; ?>')" 
+                                            <button onclick="copiarTexto('<?php echo $base_url; ?>/upload_biometricos.php?token=<?php echo $token['token']; ?>')" 
                                                     style="background: none; border: none; color: #667eea; cursor: pointer; font-size: 0.8rem;">
                                                 <i class="fas fa-copy"></i>
                                             </button>

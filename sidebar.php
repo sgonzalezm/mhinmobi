@@ -25,6 +25,9 @@
         <a href="socios_panel.php">
             <i class="fas fa-home"></i> Inicio
         </a>
+        <a href="calendario.php">
+            <i class="fas fa-calendar"></i> Calendario
+        </a>
         <a href="mis_propiedades.php">
             <i class="fas fa-building"></i> Mis Propiedades
         </a>
@@ -36,6 +39,9 @@
         </a>
         <a href="crm_clientes.php">
             <i class="fas fa-users"></i> CRM Clientes
+        </a>
+        <a href="rastreabilidad.php">
+            <i class="fas fa-tasks"></i> Rastreabilidad
         </a>
         <a href="mensajes.php">
             <i class="fas fa-envelope"></i> Mensajes

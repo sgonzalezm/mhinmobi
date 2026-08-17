@@ -6,7 +6,7 @@
 // ========================================
 // CONFIGURACIÓN DE DEBUG
 // ========================================
-define('DEBUG_MODE', true); // Cambiar a false en producción
+define('DEBUG_MODE', false); // Cambiar a false en producción
 define('LOG_FILE', __DIR__ . '/debug_propiedad.log');
 
 function debugLog($mensaje, $datos = null) {
