@@ -58,11 +58,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     
-    // Procesar imágenes
+    // Procesar imágenes - CORREGIDO
     if (isset($_POST['imagenes_guardadas'])) {
         $imagenes = json_decode($_POST['imagenes_guardadas'], true);
         if (is_array($imagenes) && !empty($imagenes)) {
             $_SESSION['form_venta']['imagenes'] = $imagenes;
+        } else {
+            // Si no hay imágenes en el POST, mantener las que estaban en sesión
+            if (!isset($_SESSION['form_venta']['imagenes']) || empty($_SESSION['form_venta']['imagenes'])) {
+                $_SESSION['form_venta']['imagenes'] = [];
+            }
         }
     }
     
@@ -184,22 +189,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit();
     }
     
-    // Confirmar
+    // Confirmar - CORREGIDO
     if (isset($_POST['confirmar'])) {
+        // ===== LOG DE DEBUG =====
+        error_log("=== CONFIRMAR PRESIONADO ===");
+        error_log("POST: " . print_r($_POST, true));
+        error_log("SESSION usuario_id: " . ($_SESSION['usuario_id'] ?? 'NO DEFINIDO'));
+        // =========================
+        
         if (!isset($_SESSION['usuario_id'])) {
             $_SESSION['errores'] = ['Debes iniciar sesión para publicar'];
             header("Location: vender.php?paso=5&show_auth=true");
             exit();
         }
         
+        // Asegurar que las imágenes estén en la sesión
         if (isset($_POST['imagenes_guardadas'])) {
             $imagenes = json_decode($_POST['imagenes_guardadas'], true);
-            if (is_array($imagenes)) {
+            if (is_array($imagenes) && !empty($imagenes)) {
                 $_SESSION['form_venta']['imagenes'] = $imagenes;
             }
         }
         
+        // ===== LOG DE DEBUG =====
+        error_log("Datos a guardar: " . print_r($_SESSION['form_venta'], true));
+        // =========================
+        
         $resultado = guardarPropiedad($_SESSION['form_venta'], $_SESSION['usuario_id']);
+        
+        // ===== LOG DE DEBUG =====
+        error_log("Resultado guardarPropiedad: " . print_r($resultado, true));
+        // =========================
         
         if ($resultado['success']) {
             $_SESSION['ultima_propiedad_id'] = $resultado['property_id'];
@@ -223,7 +243,7 @@ unset($_SESSION['errores']);
 $show_auth = isset($_GET['show_auth']) ? true : false;
 
 // ========================================
-// MAPEOS PARA MOSTRAR EN RESUMEN - DEFINIDOS AQUÍ
+// MAPEOS PARA MOSTRAR EN RESUMEN
 // ========================================
 $tipos = [
     'casa' => 'Casa',
@@ -254,7 +274,7 @@ $estados = [
 $socio = null;
 if (isset($_SESSION['usuario_id'])) {
     try {
-        $sql = "SELECT id, nombre, email, rol FROM socios WHERE id = ? AND activo = 1";
+        $sql = "SELECT id, name, email, rol FROM users WHERE id = ? AND activo = 1";
         $stmt = $conn->prepare($sql);
         $stmt->execute([$_SESSION['usuario_id']]);
         $socio = $stmt->fetch();
@@ -273,6 +293,7 @@ if (isset($_SESSION['usuario_id'])) {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
+        /* ... (todos los estilos existentes, sin cambios) ... */
         .image-upload-container {
             border: 2px dashed #ddd;
             border-radius: 8px;
@@ -1347,6 +1368,7 @@ if (isset($_SESSION['usuario_id'])) {
                         <a href="?paso=4" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Atrás</a>
                         <?php if (isset($_SESSION['usuario_id'])): ?>
                             <button type="submit" class="btn btn-success" name="confirmar" value="1" id="btnPublicar"><i class="fas fa-check-circle"></i> Confirmar y Publicar</button>
+                            <!-- <button type="submit" class="btn btn-success" name="confirmar" value="1"><i class="fas fa-check-circle"></i> Confirmar y Publicar</button>-->
                         <?php else: ?>
                             <button type="button" class="btn btn-success" id="btnOpenAuthFromPaso5"><i class="fas fa-lock"></i> Iniciar sesión para publicar</button>
                         <?php endif; ?>
@@ -1495,7 +1517,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // ========================================
-    // SISTEMA DE IMÁGENES - CORREGIDO
+    // SISTEMA DE IMÁGENES
     // ========================================
     const uploadContainer = document.getElementById('imageUploadContainer');
     const fileInput = document.getElementById('fileInput');
@@ -1518,16 +1540,11 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error('Error al cargar imágenes:', e);
     }
     
-    // CLICK EN EL CONTENEDOR - SOLUCIÓN DEFINITIVA
     if (uploadContainer && fileInput) {
         uploadContainer.addEventListener('click', function(e) {
-            // Si el click es en el botón de eliminar, no hacer nada
             if (e.target.closest('.remove-image')) return;
-            // Si el click es en el checkbox o label de "Otro", no hacer nada
             if (e.target.closest('.accesorio-otro')) return;
-            // Si el click es en un input o label dentro del contenedor de accesorios, no hacer nada
             if (e.target.closest('.accesorio-item')) return;
-            // Si el click es en el contenedor o en los iconos/textos, abrir selector
             if (e.target.closest('#imageUploadContainer')) {
                 e.preventDefault();
                 fileInput.click();
@@ -1535,7 +1552,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Drag and drop
     if (uploadContainer) {
         uploadContainer.addEventListener('dragover', function(e) {
             e.preventDefault();
@@ -1555,7 +1571,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Selección de archivos
     if (fileInput) {
         fileInput.addEventListener('change', function() {
             if (this.files.length > 0) {
@@ -1736,7 +1751,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeAuthModal(); });
     
-    // Tabs del modal
     const tabs = document.querySelectorAll('.auth-tab');
     const panels = {
         login: document.getElementById('panelLogin'),
@@ -1755,47 +1769,69 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // ========================================
-    // CONFIRMACIÓN AL PUBLICAR
+    // CONFIRMACIÓN AL PUBLICAR - VERSIÓN MEJORADA
     // ========================================
     const btnPublicar = document.getElementById('btnPublicar');
-    if (btnPublicar) {
-        btnPublicar.addEventListener('click', function(e) {
-            e.preventDefault();
-            
-            const imagenesActuales = JSON.parse(imagenesGuardadas.value || '[]');
-            if (imagenesActuales.length === 0) {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Faltan imágenes',
-                    text: 'Debes subir al menos una imagen de la propiedad',
-                    confirmButtonColor: '#c9a84c'
-                });
-                return;
-            }
-            
-            Swal.fire({
-                title: '¿Confirmar publicación?',
-                text: 'Una vez publicada, la propiedad estará visible para todos los usuarios',
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#28a745',
-                cancelButtonColor: '#6c757d',
-                confirmButtonText: 'Sí, publicar',
-                cancelButtonText: 'Cancelar',
-                reverseButtons: true
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    Swal.fire({
-                        title: 'Publicando propiedad...',
-                        text: 'Por favor espera un momento',
-                        allowOutsideClick: false,
-                        didOpen: () => { Swal.showLoading(); }
-                    });
-                    document.getElementById('wizardForm').submit();
+        if (btnPublicar) {
+            btnPublicar.addEventListener('click', function(e) {
+                // Validar imágenes
+                const imagenesGuardadas = document.getElementById('imagenesGuardadas');
+                let imagenes = [];
+                try {
+                    imagenes = JSON.parse(imagenesGuardadas.value || '[]');
+                } catch (e) {
+                    imagenes = [];
                 }
+                
+                if (imagenes.length === 0) {
+                    e.preventDefault();
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Faltan imágenes',
+                        text: 'Debes subir al menos una imagen de la propiedad',
+                        confirmButtonColor: '#c9a84c'
+                    });
+                    return;
+                }
+                
+                // Si todo está bien, NO prevenimos el envío
+                // Solo mostramos confirmación antes de enviar
+                
+                // Prevenir el envío temporalmente
+                e.preventDefault();
+                
+                Swal.fire({
+                    title: '¿Confirmar publicación?',
+                    text: 'Una vez publicada, la propiedad estará visible para todos los usuarios',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonColor: '#28a745',
+                    cancelButtonColor: '#6c757d',
+                    confirmButtonText: 'Sí, publicar',
+                    cancelButtonText: 'Cancelar',
+                    reverseButtons: true
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        // Usar la referencia al formulario directamente
+                        const form = document.getElementById('wizardForm');
+                        if (form) {
+                            // Asegurar que el campo de imágenes esté actualizado
+                            imagenesGuardadas.value = JSON.stringify(imagenes);
+                            
+                            // Crear un input oculto para confirmar si es necesario
+                            const confirmInput = document.createElement('input');
+                            confirmInput.type = 'hidden';
+                            confirmInput.name = 'confirmar';
+                            confirmInput.value = '1';
+                            form.appendChild(confirmInput);
+                            
+                            // Enviar el formulario
+                            form.submit();
+                        }
+                    }
+                });
             });
-        });
-    }
+        }
     
     <?php if ($show_auth && !isset($_SESSION['usuario_id'])): ?>
         openAuthModal();
