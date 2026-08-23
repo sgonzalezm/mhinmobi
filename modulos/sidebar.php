@@ -48,7 +48,13 @@
             <span class="badge">3</span>
         </a>
         <a href="accesos.php">
-            <i class="fas fa-user-cog"></i> Configuracion de acceso
+            <i class="fas fa-key"></i> Gestion de acceso
+        </a>
+        <a href="/admin/administracion.php">
+            <i class="fas fa-user-cog"></i> Administración
+        </a>
+        <a href="visor_audit_log.php">
+            <i class="fas fa-envelope-open-text"></i> Audit Log
         </a>
     </nav>
 

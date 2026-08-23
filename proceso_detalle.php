@@ -6,6 +6,7 @@ ini_set('display_errors', 1);
 
 require_once 'includes/conexion.php';
 require_once 'includes/auth.php';
+require_once 'includes/notificaciones.php'; // 🔥 NUEVO - Sistema de notificaciones
 
 // Verificar autenticación
 if (!estaLogueado()) {
@@ -34,6 +35,8 @@ $proceso = null;
 $etapas = [];
 $documentos = [];
 $pagos = [];
+$historial_notificaciones = []; // 🔥 NUEVO
+$estadisticas_notificaciones = []; // 🔥 NUEVO
 $error_msg = '';
 
 try {
@@ -49,7 +52,9 @@ try {
             f.asking_price,
             f.min_acceptable_price,
             f.commission_percentage,
-            u.name as initiated_by_name
+            u.name as initiated_by_name,
+            u.email as cliente_email,
+            u.telefono as cliente_telefono
         FROM property_tracking pt
         JOIN properties p ON pt.property_id = p.id
         LEFT JOIN property_financials f ON p.id = f.property_id
@@ -91,6 +96,12 @@ try {
         ");
         $stmtPagos->execute([$proceso_id]);
         $pagos = $stmtPagos->fetchAll(PDO::FETCH_ASSOC);
+        
+        // 🔥 NUEVO: Obtener historial de notificaciones
+        $historial_notificaciones = obtenerHistorialNotificaciones($conn, $proceso_id);
+        
+        // 🔥 NUEVO: Obtener estadísticas de notificaciones
+        $estadisticas_notificaciones = obtenerEstadisticasNotificaciones($conn);
     }
 } catch (PDOException $e) {
     $error_msg = "Error al cargar proceso: " . $e->getMessage();
@@ -118,6 +129,20 @@ function getProgress($etapas) {
         return $etapa['status'] == 'completado';
     });
     return round((count($completed) / count($etapas)) * 100);
+}
+
+// 🔥 NUEVO: Función para obtener el nombre legible de la etapa
+function getEtapaNombre($etapa) {
+    $nombres = [
+        'iniciado' => 'Iniciado',
+        'documentacion' => 'Documentación',
+        'credito' => 'Estudio de Crédito',
+        'credito_preautorizado' => 'Crédito Preautorizado',
+        'contrato_compraventa' => 'Contrato de Compraventa',
+        'poder_notarial' => 'Poder Notarial',
+        'finalizado' => 'Finalizado'
+    ];
+    return $nombres[$etapa] ?? ucfirst(str_replace('_', ' ', $etapa));
 }
 ?>
 
@@ -324,7 +349,7 @@ function getProgress($etapas) {
             margin-top: 10px;
         }
         
-        .documents-section, .payments-section {
+        .documents-section, .payments-section, .notifications-section {
             background: white;
             border-radius: 12px;
             padding: 25px;
@@ -403,6 +428,24 @@ function getProgress($etapas) {
             background: #d97706;
         }
         
+        .btn-action.danger {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .btn-action.danger:hover {
+            background: #dc2626;
+        }
+        
+        .btn-action.info {
+            background: #8b5cf6;
+            color: white;
+        }
+        
+        .btn-action.info:hover {
+            background: #7c3aed;
+        }
+        
         @keyframes pulse {
             0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
             70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
@@ -436,6 +479,245 @@ function getProgress($etapas) {
             display: flex;
             align-items: center;
             gap: 10px;
+        }
+        
+        /* 🔥 NUEVO: Estilos para notificaciones */
+        .notification-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            border-bottom: 1px solid #f1f5f9;
+            transition: background 0.2s;
+        }
+        
+        .notification-item:hover {
+            background: #f8fafc;
+        }
+        
+        .notification-item:last-child {
+            border-bottom: none;
+        }
+        
+        .notification-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex: 1;
+        }
+        
+        .notification-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+        }
+        
+        .notification-icon.success {
+            background: #dcfce7;
+            color: #166534;
+        }
+        
+        .notification-icon.failed {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        
+        .notification-details {
+            flex: 1;
+        }
+        
+        .notification-details .subject {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: #0f172a;
+        }
+        
+        .notification-details .meta {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+        
+        .notification-status {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+        
+        .notification-status.enviado {
+            background: #dcfce7;
+            color: #166534;
+        }
+        
+        .notification-status.fallido {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        
+        .notification-date {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            margin-left: 15px;
+            white-space: nowrap;
+        }
+        
+        /* Badge de estadísticas */
+        .stats-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .stats-badge.total {
+            background: #f1f5f9;
+            color: #475569;
+        }
+        
+        .stats-badge.sent {
+            background: #dcfce7;
+            color: #166534;
+        }
+        
+        .stats-badge.failed {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        
+        /* Modal de enviar notificación */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal-overlay.show {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            color: #0f172a;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #94a3b8;
+        }
+        
+        .modal-close:hover {
+            color: #0f172a;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #0f172a;
+            font-size: 0.9rem;
+        }
+        
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-family: inherit;
+        }
+        
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+        
+        .btn-modal {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-modal.cancel {
+            background: #f1f5f9;
+            color: #475569;
+        }
+        
+        .btn-modal.cancel:hover {
+            background: #e2e8f0;
+        }
+        
+        .btn-modal.send {
+            background: #3b82f6;
+            color: white;
+        }
+        
+        .btn-modal.send:hover {
+            background: #2563eb;
+        }
+        
+        .btn-modal.send:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
     </style>
 </head>
@@ -513,6 +795,12 @@ function getProgress($etapas) {
                                 Precio: $<?php echo number_format($proceso['asking_price'], 2); ?>
                             </div>
                         <?php endif; ?>
+                        <?php if ($proceso['cliente_email']): ?>
+                            <div class="process-address" style="margin-top: 5px;">
+                                <i class="fas fa-envelope"></i> 
+                                Cliente: <?php echo htmlspecialchars($proceso['cliente_email']); ?>
+                            </div>
+                        <?php endif; ?>
                     </div>
                     <div class="process-status active">
                         <i class="fas fa-circle"></i> Activo
@@ -529,7 +817,7 @@ function getProgress($etapas) {
                     </div>
                 </div>
                 
-                <div style="display: flex; justify-content: space-between; font-size: 0.9rem; color: #64748b;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem; color: #64748b; flex-wrap: wrap; gap: 10px;">
                     <span>
                         <i class="fas fa-user"></i> 
                         Iniciado por: <?php echo htmlspecialchars($proceso['initiated_by_name']); ?>
@@ -537,6 +825,10 @@ function getProgress($etapas) {
                     <span>
                         <i class="fas fa-calendar"></i> 
                         Fecha: <?php echo date('d/m/Y', strtotime($proceso['initiated_at'])); ?>
+                    </span>
+                    <span>
+                        <i class="fas fa-step-forward"></i> 
+                        Etapa actual: <strong><?php echo getEtapaNombre($proceso['current_stage']); ?></strong>
                     </span>
                 </div>
             </div>
@@ -699,9 +991,116 @@ function getProgress($etapas) {
                     <?php endforeach; ?>
                 <?php endif; ?>
             </div>
+            
+            <!-- 🔥 NUEVO: Historial de Notificaciones -->
+            <div class="notifications-section">
+                <div class="section-title" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-envelope"></i> Notificaciones Enviadas
+                        <span class="stats-badge total">
+                            <i class="fas fa-list"></i> Total: <?php echo count($historial_notificaciones); ?>
+                        </span>
+                        <span class="stats-badge sent">
+                            <i class="fas fa-check"></i> Enviados: <?php echo $estadisticas_notificaciones['enviados'] ?? 0; ?>
+                        </span>
+                        <span class="stats-badge failed">
+                            <i class="fas fa-times"></i> Fallidos: <?php echo $estadisticas_notificaciones['fallidos'] ?? 0; ?>
+                        </span>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn-action info" onclick="abrirModalNotificacion(<?php echo $proceso_id; ?>)">
+                            <i class="fas fa-paper-plane"></i> Enviar Notificación
+                        </button>
+                        <button class="btn-action warning" onclick="verHistorialCompleto(<?php echo $proceso_id; ?>)">
+                            <i class="fas fa-history"></i> Ver Todo
+                        </button>
+                    </div>
+                </div>
+                
+                <?php if (empty($historial_notificaciones)): ?>
+                    <div style="text-align: center; padding: 30px; color: #94a3b8;">
+                        <i class="fas fa-envelope-open" style="font-size: 2.5rem; display: block; margin-bottom: 10px;"></i>
+                        <p>No hay notificaciones enviadas para este proceso</p>
+                        <p style="font-size: 0.85rem;">Usa el botón "Enviar Notificación" para notificar al cliente</p>
+                    </div>
+                <?php else: ?>
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        <?php foreach ($historial_notificaciones as $notificacion): ?>
+                            <div class="notification-item">
+                                <div class="notification-info">
+                                    <div class="notification-icon <?php echo $notificacion['estado_envio'] == 'enviado' ? 'success' : 'failed'; ?>">
+                                        <i class="fas <?php echo $notificacion['estado_envio'] == 'enviado' ? 'fa-check' : 'fa-times'; ?>"></i>
+                                    </div>
+                                    <div class="notification-details">
+                                        <div class="subject">
+                                            <?php echo htmlspecialchars($notificacion['asunto']); ?>
+                                        </div>
+                                        <div class="meta">
+                                            <i class="fas fa-tag"></i> Etapa: <?php echo getEtapaNombre($notificacion['etapa']); ?>
+                                            &nbsp;•&nbsp;
+                                            <i class="fas fa-user"></i> <?php echo htmlspecialchars($notificacion['email_cliente']); ?>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="notification-status <?php echo $notificacion['estado_envio']; ?>">
+                                        <?php echo $notificacion['estado_envio'] == 'enviado' ? '✅ Enviado' : '❌ Fallido'; ?>
+                                    </span>
+                                    <span class="notification-date">
+                                        <?php echo date('d/m/Y H:i', strtotime($notificacion['fecha_envio'])); ?>
+                                    </span>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
         <?php endif; ?>
     </div>
 </main>
+
+<!-- 🔥 NUEVO: Modal para enviar notificación manual -->
+<div class="modal-overlay" id="modalNotificacion">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-paper-plane"></i> Enviar Notificación</h3>
+            <button class="modal-close" onclick="cerrarModalNotificacion()">&times;</button>
+        </div>
+        <form id="formNotificacion" onsubmit="enviarNotificacionManual(event)">
+            <input type="hidden" id="proceso_id_modal" value="<?php echo $proceso_id; ?>">
+            
+            <div class="form-group">
+                <label for="etapa_modal">Etapa a notificar:</label>
+                <select id="etapa_modal" required>
+                    <option value="iniciado">Iniciado</option>
+                    <option value="documentacion">Documentación</option>
+                    <option value="credito">Estudio de Crédito</option>
+                    <option value="credito_preautorizado">Crédito Preautorizado</option>
+                    <option value="contrato_compraventa">Contrato de Compraventa</option>
+                    <option value="poder_notarial">Poder Notarial</option>
+                    <option value="finalizado">Finalizado</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="mensaje_adicional">Mensaje adicional (opcional):</label>
+                <textarea id="mensaje_adicional" placeholder="Agrega un mensaje personalizado..."></textarea>
+            </div>
+            
+            <div style="background: #f8fafc; padding: 12px; border-radius: 6px; margin-bottom: 15px; font-size: 0.85rem; color: #64748b;">
+                <i class="fas fa-info-circle"></i> 
+                El correo se enviará al cliente: <strong><?php echo htmlspecialchars($proceso['cliente_email'] ?? 'No disponible'); ?></strong>
+            </div>
+            
+            <div class="modal-actions">
+                <button type="button" class="btn-modal cancel" onclick="cerrarModalNotificacion()">Cancelar</button>
+                <button type="submit" class="btn-modal send" id="btnEnviarNotificacion">
+                    <i class="fas fa-paper-plane"></i> Enviar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -727,13 +1126,13 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function avanzarEtapa(procesoId) {
-    if (confirm('¿Está seguro de avanzar a la siguiente etapa del proceso?')) {
+    if (confirm('¿Está seguro de avanzar a la siguiente etapa del proceso?\n\nSe enviará una notificación al cliente.')) {
         window.location.href = 'proceso_avanzar.php?id=' + procesoId;
     }
 }
 
 function marcarCreditoPreautorizado(procesoId) {
-    if (confirm('¿Marcar crédito como preautorizado y avanzar directamente?')) {
+    if (confirm('¿Marcar crédito como preautorizado y avanzar directamente?\n\nSe enviará notificación al cliente.')) {
         window.location.href = 'proceso_credito_preautorizado.php?id=' + procesoId;
     }
 }
@@ -741,6 +1140,80 @@ function marcarCreditoPreautorizado(procesoId) {
 function descargarDocumento(documentoId) {
     window.location.href = 'descargar_documento.php?id=' + documentoId;
 }
+
+// 🔥 NUEVO: Funciones para el modal de notificaciones
+function abrirModalNotificacion(procesoId) {
+    document.getElementById('proceso_id_modal').value = procesoId;
+    document.getElementById('modalNotificacion').classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+
+function cerrarModalNotificacion() {
+    document.getElementById('modalNotificacion').classList.remove('show');
+    document.body.style.overflow = '';
+    document.getElementById('mensaje_adicional').value = '';
+}
+
+function enviarNotificacionManual(event) {
+    event.preventDefault();
+    
+    const procesoId = document.getElementById('proceso_id_modal').value;
+    const etapa = document.getElementById('etapa_modal').value;
+    const mensajeAdicional = document.getElementById('mensaje_adicional').value;
+    const btn = document.getElementById('btnEnviarNotificacion');
+    
+    // Deshabilitar botón y mostrar loading
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
+    
+    // Enviar petición
+    fetch('procesar_notificacion.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            proceso_id: procesoId,
+            etapa: etapa,
+            mensaje_adicional: mensajeAdicional
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✅ Notificación enviada correctamente al cliente');
+            cerrarModalNotificacion();
+            location.reload();
+        } else {
+            alert('❌ Error al enviar notificación: ' + (data.error || 'Desconocido'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar';
+        }
+    })
+    .catch(error => {
+        alert('❌ Error de conexión: ' + error);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar';
+    });
+}
+
+function verHistorialCompleto(procesoId) {
+    window.location.href = 'logs_correos.php?proceso_id=' + procesoId;
+}
+
+// Cerrar modal con Escape
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        cerrarModalNotificacion();
+    }
+});
+
+// Cerrar modal al hacer clic fuera
+document.getElementById('modalNotificacion').addEventListener('click', function(event) {
+    if (event.target === this) {
+        cerrarModalNotificacion();
+    }
+});
 </script>
 
 </body>

@@ -62,7 +62,7 @@ if (isset($_GET['id']) && is_numeric($_GET['id']) && !isset($_GET['token'])) {
 }
 
 // ============================================================
-// FLUJO NORMAL: VERIFICAR TOKEN
+// FLUJO NORMAL: VERIFICAR TOKEN (CORREGIDO)
 // ============================================================
 $token = $_GET['token'] ?? '';
 $token_data = null;
@@ -86,38 +86,71 @@ if (!$modo_admin) {
     }
 
     try {
+        // ===== VERIFICAR TOKEN EN LA TABLA CORRECTA =====
+        // NOTA: NO verificamos is_used aquí, solo que no haya expirado
         $stmt = $conn->prepare("
             SELECT t.*, p.title as property_title, p.id as property_id 
-            FROM document_upload_tokens t
+            FROM biometric_upload_tokens t
             JOIN properties p ON t.property_id = p.id
             WHERE t.token = ? 
-            AND t.is_used = 0 
             AND t.expires_at > NOW()
         ");
         $stmt->execute([$token]);
         $token_data = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$token_data) {
-            die("
-            <!DOCTYPE html>
-            <html>
-            <head><title>Enlace Expirado</title></head>
-            <body style='font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f7fa;'>
-                <div style='background: white; padding: 40px; border-radius: 12px; text-align: center; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);'>
-                    <div style='font-size: 60px; margin-bottom: 20px;'>⏰</div>
-                    <h2 style='color: #e74c3c;'>Enlace No Válido</h2>
-                    <p style='color: #666;'>Este enlace ya no es válido o ha expirado.</p>
-                    <p style='color: #999; font-size: 14px; margin-top: 20px;'>Por favor, solicita un nuevo enlace al agente inmobiliario.</p>
-                </div>
-            </body>
-            </html>
+            // Verificar si existe pero está expirado
+            $stmt2 = $conn->prepare("
+                SELECT t.*, p.title as property_title 
+                FROM biometric_upload_tokens t
+                JOIN properties p ON t.property_id = p.id
+                WHERE t.token = ?
             ");
+            $stmt2->execute([$token]);
+            $token_check = $stmt2->fetch(PDO::FETCH_ASSOC);
+            
+            if ($token_check) {
+                $error_msg = "El enlace ya no es válido.";
+                if (strtotime($token_check['expires_at']) < time()) {
+                    $error_msg = "El enlace expiró el " . date('d/m/Y H:i', strtotime($token_check['expires_at']));
+                } else {
+                    $error_msg = "El enlace no es válido.";
+                }
+                die("
+                <!DOCTYPE html>
+                <html>
+                <head><title>Enlace Expirado</title></head>
+                <body style='font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f7fa;'>
+                    <div style='background: white; padding: 40px; border-radius: 12px; text-align: center; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);'>
+                        <div style='font-size: 60px; margin-bottom: 20px;'>⏰</div>
+                        <h2 style='color: #e74c3c;'>Enlace No Válido</h2>
+                        <p style='color: #666;'>$error_msg</p>
+                        <p style='color: #999; font-size: 14px; margin-top: 20px;'>Por favor, solicita un nuevo enlace al agente inmobiliario.</p>
+                    </div>
+                </body>
+                </html>
+                ");
+            } else {
+                die("
+                <!DOCTYPE html>
+                <html>
+                <head><title>Error</title></head>
+                <body style='font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f7fa;'>
+                    <div style='background: white; padding: 40px; border-radius: 12px; text-align: center; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);'>
+                        <div style='font-size: 60px; margin-bottom: 20px;'>🔍</div>
+                        <h2 style='color: #e74c3c;'>Token Inválido</h2>
+                        <p style='color: #666;'>El enlace proporcionado no es válido.</p>
+                    </div>
+                </body>
+                </html>
+                ");
+            }
         }
         
         $usar_token_real = true;
         
     } catch (PDOException $e) {
-        die("Error del sistema");
+        die("Error del sistema: " . $e->getMessage());
     }
 } else {
     // MODO ADMIN
@@ -194,6 +227,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                             $modo_admin ? 'admin' : 'cliente'
                         ]);
                         
+                        // ===== ELIMINADO: NO marcar token como usado aquí =====
+                        // El token debe permitir múltiples capturas (firma + 10 huellas)
+                        
                         $mensaje = "¡Firma capturada exitosamente!";
                         $mensaje_tipo = 'success';
                         $captura_exitosa = true;
@@ -249,6 +285,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $metadata,
                     $modo_admin ? 'admin' : 'cliente'
                 ]);
+                
+                // ===== ELIMINADO: NO marcar token como usado aquí =====
+                // El token debe permitir múltiples capturas (firma + 10 huellas)
                 
                 $mensaje = "¡Huella del " . obtenerNombreDedo($dedo_seleccionado) . " capturada exitosamente!";
                 $mensaje_tipo = 'success';

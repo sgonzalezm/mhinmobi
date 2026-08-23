@@ -475,12 +475,12 @@ function recargarPropiedad($conn, $property_id) {
                 pf.potential_profit_margin,
                 pf.commission_percentage,
                 (pf.asking_price * pf.commission_percentage / 100) as commission_amount,
-                s.nombre as owner_name,
+                s.name as owner_name,
                 s.email as owner_email
             FROM properties p
             LEFT JOIN property_details pd ON p.id = pd.property_id
             LEFT JOIN property_financials pf ON p.id = pf.property_id
-            LEFT JOIN socios s ON p.owner_id = s.id
+            LEFT JOIN users s ON p.owner_id = s.id
             WHERE p.id = ?
         ");
         $stmt->execute([$property_id]);
@@ -863,11 +863,11 @@ function getOperationBadge($operationType) {
 $telefono_propietario = '';
 if ($propiedad && !empty($propiedad['owner_id'])) {
     try {
-        $stmt = $conn->prepare("SELECT telefono FROM socios WHERE id = ?");
+        $stmt = $conn->prepare("SELECT telefono FROM users WHERE id = ?");
         $stmt->execute([$propiedad['owner_id']]);
-        $socio = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($socio) {
-            $telefono_propietario = $socio['telefono'] ?? '';
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($user) {
+            $telefono_propietario = $user['telefono'] ?? '';
         }
     } catch (PDOException $e) {
         // Ignorar

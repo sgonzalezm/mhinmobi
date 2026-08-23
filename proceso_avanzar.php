@@ -1,11 +1,12 @@
 <?php
-// proceso_avanzar.php
+// proceso_avanzar.php - VERSIÓN CORREGIDA Y ESTABLE
 session_start();
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 require_once 'includes/conexion.php';
 require_once 'includes/auth.php';
+require_once 'includes/notificaciones.php';
 
 // Verificar autenticación
 if (!estaLogueado()) {
@@ -20,20 +21,34 @@ if (!$usuario) {
     header('Location: login.php');
     exit;
 }
+
 // Obtener ID del proceso
 $proceso_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
 if ($proceso_id <= 0) {
+    $_SESSION['error'] = 'ID de proceso inválido';
     header('Location: rastreabilidad.php');
     exit;
 }
 
+// Variable para controlar si hay transacción activa
+$transaccion_activa = false;
+
 try {
-    // Obtener información del proceso
+    // Obtener información del proceso incluyendo datos del cliente
     $stmt = $conn->prepare("
-        SELECT current_stage
-        FROM property_tracking
-        WHERE id = ?
+        SELECT 
+            pt.current_stage,
+            pt.property_id,
+            p.title as property_title,
+            u.id as user_id,
+            u.name as cliente_nombre,
+            u.email as cliente_email,
+            u.telefono as cliente_telefono
+        FROM property_tracking pt
+        JOIN properties p ON pt.property_id = p.id
+        JOIN users u ON pt.initiated_by = u.id
+        WHERE pt.id = ?
     ");
     $stmt->execute([$proceso_id]);
     $proceso = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -56,8 +71,28 @@ try {
         'finalizado' => 8
     ];
     
+    // Mapeo de etapas a nombres para notificaciones
+    $mapa_etapas_notificacion = [
+        'inventario' => 'iniciado',
+        'contrato_compraventa' => 'contrato_compraventa',
+        'poder_notarial' => 'poder_notarial',
+        'credito' => 'credito',
+        'compra_venta' => 'contrato_compraventa',
+        'recepcion_recursos' => 'credito',
+        'pagos_proveedores' => 'credito',
+        'finalizado' => 'finalizado'
+    ];
+    
     // Obtener siguiente etapa
     $current_stage = $proceso['current_stage'];
+    
+    // Verificar que la etapa actual existe en el array
+    if (!isset($orden_etapas[$current_stage])) {
+        $_SESSION['error'] = 'Etapa actual no válida: ' . $current_stage;
+        header('Location: proceso_detalle.php?id=' . $proceso_id);
+        exit;
+    }
+    
     $current_order = $orden_etapas[$current_stage];
     $next_order = $current_order + 1;
     
@@ -70,8 +105,9 @@ try {
         exit;
     }
     
-    // Iniciar transacción
+    // INICIAR TRANSACCIÓN
     $conn->beginTransaction();
+    $transaccion_activa = true;
     
     // Marcar etapa actual como completada
     $stmtUpdate = $conn->prepare("
@@ -98,7 +134,9 @@ try {
     $stmtProcess->execute([$next_stage, $proceso_id]);
     
     // Si es la etapa final, marcar el proceso como completado
+    $es_final = false;
     if ($next_stage == 'finalizado') {
+        $es_final = true;
         $stmtFinal = $conn->prepare("
             UPDATE property_tracking
             SET status = 'completado'
@@ -117,17 +155,62 @@ try {
         $stmtProperty->execute([$proceso_id]);
     }
     
-    // Confirmar transacción
+    // CONFIRMAR TRANSACCIÓN
     $conn->commit();
+    $transaccion_activa = false;
     
-    $_SESSION['success'] = 'Etapa avanzada correctamente.';
+    // AHORA ENVIAR NOTIFICACIÓN (FUERA DE LA TRANSACCIÓN)
+    $etapa_notificacion = $mapa_etapas_notificacion[$next_stage] ?? 'iniciado';
+    
+    if ($es_final) {
+        $etapa_notificacion = 'finalizado';
+    }
+    
+    // Enviar notificación al cliente
+    $resultado_notificacion = notificarCambioEtapa($conn, $proceso_id, $etapa_notificacion);
+    
+    // Preparar mensaje de éxito
+    $nombre_etapa = ucfirst(str_replace('_', ' ', $next_stage));
+    $mensaje_exito = '✅ Etapa avanzada correctamente a "' . $nombre_etapa . '".';
+    
+    if ($resultado_notificacion['success']) {
+        $mensaje_exito .= ' 📧 Notificación enviada al cliente.';
+    } else {
+        $mensaje_exito .= ' ⚠️ La etapa se avanzó pero hubo un error al enviar la notificación: ' . ($resultado_notificacion['error'] ?? 'Desconocido');
+        error_log("Error en notificación para proceso {$proceso_id}: " . ($resultado_notificacion['error'] ?? ''));
+    }
+    
+    $_SESSION['success'] = $mensaje_exito;
     header('Location: proceso_detalle.php?id=' . $proceso_id);
     exit;
     
 } catch (PDOException $e) {
-    $conn->rollBack();
+    // Si hay error y hay transacción activa, hacer rollback
+    if ($transaccion_activa && $conn->inTransaction()) {
+        try {
+            $conn->rollBack();
+        } catch (Exception $rollbackError) {
+            error_log("Error al hacer rollback: " . $rollbackError->getMessage());
+        }
+    }
+    
     error_log("Error al avanzar etapa: " . $e->getMessage());
     $_SESSION['error'] = 'Error al avanzar la etapa: ' . $e->getMessage();
+    header('Location: proceso_detalle.php?id=' . $proceso_id);
+    exit;
+    
+} catch (Exception $e) {
+    // Si hay error y hay transacción activa, hacer rollback
+    if ($transaccion_activa && $conn->inTransaction()) {
+        try {
+            $conn->rollBack();
+        } catch (Exception $rollbackError) {
+            error_log("Error al hacer rollback: " . $rollbackError->getMessage());
+        }
+    }
+    
+    error_log("Error general en proceso_avanzar: " . $e->getMessage());
+    $_SESSION['error'] = 'Error al procesar la solicitud: ' . $e->getMessage();
     header('Location: proceso_detalle.php?id=' . $proceso_id);
     exit;
 }
