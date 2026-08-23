@@ -4,9 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vera Terra Inmobiliaria</title>
-    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-    <!-- Google Fonts: Montserrat + Playfair Display para un toque más elegante -->
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
     <style>
         /* ===== RESET & ROOT ===== */
@@ -427,7 +425,7 @@
             line-height: 1.5;
         }
 
-        /* ===== TESTIMONIOS (nuevo bloque) ===== */
+        /* ===== TESTIMONIOS ===== */
         .testimonials-section {
             padding: 70px 5%;
             background: #fff;
@@ -471,7 +469,7 @@
             font-size: 0.75rem;
         }
 
-        /* ===== CONTACTO / CTA (nuevo) ===== */
+        /* ===== CONTACTO / CTA ===== */
         .cta-section {
             padding: 60px 5%;
             background: var(--navy);
@@ -646,18 +644,18 @@
 </head>
 <body>
 
-    <?php include 'navbar.php'; ?>
+    <?php include 'modulos/navbar.php'; ?>
 
     <!-- ===== HERO ===== -->
     <section class="hero">
         <div class="hero-content">
-            <div class="tag"><i class="fa-regular fa-star"></i> Confianza y excelencia</div>
+            <div class="tag"><i class="fas fa-star"></i> Confianza y excelencia</div>
             <h1>Certeza jurídica y valor patrimonial <span>en cada propiedad.</span></h1>
             <p>Más de 15 años asesorando a nuestros clientes con transparencia, ética y un profundo conocimiento del mercado inmobiliario.</p>
-            <a href="#" class="btn-gold"><i class="fa-regular fa-circle-check"></i> Explorar propiedades</a>
+            <a href="#" class="btn-gold"><i class="fas fa-check-circle"></i> Explorar propiedades</a>
             <div class="hero-stats">
                 <div class="stat">
-                    <div class="stat-number">+350</div>
+                    <div class="stat-number">+150</div>
                     <div class="stat-label">Operaciones exitosas</div>
                 </div>
                 <div class="stat">
@@ -665,7 +663,7 @@
                     <div class="stat-label">Satisfacción</div>
                 </div>
                 <div class="stat">
-                    <div class="stat-number">15</div>
+                    <div class="stat-number">10</div>
                     <div class="stat-label">Años de experiencia</div>
                 </div>
             </div>
@@ -686,11 +684,11 @@
                 <div class="property-card">
                     <div class="property-img-container">
                         <img src="https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=600&q=80" alt="Penthouse en Polanco" loading="lazy" />
-                        <div class="property-badge"><i class="fa-regular fa-gem"></i></div>
+                        <div class="property-badge"><i class="fas fa-gem"></i></div>
                     </div>
                     <div class="property-info">
                         <h3>Penthouse en Polanco</h3>
-                        <div class="location"><i class="fa-regular fa-location-dot"></i> Polanco, CDMX</div>
+                        <div class="location"><i class="fas fa-location-dot"></i> Polanco, CDMX</div>
                         <div class="price">$2,850,000 MXN</div>
                         <div class="features">
                             <span><i class="fas fa-bed"></i> 3</span>
@@ -703,11 +701,11 @@
                 <div class="property-card">
                     <div class="property-img-container">
                         <img src="https://images.unsplash.com/photo-1613977257363-707ba9348227?auto=format&fit=crop&w=600&q=80" alt="Residencia en Club de Golf" loading="lazy" />
-                        <div class="property-badge"><i class="fa-regular fa-gem"></i></div>
+                        <div class="property-badge"><i class="fas fa-gem"></i></div>
                     </div>
                     <div class="property-info">
                         <h3>Residencia en Club de Golf</h3>
-                        <div class="location"><i class="fa-regular fa-location-dot"></i> Bosques de las Lomas</div>
+                        <div class="location"><i class="fas fa-location-dot"></i> Bosques de las Lomas</div>
                         <div class="price">$4,200,000 MXN</div>
                         <div class="features">
                             <span><i class="fas fa-bed"></i> 4</span>
@@ -720,23 +718,23 @@
                 <div class="property-card">
                     <div class="property-img-container">
                         <img src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80" alt="Oficina Corporativa" loading="lazy" />
-                        <div class="property-badge"><i class="fa-regular fa-gem"></i></div>
+                        <div class="property-badge"><i class="fas fa-gem"></i></div>
                     </div>
                     <div class="property-info">
                         <h3>Oficina Corporativa en Reforma</h3>
-                        <div class="location"><i class="fa-regular fa-location-dot"></i> Av. Reforma, CDMX</div>
+                        <div class="location"><i class="fas fa-location-dot"></i> Av. Reforma, CDMX</div>
                         <div class="price">$3,100,000 MXN</div>
                         <div class="features">
-                            <span><i class="fa-regular fa-bed"></i> N/A</span>
-                            <span><i class="fa-regular fa-bath"></i> 2</span>
-                            <span><i class="fa-regular fa-vector-square"></i> 320 m²</span>
+                            <span><i class="fas fa-bed"></i> N/A</span>
+                            <span><i class="fas fa-bath"></i> 2</span>
+                            <span><i class="fas fa-vector-square"></i> 320 m²</span>
                         </div>
                     </div>
                 </div>
 
             </div>
             <div style="margin-top: 35px;">
-                <a href="#" class="btn-outline-gold">Ver todas las propiedades <i class="fa-regular fa-arrow-right"></i></a>
+                <a href="#" class="btn-outline-gold">Ver todas las propiedades <i class="fas fa-arrow-right"></i></a>
             </div>
         </div>
     </section>
@@ -749,25 +747,25 @@
             <div class="services-grid">
 
                 <div class="service-item">
-                    <div class="service-icon"><i class="fa-regular fa-gavel"></i></div>
+                    <div class="service-icon"><i class="fas fa-gem"></i></div>
                     <h3>Asesoría Jurídica</h3>
                     <p>Revisión de contratos, escrituras y due diligence para garantizar certeza legal en cada transacción.</p>
                 </div>
 
                 <div class="service-item">
-                    <div class="service-icon"><i class="fa-regular fa-handshake"></i></div>
+                    <div class="service-icon"><i class="fas fa-handshake"></i></div>
                     <h3>Gestión Inmobiliaria</h3>
                     <p>Administración de propiedades, búsqueda de inquilinos y mantenimiento integral.</p>
                 </div>
 
                 <div class="service-item">
-                    <div class="service-icon"><i class="fa-regular fa-calculator"></i></div>
+                    <div class="service-icon"><i class="fas fa-vector-square"></i></div>
                     <h3>Valoración de Activos</h3>
                     <p>Estudios de mercado y avalúos profesionales para tomar decisiones con información precisa.</p>
                 </div>
 
                 <div class="service-item">
-                    <div class="service-icon"><i class="fa-regular fa-building-columns"></i></div>
+                    <div class="service-icon"><i class="fas fa-coins"></i></div>
                     <h3>Asesoría Financiera</h3>
                     <p>Planeación fiscal, análisis de rentabilidad y acompañamiento en créditos hipotecarios.</p>
                 </div>
@@ -776,28 +774,30 @@
         </div>
     </section>
 
-    <!-- ===== CTA / CONTACTO (nuevo) ===== -->
+    <!-- ===== CTA / CONTACTO ===== -->
     <section class="cta-section" id="contacto">
         <div class="container">
             <h2>¿Listo para dar el siguiente paso?</h2>
             <p>Contáctanos y descubre cómo podemos ayudarte a hacer realidad tus proyectos inmobiliarios.</p>
-            <a href="#" class="btn-gold"><i class="fa-regular fa-envelope"></i> Solicitar asesoría</a>
+            <a href="#" class="btn-gold"><i class="fas fa-envelope"></i> Solicitar asesoría</a>
         </div>
     </section>
 
-    <?php include 'footer.php'; ?>
+    <?php include 'modulos/footer.php'; ?>
 
     <!-- ===== SCRIPT para efecto de scroll en navbar ===== -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const header = document.getElementById('header');
-            window.addEventListener('scroll', function() {
-                if (window.scrollY > 30) {
-                    header.classList.add('scrolled');
-                } else {
-                    header.classList.remove('scrolled');
-                }
-            });
+            if (header) {
+                window.addEventListener('scroll', function() {
+                    if (window.scrollY > 30) {
+                        header.classList.add('scrolled');
+                    } else {
+                        header.classList.remove('scrolled');
+                    }
+                });
+            }
         });
     </script>
 </body>

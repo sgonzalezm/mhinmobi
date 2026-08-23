@@ -367,7 +367,7 @@ if (isset($_GET['mensaje'])) {
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
 <!-- ===== SIDEBAR ===== -->
-<?php include 'sidebar.php'; ?>
+<?php include 'modulos/sidebar.php'; ?>
 
 <!-- ===== MAIN CONTENT ===== -->
 <main class="main-content">

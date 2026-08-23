@@ -702,7 +702,7 @@ function getDetallesCorta($detalles) {
 
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
-<?php include 'sidebar.php'; ?>
+<?php include 'modulos/sidebar.php'; ?>
 
 <main class="main-content">
     <div class="main-header">

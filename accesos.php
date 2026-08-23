@@ -458,7 +458,7 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
 <body>
 
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
-<?php include 'sidebar.php'; ?>
+<?php include 'modulos/sidebar.php'; ?>
 
 <main class="main-content">
     <div class="main-header">
@@ -591,9 +591,9 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
                         <label>Rol <span class="required">*</span></label>
                         <select name="role" required>
                             <option value="propietario">Propietario</option>
-                            <option value="vendedor">Vendedor</option>
+                            <option value="asesor">Asesor</option>
                             <option value="admin">Administrador</option>
-                            <option value="inmobiliaria">Inmobiliaria</option>
+                            <option value="externo">Externo</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -637,7 +637,7 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
                             <label>Rol <span class="required">*</span></label>
                             <select name="role" required>
                                 <option value="propietario" <?php echo ($usuario_editar['role'] ?? '') === 'propietario' ? 'selected' : ''; ?>>Propietario</option>
-                                <option value="vendedor" <?php echo ($usuario_editar['role'] ?? '') === 'vendedor' ? 'selected' : ''; ?>>Vendedor</option>
+                                <option value="asesor" <?php echo ($usuario_editar['role'] ?? '') === 'asesor' ? 'selected' : ''; ?>>Asesor</option>
                                 <option value="admin" <?php echo ($usuario_editar['role'] ?? '') === 'admin' ? 'selected' : ''; ?>>Administrador</option>
                                 <option value="inmobiliaria" <?php echo ($usuario_editar['role'] ?? '') === 'inmobiliaria' ? 'selected' : ''; ?>>Inmobiliaria</option>
                             </select>

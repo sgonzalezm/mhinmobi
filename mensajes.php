@@ -207,7 +207,7 @@ foreach ($mensajes as $m) {
 <!-- Overlay para móvil -->
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
-<?php include 'sidebar.php'; ?>
+<?php include 'modulos/sidebar.php'; ?>
 
 <!-- ===== MAIN CONTENT ===== -->
 <main class="main-content">

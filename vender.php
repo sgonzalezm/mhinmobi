@@ -910,7 +910,7 @@ if (isset($_SESSION['usuario_id'])) {
 </head>
 <body>
 
-<?php include 'sidebar.php'; ?>
+<?php include 'modulos/sidebar.php'; ?>
 
 <main class="main-content">
     <div class="main-header">
