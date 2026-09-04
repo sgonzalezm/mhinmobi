@@ -1009,7 +1009,7 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     window.editarPropiedad = function(id) {
-        window.location.href = 'propiedad_editar_vendedor.php?id=' + id;
+        window.location.href = 'propiedad_detalle_vendedor.php?id=' + id;
     };
 });
 </script>

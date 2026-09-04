@@ -8,7 +8,7 @@ if (estaLogueado()) {
     if (esAdmin()) {
         header('Location: accesos.php');
     } else {
-        header('Location: dashboard.php');
+        header('Location: login.php');
     }
     exit;
 }
@@ -38,7 +38,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Redirigir según rol
             if ($usuario['role'] === 'admin') {
                 header('Location: accesos.php');
-            } else {
+            } else if ($usuario['role'] === 'captador') {
+                header('Location: calificador_propiedad.php');
+            } else if ($usuario['role'] === 'asesor') {
+                header('Location: accesos.php');
+            }else {
                 header('Location: dashboard.php');
             }
             exit;

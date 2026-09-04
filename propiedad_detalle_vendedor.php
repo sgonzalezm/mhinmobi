@@ -536,7 +536,7 @@ function formatFileSize($bytes) {
 
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
-<?php include 'sidebar.php'; ?>
+<?php include 'modulos/sidebar.php'; ?>
 
 <main class="main-content">
     <div class="detail-container">

@@ -22,7 +22,7 @@ $es_admin = esAdmin();
 
 // Si no es admin, redirigir a dashboard
 if (!$es_admin) {
-    header('Location: dashboard.php');
+    header('Location: vender.php');
     exit;
 }
 
