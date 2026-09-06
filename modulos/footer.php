@@ -1,8 +1,11 @@
 <!-- ===== FOOTER ===== -->
     <footer>
-        <a href="index.php" class="footer-logo">
-            <div class="logo-icon">VT</div>
-            <span>VERA TERRA</span>
+        <a href="#" class="logo">
+            <img src="css/Logo1_veraterra.png" alt="VT" class="logo-icon">
+            <div class="logo-text">
+                VERA TERRA
+                <span>Inmobiliaria</span>
+            </div>
         </a>
 
         <div class="footer-contact">

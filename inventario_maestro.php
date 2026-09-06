@@ -807,7 +807,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ===== Acciones del sistema =====
     window.nuevaPropiedad = function() {
-        window.location.href = 'propiedad_nueva.php';
+        window.location.href = 'vender.php';
     };
 
     window.verPropiedad = function(id) {

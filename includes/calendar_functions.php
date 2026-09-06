@@ -15,24 +15,24 @@ if (!function_exists('crearEventoCalendario')) {
             }
 
             // Asignar valores por defecto
-            $datos['user_id'] = $datos['user_id'] ?? $_SESSION['user_id'] ?? null;
+            $datos['usuario_id'] = $datos['usuario_id'] ?? $_SESSION['usuario_id'] ?? null;
             $datos['status'] = $datos['status'] ?? 'pending';
             $datos['all_day'] = $datos['all_day'] ?? 0;
             $datos['color'] = $datos['color'] ?? obtenerColorPorTipo($datos['event_type'] ?? 'other');
             $datos['recurring'] = $datos['recurring'] ?? 0;
 
-            if (empty($datos['user_id'])) {
+            if (empty($datos['usuario_id'])) {
                 return ['success' => false, 'message' => 'Usuario no autenticado'];
             }
 
             $sql = "INSERT INTO calendar_events (
-                property_id, tenant_id, user_id, title, description, event_type,
+                property_id, tenant_id, usuario_id, title, description, event_type,
                 start_datetime, end_datetime, all_day, status, color,
                 location, contact_name, contact_phone, contact_email,
                 reminder_minutes, recurring, recurrence_pattern, recurrence_end_date,
                 parent_event_id, notes
             ) VALUES (
-                :property_id, :tenant_id, :user_id, :title, :description, :event_type,
+                :property_id, :tenant_id, :usuario_id, :title, :description, :event_type,
                 :start_datetime, :end_datetime, :all_day, :status, :color,
                 :location, :contact_name, :contact_phone, :contact_email,
                 :reminder_minutes, :recurring, :recurrence_pattern, :recurrence_end_date,
@@ -43,7 +43,7 @@ if (!function_exists('crearEventoCalendario')) {
             $stmt->execute([
                 ':property_id' => $datos['property_id'] ?? null,
                 ':tenant_id' => $datos['tenant_id'] ?? null,
-                ':user_id' => $datos['user_id'],
+                ':usuario_id' => $datos['usuario_id'],
                 ':title' => $datos['title'],
                 ':description' => $datos['description'] ?? null,
                 ':event_type' => $datos['event_type'] ?? 'other',
@@ -98,12 +98,12 @@ if (!function_exists('crearEventoCalendario')) {
                     FROM calendar_events e
                     LEFT JOIN properties p ON e.property_id = p.id
                     LEFT JOIN tenants t ON e.tenant_id = t.id
-                    LEFT JOIN users u ON e.user_id = u.id
-                    WHERE e.user_id = :user_id 
+                    LEFT JOIN users u ON e.usuario_id = u.id
+                    WHERE e.usuario_id = :usuario_id 
                     AND e.start_datetime BETWEEN :fecha_inicio AND :fecha_fin";
 
             $params = [
-                ':user_id' => $_SESSION['user_id'],
+                ':usuario_id' => $_SESSION['usuario_id'],
                 ':fecha_inicio' => $fecha_inicio,
                 ':fecha_fin' => $fecha_fin
             ];
@@ -148,14 +148,14 @@ if (!function_exists('crearEventoCalendario')) {
                     FROM calendar_events e
                     LEFT JOIN properties p ON e.property_id = p.id
                     LEFT JOIN tenants t ON e.tenant_id = t.id
-                    WHERE e.user_id = :user_id 
+                    WHERE e.usuario_id = :usuario_id 
                     AND e.start_datetime >= NOW() 
                     AND e.status NOT IN ('cancelled', 'completed')
                     ORDER BY e.start_datetime ASC 
                     LIMIT :limite";
 
             $stmt = $conn->prepare($sql);
-            $stmt->bindParam(':user_id', $_SESSION['user_id']);
+            $stmt->bindParam(':usuario_id', $_SESSION['usuario_id']);
             $stmt->bindParam(':limite', $limite, PDO::PARAM_INT);
             $stmt->execute();
 
@@ -179,7 +179,7 @@ if (!function_exists('crearEventoCalendario')) {
                     FROM calendar_events e
                     LEFT JOIN properties p ON e.property_id = p.id
                     LEFT JOIN tenants t ON e.tenant_id = t.id
-                    WHERE e.user_id = :user_id 
+                    WHERE e.usuario_id = :usuario_id 
                     AND e.event_type = 'expiration'
                     AND e.start_datetime BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL :dias DAY)
                     AND e.status NOT IN ('cancelled', 'completed')
@@ -187,7 +187,7 @@ if (!function_exists('crearEventoCalendario')) {
 
             $stmt = $conn->prepare($sql);
             $stmt->execute([
-                ':user_id' => $_SESSION['user_id'],
+                ':usuario_id' => $_SESSION['usuario_id'],
                 ':dias' => $dias
             ]);
 
@@ -234,8 +234,8 @@ if (!function_exists('crearEventoCalendario')) {
                 return ['success' => false, 'message' => 'No hay datos para actualizar'];
             }
 
-            $sql = "UPDATE calendar_events SET " . implode(', ', $fields) . " WHERE id = :id AND user_id = :user_id";
-            $params[':user_id'] = $_SESSION['user_id'];
+            $sql = "UPDATE calendar_events SET " . implode(', ', $fields) . " WHERE id = :id AND usuario_id = :usuario_id";
+            $params[':usuario_id'] = $_SESSION['usuario_id'];
 
             $stmt = $conn->prepare($sql);
             $stmt->execute($params);
@@ -253,12 +253,12 @@ if (!function_exists('crearEventoCalendario')) {
      */
     function cambiarEstadoEvento($conn, $event_id, $estado) {
         try {
-            $sql = "UPDATE calendar_events SET status = :status WHERE id = :id AND user_id = :user_id";
+            $sql = "UPDATE calendar_events SET status = :status WHERE id = :id AND usuario_id = :usuario_id";
             $stmt = $conn->prepare($sql);
             $stmt->execute([
                 ':id' => $event_id,
                 ':status' => $estado,
-                ':user_id' => $_SESSION['user_id']
+                ':usuario_id' => $_SESSION['usuario_id']
             ]);
 
             return ['success' => true, 'message' => 'Estado actualizado'];
@@ -274,11 +274,11 @@ if (!function_exists('crearEventoCalendario')) {
      */
     function eliminarEventoCalendario($conn, $event_id) {
         try {
-            $sql = "DELETE FROM calendar_events WHERE id = :id AND user_id = :user_id";
+            $sql = "DELETE FROM calendar_events WHERE id = :id AND usuario_id = :usuario_id";
             $stmt = $conn->prepare($sql);
             $stmt->execute([
                 ':id' => $event_id,
-                ':user_id' => $_SESSION['user_id']
+                ':usuario_id' => $_SESSION['usuario_id']
             ]);
 
             return ['success' => true, 'message' => 'Evento eliminado'];
@@ -418,35 +418,75 @@ if (!function_exists('crearEventoCalendario')) {
     /**
      * Procesar recordatorios pendientes (ejecutar en cron)
      */
+    /**
+     * Procesar recordatorios pendientes (ejecutar en cron)
+     * MODIFICADA para enviar correos con PHPMailer
+     */
     function procesarRecordatorios($conn) {
-        try {
-            $sql = "SELECT r.*, e.title, e.contact_email, e.contact_phone 
-                    FROM event_reminders r
-                    JOIN calendar_events e ON r.event_id = e.id
-                    WHERE r.sent = 0 
-                    AND r.reminder_time <= NOW()";
+    try {
+        // Cargar funciones de correo
+        require_once __DIR__ . '/../funciones/correos.php';
+        
+        // Obtener recordatorios pendientes con datos del evento y usuario
+        $sql = "SELECT r.*, e.title, e.description, e.start_datetime, e.end_datetime, 
+                    e.location, e.event_type, e.status, e.color,
+                    u.email, u.name as usuario_nombre
+                FROM event_reminders r
+                JOIN calendar_events e ON r.event_id = e.id
+                JOIN users u ON e.usuario_id = u.id
+                WHERE r.sent = 0 
+                AND r.reminder_time <= NOW()
+                ORDER BY r.reminder_time ASC
+                LIMIT 50";
 
-            $stmt = $conn->prepare($sql);
-            $stmt->execute();
-            $reminders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $stmt = $conn->prepare($sql);
+        $stmt->execute();
+        $recordatorios = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-            foreach ($reminders as $reminder) {
-                // Aquí implementar el envío de notificaciones
-                // Email, SMS, Push, etc.
+        $enviados = 0;
+        
+            foreach ($recordatorios as $recordatorio) {
+                // Preparar datos del evento para el correo
+                $evento = [
+                    'id' => $recordatorio['event_id'],
+                    'title' => $recordatorio['title'],
+                    'description' => $recordatorio['description'],
+                    'start_datetime' => $recordatorio['start_datetime'],
+                    'end_datetime' => $recordatorio['end_datetime'],
+                    'location' => $recordatorio['location'],
+                    'event_type' => $recordatorio['event_type'],
+                    'status' => $recordatorio['status'],
+                    'color' => $recordatorio['color']
+                ];
                 
-                // Marcar como enviado
-                $sql_update = "UPDATE event_reminders SET sent = 1, sent_at = NOW() WHERE id = :id";
-                $stmt_update = $conn->prepare($sql_update);
-                $stmt_update->execute([':id' => $reminder['id']]);
-
-                // Opcional: Registrar en log
-                error_log("Recordatorio enviado para evento: " . $reminder['title']);
+                // Enviar correo usando la función de correos.php
+                $exito = enviarCorreoEvento(
+                    $recordatorio['email'],
+                    $recordatorio['usuario_nombre'],
+                    $evento,
+                    '📅 Recordatorio: ' . $recordatorio['title']
+                );
+                
+                if ($exito) {
+                    // Marcar como enviado
+                    $sql_update = "UPDATE event_reminders SET sent = 1, sent_at = NOW() WHERE id = :id";
+                    $stmt_update = $conn->prepare($sql_update);
+                    $stmt_update->execute([':id' => $recordatorio['id']]);
+                    $enviados++;
+                    
+                    error_log("✅ Recordatorio enviado para evento: " . $recordatorio['title']);
+                } else {
+                    error_log("❌ Fallo al enviar recordatorio para evento ID: " . $recordatorio['event_id']);
+                }
             }
 
-            return count($reminders);
+            return $enviados;
 
         } catch (PDOException $e) {
-            error_log("Error al procesar recordatorios: " . $e->getMessage());
+            error_log("❌ Error al procesar recordatorios: " . $e->getMessage());
+            return 0;
+        } catch (Exception $e) {
+            error_log("❌ Error general en procesarRecordatorios: " . $e->getMessage());
             return 0;
         }
     }

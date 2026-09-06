@@ -5,8 +5,8 @@ $rol_actual = $_SESSION['usuario_rol'] ?? 'externo';
 
 // Definición de permisos por rol
 $permisos = [
-    'admin' => ['inicio', 'calendario', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'crm_clientes', 'rastreabilidad', 'mensajes', 'gestion_acceso', 'administracion', 'audit_log'],
-    'asesor' => ['inicio', 'calendario', 'mis_propiedades', 'publicar_propiedad', 'rastreabilidad', 'mensajes'],
+    'admin' => ['inicio', 'calificador', 'calendario', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'crm_clientes', 'rastreabilidad', 'mensajes', 'gestion_acceso', 'administracion', 'audit_log'],
+    'asesor' => ['inicio', 'calificador', 'calendario', 'mis_propiedades', 'publicar_propiedad', 'rastreabilidad', 'mensajes'],
     'propietario' => ['mis_propiedades', 'publicar_propiedad', 'mensajes'],
     'externo' => ['mensajes']
 ];
@@ -65,6 +65,12 @@ $roles_espanol = [
         </a>
         <?php endif; ?>
 
+        <?php if (ver('calificador')): ?>
+        <a href="../admin/calificador_propiedad.php">
+            <i class="fas fa-star"></i> Calificador de Propiedades
+        </a>
+        <?php endif; ?>
+            
         <?php if (ver('calendario')): ?>
         <a href="../calendario.php">
             <i class="fas fa-calendar"></i> Calendario

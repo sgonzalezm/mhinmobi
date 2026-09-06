@@ -43,7 +43,7 @@ $vencimientos = obtenerVencimientosProximos($conn, 30);
 // Obtener todas las propiedades para filtros
 $propiedades_usuario = [];
 try {
-    $stmt = $conn->prepare("SELECT id, title FROM properties WHERE user_id = ? AND status = 'activo' ORDER BY title");
+    $stmt = $conn->prepare("SELECT id, title FROM properties WHERE owner_id = ? AND status = 'activo' ORDER BY title");
     $stmt->execute([$_SESSION['usuario_id']]);
     $propiedades_usuario = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
@@ -906,7 +906,7 @@ function guardarEvento(event) {
     const formData = new FormData(form);
     
     // Agregar usuario_id automáticamente
-    formData.append('user_id', <?php echo $_SESSION['usuario_id']; ?>);
+    formData.append('usuario_id', <?php echo $_SESSION['usuario_id']; ?>);
     
     // Convertir a objeto para enviar
     const data = {};
