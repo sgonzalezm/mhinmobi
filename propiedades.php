@@ -230,7 +230,7 @@ try {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Propiedades - Vera Terra Inmobiliaria</title>
     <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
     <style>
@@ -974,23 +974,7 @@ try {
 </head>
 <body>
 
-    <header id="header">
-        <a href="index.php" class="logo">
-            <div class="logo-icon">VT</div>
-            <div class="logo-text">
-                VERA TERRA
-                <span>Inmobiliaria</span>
-            </div>
-        </a>
-        <nav>
-            <ul>
-                <li><a href="index.php">Inicio</a></li>
-                <li><a href="propiedades_portal.php" class="active">Propiedades</a></li>
-                <li><a href="nosotros.php">Nosotros</a></li>
-                <li><a href="contacto.php">Contacto</a></li>
-            </ul>
-        </nav>
-    </header>
+    <?php include 'modulos/navbar.php'; ?>
 
     <!-- ===== FILTROS ===== -->
     <section class="filters-section">
@@ -1016,8 +1000,8 @@ try {
                             <?php endif; ?>
                         </select>
                         <input type="text" name="busqueda" id="filterSearch" placeholder="Buscar por ubicación..." value="<?php echo htmlspecialchars($filtro_busqueda); ?>" />
-                        <button type="submit" class="btn-outline-gold"><i class="fa-regular fa-sliders"></i> Filtrar</button>
-                        <a href="propiedades_portal.php" class="btn-outline-gold"><i class="fa-regular fa-rotate"></i> Reiniciar</a>
+                        <button type="submit" class="btn-outline-gold"><i class="fa-solid fa-sliders"></i> Filtrar</button>
+                        <a href="propiedades_portal.php" class="btn-outline-gold"><i class="fa-solid fa-rotate"></i> Reiniciar</a>
                     </form>
                 </div>
                 <div class="results-count">
@@ -1036,7 +1020,7 @@ try {
             <div class="properties-grid" id="propertiesGrid">
                 <?php if (empty($propiedades)): ?>
                     <div style="grid-column:1/-1; text-align:center; padding:60px 20px; color:var(--text-muted);">
-                        <i class="fa-regular fa-house-circle-exclamation" style="font-size:3rem; color:var(--gold); margin-bottom:15px; display:block;"></i>
+                        <i class="fa-solid fa-house-circle-exclamation" style="font-size:3rem; color:var(--gold); margin-bottom:15px; display:block;"></i>
                         <h3 style="font-size:1.2rem; margin-bottom:10px;">No encontramos propiedades</h3>
                         <p>Intenta ajustar los filtros de búsqueda</p>
                     </div>
@@ -1059,26 +1043,26 @@ try {
                                 <div class="property-status <?php echo $tipo_clase; ?>"><?php echo $tipo_label; ?></div>
                                 <?php if ($tiene_featuring && $dias_featuring > 0): ?>
                                     <div class="featuring-countdown">
-                                        <i class="fa-regular fa-star"></i> <?php echo $dias_featuring; ?> días destacada
+                                        <i class="fa-solid fa-star"></i> <?php echo $dias_featuring; ?> días destacada
                                     </div>
                                 <?php endif; ?>
                             </div>
                             <div class="property-info">
                                 <h3><?php echo htmlspecialchars($prop['title']); ?></h3>
-                                <div class="location"><i class="fa-regular fa-location-dot"></i> <?php echo htmlspecialchars($ubicacion); ?></div>
+                                <div class="location"><i class="fa-solid fa-location-dot"></i> <?php echo htmlspecialchars($ubicacion); ?></div>
                                 <div class="price"><?php echo $precio; ?></div>
                                 <div class="features">
                                     <?php if (!empty($prop['bedrooms']) && $prop['bedrooms'] > 0): ?>
-                                        <span><i class="fa-regular fa-bed"></i> <?php echo $prop['bedrooms']; ?></span>
+                                        <span><i class="fa-solid fa-bed"></i> <?php echo $prop['bedrooms']; ?></span>
                                     <?php endif; ?>
                                     <?php if (!empty($prop['bathrooms']) && $prop['bathrooms'] > 0): ?>
-                                        <span><i class="fa-regular fa-bath"></i> <?php echo $prop['bathrooms']; ?></span>
+                                        <span><i class="fa-solid fa-bath"></i> <?php echo $prop['bathrooms']; ?></span>
                                     <?php endif; ?>
                                     <?php if (!empty($prop['square_meters']) && $prop['square_meters'] > 0): ?>
-                                        <span><i class="fa-regular fa-vector-square"></i> <?php echo number_format($prop['square_meters'], 0, ',', '.'); ?> m²</span>
+                                        <span><i class="fa-solid fa-vector-square"></i> <?php echo number_format($prop['square_meters'], 0, ',', '.'); ?> m²</span>
                                     <?php endif; ?>
                                     <?php if (!empty($prop['parking_spots']) && $prop['parking_spots'] > 0): ?>
-                                        <span><i class="fa-regular fa-car"></i> <?php echo $prop['parking_spots']; ?></span>
+                                        <span><i class="fa-solid fa-car"></i> <?php echo $prop['parking_spots']; ?></span>
                                     <?php endif; ?>
                                     <?php if (empty($prop['bedrooms']) && empty($prop['bathrooms']) && empty($prop['square_meters'])): ?>
                                         <span style="color: #999; font-style: italic;">Características no especificadas</span>
@@ -1108,7 +1092,7 @@ try {
                 <div class="pagination" id="pagination">
                     <?php if ($pagina_actual > 1): ?>
                         <a href="?page=<?php echo $pagina_actual - 1; ?>&tipo=<?php echo urlencode($filtro_tipo); ?>&categoria=<?php echo urlencode($filtro_categoria); ?>&busqueda=<?php echo urlencode($filtro_busqueda); ?>">
-                            <i class="fa-regular fa-chevron-left"></i>
+                            <i class="fa-solid fa-chevron-left"></i>
                         </a>
                     <?php else: ?>
                         <span class="disabled"><i class="fa-regular fa-chevron-left"></i></span>

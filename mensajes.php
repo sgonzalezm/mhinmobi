@@ -66,7 +66,7 @@ try {
     ];
 }
 
-// Estadísticas
+// Estadísticas de mensajes
 $stats = [
     'total' => count($mensajes),
     'no_leidos' => 0,
@@ -79,6 +79,25 @@ foreach ($mensajes as $m) {
     if (isset($m['tipo'])) {
         if ($m['tipo'] === 'enviado') $stats['enviados']++;
         if ($m['tipo'] === 'recibido') $stats['recibidos']++;
+    }
+}
+
+// ===== NUEVO: Obtener contactos nuevos (solo para admin) =====
+$contactos_nuevos = 0;
+$total_contactos = 0;
+if (esAdmin()) {
+    try {
+        $stmt = $conn->prepare("SELECT COUNT(*) as total FROM contactos WHERE status = 'nuevo'");
+        $stmt->execute();
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        $contactos_nuevos = $result['total'] ?? 0;
+
+        $stmt = $conn->prepare("SELECT COUNT(*) as total FROM contactos");
+        $stmt->execute();
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        $total_contactos = $result['total'] ?? 0;
+    } catch (PDOException $e) {
+        // Si no existe la tabla, simplemente ignoramos
     }
 }
 ?>
@@ -188,6 +207,30 @@ foreach ($mensajes as $m) {
             background: #f8d7da;
             color: #dc3545;
         }
+
+        /* ===== NUEVO: Estilos para el badge de contactos ===== */
+        .btn-header .badge-contacts {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #dc3545;
+            color: #fff;
+            border-radius: 50%;
+            padding: 2px 8px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            line-height: 1.4;
+        }
+        .stat-card.contactos {
+            border-left: 4px solid #6f42c1;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .stat-card.contactos:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 20px rgba(111, 66, 193, 0.15);
+        }
+
         @media (max-width: 768px) {
             .mensaje-item {
                 flex-wrap: wrap;
@@ -223,6 +266,15 @@ foreach ($mensajes as $m) {
             </p>
         </div>
         <div class="header-actions">
+            <!-- ===== NUEVO: Botón para gestión de contactos (solo admin) ===== -->
+            <?php if (esAdmin()): ?>
+                <a href="gestion_contactos.php" class="btn-header secondary" style="position:relative; background: #6f42c1; color: #fff;">
+                    <i class="fas fa-address-book"></i> Contactos
+                    <?php if ($contactos_nuevos > 0): ?>
+                        <span class="badge-contacts"><?php echo $contactos_nuevos; ?></span>
+                    <?php endif; ?>
+                </a>
+            <?php endif; ?>
             <button class="btn-header primary" onclick="nuevoMensaje()">
                 <i class="fas fa-plus-circle"></i> Nuevo Mensaje
             </button>
@@ -254,6 +306,24 @@ foreach ($mensajes as $m) {
             <div class="stat-number"><?php echo $stats['recibidos']; ?></div>
             <div class="stat-label">Recibidos</div>
         </div>
+
+        <!-- ===== NUEVO: Tarjeta de acceso a gestión de contactos (solo admin) ===== -->
+        <?php if (esAdmin()): ?>
+            <a href="gestion_contactos.php" style="text-decoration: none; color: inherit; display: block;">
+                <div class="stat-card contactos" style="border-left-color: #6f42c1;">
+                    <span class="stat-icon" style="color: #6f42c1;"><i class="fas fa-users"></i></span>
+                    <div class="stat-number"><?php echo $total_contactos; ?></div>
+                    <div class="stat-label">
+                        Contactos totales
+                        <?php if ($contactos_nuevos > 0): ?>
+                            <span style="display: inline-block; background: #dc3545; color: white; border-radius: 50%; padding: 0 8px; font-size: 0.7rem; margin-left: 5px;">
+                                <?php echo $contactos_nuevos; ?> nuevos
+                            </span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </a>
+        <?php endif; ?>
     </div>
 
     <!-- Listado de mensajes -->
@@ -367,7 +437,7 @@ foreach ($mensajes as $m) {
         });
     }
 
-    // ===== Funciones =====
+    // ===== Funciones (placeholder) =====
     function verMensaje(id) {
         alert('Función: Ver mensaje #' + id);
     }

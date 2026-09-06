@@ -779,7 +779,7 @@
         <div class="container">
             <h2>¿Listo para dar el siguiente paso?</h2>
             <p>Contáctanos y descubre cómo podemos ayudarte a hacer realidad tus proyectos inmobiliarios.</p>
-            <a href="#" class="btn-gold"><i class="fas fa-envelope"></i> Solicitar asesoría</a>
+            <a href="contacto.php" class="btn-gold"><i class="fas fa-envelope"></i> Solicitar asesoría</a>
         </div>
     </section>
 
