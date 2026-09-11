@@ -5,7 +5,7 @@ require_once '../includes/auth.php';
 
 // Verificar autenticación
 if (!estaLogueado()) {
-    header('Location: login.php');
+    header('Location: ../login.php');
     exit;
 }
 
@@ -13,40 +13,68 @@ if (!estaLogueado()) {
 $usuario = obtenerUsuarioActual($conn);
 if (!$usuario) {
     cerrarSesion();
-    header('Location: login.php');
+    header('Location: ../login.php');
     exit;
 }
 
+// Determinar si es administrador (usando usuario_rol)
+$es_administrador = isset($_SESSION['usuario_rol']) && $_SESSION['usuario_rol'] === 'admin';
+
 // ============================================
-// FUNCIONES DE NOTIFICACIÓN (VACÍAS PARA FUTURA IMPLEMENTACIÓN)
+// FUNCIONES DE NOTIFICACIÓN
 // ============================================
 function notificarCambioEtapa($propiedad_id, $etapa_anterior, $etapa_nueva, $usuario_id) {
-    // TODO: Implementar con sistema de correos
-    // Esta función se llamará cuando una propiedad cambie de etapa
     error_log("NOTIFICACIÓN: Propiedad $propiedad_id cambió de etapa $etapa_anterior a $etapa_nueva");
     return true;
 }
 
 function notificarDecisionManagement($propiedad_id, $decision, $comentarios, $usuario_id) {
-    // TODO: Implementar notificación al captador sobre la decisión
     error_log("NOTIFICACIÓN: Propiedad $propiedad_id - Decisión: $decision - Comentarios: $comentarios");
     return true;
 }
 
 function notificarVisitaAgendada($propiedad_id, $fecha_visita, $gestor_id, $captador_id) {
-    // TODO: Implementar notificación al captador sobre la visita
     error_log("NOTIFICACIÓN: Propiedad $propiedad_id - Visita agendada para $fecha_visita");
     return true;
+}
+
+// ============================================
+// FUNCIÓN PARA CALCULAR VIABILIDAD
+// ============================================
+function calcularViabilidad($precio_pretendido, $gastos_operativos, $ganancia_requerida, $comisiones, $precio_comercial) {
+    $costo_total = $precio_pretendido + $gastos_operativos + $ganancia_requerida + $comisiones;
+    $margen = $precio_comercial - $costo_total;
+    
+    if ($margen > $precio_comercial * 0.15) {
+        return [
+            'indicador_color' => 'verde',
+            'viabilidad' => 'viable',
+            'margen' => $margen,
+            'costo_total' => $costo_total
+        ];
+    } elseif ($margen > 0) {
+        return [
+            'indicador_color' => 'amarillo',
+            'viabilidad' => 'viable_condicionado',
+            'margen' => $margen,
+            'costo_total' => $costo_total
+        ];
+    } else {
+        return [
+            'indicador_color' => 'rojo',
+            'viabilidad' => 'no_viable',
+            'margen' => $margen,
+            'costo_total' => $costo_total
+        ];
+    }
 }
 
 // ============================================
 // FUNCIÓN PARA EXPORTAR PDF
 // ============================================
 function generarPDFPropiedad($propiedad, $costos, $usuario) {
-    // Verificar si existe la librería TCPDF
     $tcpdf_path = '../vendor/tecnickcom/tcpdf/tcpdf.php';
     if (!file_exists($tcpdf_path)) {
-        // Si no existe TCPDF, usar HTML simple
         return generarHTMLReporte($propiedad, $costos, $usuario);
     }
     
@@ -62,21 +90,18 @@ function generarPDFPropiedad($propiedad, $costos, $usuario) {
     $pdf->SetAutoPageBreak(true, 15);
     $pdf->AddPage();
     
-    // Logo o título
     $pdf->SetFont('helvetica', 'B', 18);
     $pdf->Cell(0, 10, 'INMOBILIARIA MH', 0, 1, 'C');
     $pdf->SetFont('helvetica', '', 10);
     $pdf->Cell(0, 5, 'Reporte de Calificación de Propiedad', 0, 1, 'C');
     $pdf->Ln(10);
     
-    // Encabezado
     $pdf->SetFont('helvetica', 'B', 14);
     $pdf->Cell(0, 8, 'Propiedad #' . $propiedad['id'], 0, 1);
     $pdf->SetFont('helvetica', '', 11);
     $pdf->Cell(0, 6, 'Fecha: ' . date('d/m/Y H:i'), 0, 1);
     $pdf->Ln(5);
     
-    // Datos de la propiedad
     $pdf->SetFont('helvetica', 'B', 12);
     $pdf->Cell(0, 8, 'DATOS DE LA PROPIEDAD', 0, 1);
     $pdf->SetFont('helvetica', '', 10);
@@ -89,7 +114,7 @@ function generarPDFPropiedad($propiedad, $costos, $usuario) {
         ['M² Construcción', $propiedad['m2_construccion'] ?? 'N/A'],
         ['Antigüedad', ($propiedad['antiguedad'] ?? 'N/A') . ' años'],
         ['Recámaras', $propiedad['recamaras'] ?? 'N/A'],
-        ['Baños', $propiedad['banos'] ?? 'N/A'],
+        ['Baños', number_format($propiedad['banos'] ?? 0, 1)],
         ['Estacionamientos', $propiedad['estacionamiento'] ?? 'N/A'],
     ];
     
@@ -100,7 +125,6 @@ function generarPDFPropiedad($propiedad, $costos, $usuario) {
     
     $pdf->Ln(5);
     
-    // Análisis Financiero
     $pdf->SetFont('helvetica', 'B', 12);
     $pdf->Cell(0, 8, 'ANÁLISIS FINANCIERO', 0, 1);
     $pdf->SetFont('helvetica', '', 10);
@@ -135,7 +159,6 @@ function generarPDFPropiedad($propiedad, $costos, $usuario) {
     
     $pdf->Ln(5);
     
-    // Indicadores
     $pdf->SetFont('helvetica', 'B', 12);
     $pdf->Cell(0, 8, 'INDICADORES', 0, 1);
     $pdf->SetFont('helvetica', '', 10);
@@ -148,7 +171,13 @@ function generarPDFPropiedad($propiedad, $costos, $usuario) {
     
     $pdf->Cell(50, 6, 'Decisión Management:', 0, 0);
     $decision = $propiedad['go_no_go'] ?? 'Pendiente';
-    $pdf->Cell(0, 6, ucfirst($decision), 0, 1);
+    $decision_texto = [
+        'aprobado' => 'Aprobado',
+        'rechazado' => 'Rechazado',
+        'renegociar' => 'Renegociar',
+        'pendiente' => 'Pendiente'
+    ];
+    $pdf->Cell(0, 6, $decision_texto[$decision] ?? ucfirst($decision), 0, 1);
     
     if (!empty($propiedad['comentarios_management'])) {
         $pdf->Ln(3);
@@ -160,7 +189,6 @@ function generarPDFPropiedad($propiedad, $costos, $usuario) {
     
     $pdf->Ln(5);
     
-    // Visita
     if (!empty($propiedad['fecha_visita'])) {
         $pdf->SetFont('helvetica', 'B', 12);
         $pdf->Cell(0, 8, 'VISITA', 0, 1);
@@ -181,16 +209,13 @@ function generarPDFPropiedad($propiedad, $costos, $usuario) {
         $pdf->Cell(0, 6, count($fotos_danos) . ' imágenes', 0, 1);
     }
     
-    // Pie de página
     $pdf->Ln(10);
     $pdf->SetFont('helvetica', 'I', 8);
     $pdf->Cell(0, 6, 'Reporte generado por ' . $usuario['name'] . ' el ' . date('d/m/Y H:i'), 0, 1, 'C');
     
-    // Generar el PDF
     $nombre_archivo = 'propiedad_' . $propiedad['id'] . '_' . date('Ymd_His') . '.pdf';
     $ruta = '../uploads/reportes/' . $nombre_archivo;
     
-    // Crear directorio si no existe
     if (!is_dir('../uploads/reportes')) {
         mkdir('../uploads/reportes', 0777, true);
     }
@@ -200,7 +225,6 @@ function generarPDFPropiedad($propiedad, $costos, $usuario) {
 }
 
 function generarHTMLReporte($propiedad, $costos, $usuario) {
-    // Fallback si TCPDF no está instalado
     $html = '<html><head><title>Reporte Propiedad</title>';
     $html .= '<style>
         body { font-family: Arial, sans-serif; margin: 40px; }
@@ -213,6 +237,7 @@ function generarHTMLReporte($propiedad, $costos, $usuario) {
         .rojo { background: #f8d7da; color: #721c24; }
         .aprobado { background: #d4edda; color: #155724; }
         .rechazado { background: #f8d7da; color: #721c24; }
+        .renegociar { background: #fff3cd; color: #856404; }
         .pendiente { background: #e2e3e5; color: #383d41; }
         .footer { margin-top: 30px; font-size: 12px; color: #888; border-top: 1px solid #ddd; padding-top: 15px; }
     </style></head><body>';
@@ -227,7 +252,7 @@ function generarHTMLReporte($propiedad, $costos, $usuario) {
     $html .= '<div><span class="etiqueta">Colonia:</span> ' . htmlspecialchars($propiedad['colonia'] ?? 'N/A') . '</div>';
     $html .= '<div><span class="etiqueta">M² Construcción:</span> ' . ($propiedad['m2_construccion'] ?? 'N/A') . '</div>';
     $html .= '<div><span class="etiqueta">Recámaras:</span> ' . ($propiedad['recamaras'] ?? 'N/A') . '</div>';
-    $html .= '<div><span class="etiqueta">Baños:</span> ' . ($propiedad['banos'] ?? 'N/A') . '</div>';
+    $html .= '<div><span class="etiqueta">Baños:</span> ' . number_format($propiedad['banos'] ?? 0, 1) . '</div>';
     $html .= '</div>';
     
     $html .= '<h2>Análisis Financiero</h2>';
@@ -270,7 +295,6 @@ function generarHTMLReporte($propiedad, $costos, $usuario) {
     $html .= '<div class="footer">Reporte generado por ' . htmlspecialchars($usuario['name']) . ' el ' . date('d/m/Y H:i') . '</div>';
     $html .= '</body></html>';
     
-    // Guardar HTML como archivo
     $nombre_archivo = 'propiedad_' . $propiedad['id'] . '_' . date('Ymd_His') . '.html';
     $ruta = '../uploads/reportes/' . $nombre_archivo;
     
@@ -283,14 +307,13 @@ function generarHTMLReporte($propiedad, $costos, $usuario) {
 }
 
 // ============================================
-// OBTENER PARÁMETROS DE COSTOS (FIJOS MANUALES)
+// OBTENER PARÁMETROS DE COSTOS
 // ============================================
 $stmt = $conn->prepare("SELECT * FROM parametros_costos WHERE id = 1");
 $stmt->execute();
 $costos = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$costos) {
-    // Crear con valores por defecto
     $conn->exec("INSERT INTO parametros_costos (id, porcentaje_comision, porcentaje_ganancia, gastos_operativos_por_m2, factor_ajuste_comercial) 
                  VALUES (1, 3.00, 20.00, 50.00, 1.15)");
     $stmt = $conn->prepare("SELECT * FROM parametros_costos WHERE id = 1");
@@ -308,18 +331,30 @@ $propiedad = null;
 $es_edicion = false;
 
 if ($propiedad_id > 0) {
-    $stmt = $conn->prepare("SELECT * FROM propiedades_calificacion WHERE id = ?");
+    $stmt = $conn->prepare("SELECT p.*, u.name as captador_nombre, u2.name as gestor_nombre
+                            FROM propiedades_calificacion p
+                            LEFT JOIN users u ON p.creado_por = u.id
+                            LEFT JOIN users u2 ON p.gestor_asignado = u2.id
+                            WHERE p.id = ?");
     $stmt->execute([$propiedad_id]);
     $propiedad = $stmt->fetch(PDO::FETCH_ASSOC);
     if ($propiedad) {
         $es_edicion = true;
-        // Determinar etapa según el estado
-        if ($propiedad['go_no_go'] == 'pendiente' && $propiedad['viabilidad'] != 'no_viable') {
-            $etapa = 2; // Top Management
-        } elseif ($propiedad['go_no_go'] == 'aprobado' && empty($propiedad['fecha_visita'])) {
-            $etapa = 3; // Visita
-        } elseif ($propiedad['go_no_go'] == 'aprobado' && !empty($propiedad['fecha_visita'])) {
-            $etapa = 4; // Completado
+        
+        // Si el usuario NO es administrador, siempre va a etapa 1 (solo captura)
+        if (!$es_administrador) {
+            $etapa = 1;
+        } else {
+            // Administrador: decide la etapa según el estado
+            if ($propiedad['go_no_go'] == 'pendiente' || $propiedad['go_no_go'] == null) {
+                $etapa = 2; // Revisión financiera
+            } elseif ($propiedad['go_no_go'] == 'aprobado' && empty($propiedad['fecha_visita'])) {
+                $etapa = 3; // Gestor
+            } elseif ($propiedad['go_no_go'] == 'aprobado' && !empty($propiedad['fecha_visita'])) {
+                $etapa = 4; // Completada
+            } elseif ($propiedad['go_no_go'] == 'renegociar') {
+                $etapa = 2; // Vuelve a revisión
+            }
         }
     }
 }
@@ -330,7 +365,6 @@ if ($propiedad_id > 0) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     
-    // ===== ETAPA 1: CAPTADOR =====
     if ($action === 'guardar_captura') {
         $errores = [];
         
@@ -338,41 +372,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $precio_pretendido = floatval($_POST['precio_pretendido'] ?? 0);
         $m2_construccion = floatval($_POST['m2_construccion'] ?? 0);
         
-        // Validaciones
         if (empty($direccion)) $errores[] = 'La dirección es obligatoria';
         if ($precio_pretendido <= 0) $errores[] = 'El precio pretendido debe ser mayor a 0';
         if ($m2_construccion <= 0) $errores[] = 'Los metros cuadrados deben ser mayores a 0';
         
         if (empty($errores)) {
-            // GASTOS OPERATIVOS FIJOS (MANUALES)
-            $gastos_operativos = floatval($_POST['gastos_operativos_fijos'] ?? $costos['gastos_operativos_por_m2'] ?? 0);
-            
-            // BENEFICIO REQUERIDO FIJO (MANUAL)
-            $ganancia_requerida = floatval($_POST['beneficio_fijo'] ?? ($precio_pretendido * (($costos['porcentaje_ganancia'] ?? 20) / 100)));
-            
-            // COMISIONES (calculadas automáticamente)
-            $comisiones = $precio_pretendido * (($costos['porcentaje_comision'] ?? 3) / 100);
-            
-            // VALOR COMERCIAL (calculado automáticamente)
-            $precio_comercial = $precio_pretendido * ($costos['factor_ajuste_comercial'] ?? 1.15);
-            
-            // Determinar viabilidad (semáforo)
-            $costo_total = $precio_pretendido + $gastos_operativos + $ganancia_requerida + $comisiones;
-            $margen = $precio_comercial - $costo_total;
-            
-            if ($margen > $precio_comercial * 0.15) {
-                $indicador_color = 'verde';
-                $viabilidad = 'viable';
-            } elseif ($margen > 0) {
-                $indicador_color = 'amarillo';
-                $viabilidad = 'viable_condicionado';
+            // Obtener valores financieros
+            // Si es administrador, usa los valores ingresados, si no, usa valores por defecto (0)
+            if ($es_administrador) {
+                $gastos_operativos = floatval($_POST['gastos_operativos_fijos'] ?? $costos['gastos_operativos_por_m2'] ?? 0);
+                $ganancia_requerida = floatval($_POST['beneficio_fijo'] ?? ($precio_pretendido * (($costos['porcentaje_ganancia'] ?? 20) / 100)));
+                $comisiones = $precio_pretendido * (($costos['porcentaje_comision'] ?? 3) / 100);
+                $precio_comercial = $precio_pretendido * ($costos['factor_ajuste_comercial'] ?? 1.15);
             } else {
-                $indicador_color = 'rojo';
-                $viabilidad = 'no_viable';
+                // Calificador: usa valores por defecto pero SIEMPRE calcula
+                $gastos_operativos = $costos['gastos_operativos_por_m2'] ?? 0;
+                $ganancia_requerida = $precio_pretendido * (($costos['porcentaje_ganancia'] ?? 20) / 100);
+                $comisiones = $precio_pretendido * (($costos['porcentaje_comision'] ?? 3) / 100);
+                $precio_comercial = $precio_pretendido * ($costos['factor_ajuste_comercial'] ?? 1.15);
             }
             
+            // Calcular viabilidad (SIEMPRE se calcula)
+            $resultado = calcularViabilidad($precio_pretendido, $gastos_operativos, $ganancia_requerida, $comisiones, $precio_comercial);
+            
             if ($propiedad_id > 0) {
-                // Actualizar
                 $sql = "UPDATE propiedades_calificacion SET 
                     direccion = ?, ciudad = ?, colonia = ?, m2_terreno = ?, m2_construccion = ?,
                     antiguedad = ?, recamaras = ?, banos = ?, estacionamiento = ?,
@@ -391,22 +414,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $m2_construccion,
                     intval($_POST['antiguedad'] ?? 0),
                     intval($_POST['recamaras'] ?? 0),
-                    intval($_POST['banos'] ?? 0),
+                    floatval($_POST['banos'] ?? 0),
                     intval($_POST['estacionamiento'] ?? 0),
                     $precio_pretendido,
                     $precio_comercial,
                     $gastos_operativos,
                     $ganancia_requerida,
                     $comisiones,
-                    $viabilidad,
-                    $indicador_color,
+                    $resultado['viabilidad'],
+                    $resultado['indicador_color'],
                     $usuario['id'],
                     $propiedad_id
                 ]);
                 
                 $_SESSION['mensaje'] = '✅ Propiedad actualizada correctamente';
             } else {
-                // Insertar nueva
                 $sql = "INSERT INTO propiedades_calificacion (
                     direccion, ciudad, colonia, m2_terreno, m2_construccion,
                     antiguedad, recamaras, banos, estacionamiento,
@@ -425,39 +447,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $m2_construccion,
                     intval($_POST['antiguedad'] ?? 0),
                     intval($_POST['recamaras'] ?? 0),
-                    intval($_POST['banos'] ?? 0),
+                    floatval($_POST['banos'] ?? 0),
                     intval($_POST['estacionamiento'] ?? 0),
                     $precio_pretendido,
                     $precio_comercial,
                     $gastos_operativos,
                     $ganancia_requerida,
                     $comisiones,
-                    $viabilidad,
-                    $indicador_color,
+                    $resultado['viabilidad'],
+                    $resultado['indicador_color'],
                     $usuario['id']
                 ]);
                 
                 $propiedad_id = $conn->lastInsertId();
-                
-                // Notificar al captador que se registró la propiedad
                 notificarCambioEtapa($propiedad_id, 'creacion', 'captura', $usuario['id']);
                 
                 $_SESSION['mensaje'] = '✅ Propiedad registrada correctamente';
             }
             
-            header("Location: calificador_propiedad.php?id=" . $propiedad_id . "&etapa=2");
+            // Redirigir según rol
+            if ($es_administrador) {
+                header("Location: calificador_propiedad.php?id=" . $propiedad_id . "&etapa=2");
+            } else {
+                header("Location: calificador_propiedad.php?listado=1");
+            }
             exit;
         } else {
             $_SESSION['errores'] = $errores;
         }
     }
     
-    // ===== ETAPA 2: TOP MANAGEMENT - GO/NO-GO =====
     if ($action === 'go_no_go') {
         $decision = $_POST['decision'] ?? '';
         $comentarios = trim($_POST['comentarios_management'] ?? '');
         
-        if (in_array($decision, ['aprobado', 'rechazado'])) {
+        // Solo administrador puede tomar decisión
+        if (!$es_administrador) {
+            $_SESSION['errores'] = ['No tienes permisos para tomar esta decisión'];
+            header("Location: calificador_propiedad.php?id=" . $propiedad_id);
+            exit;
+        }
+        
+        if (in_array($decision, ['aprobado', 'renegociar', 'rechazado'])) {
             $sql = "UPDATE propiedades_calificacion SET 
                 go_no_go = ?,
                 comentarios_management = ?,
@@ -468,16 +499,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $conn->prepare($sql);
             $stmt->execute([$decision, $comentarios, $usuario['id'], $propiedad_id]);
             
-            // Notificar al captador sobre la decisión
             notificarDecisionManagement($propiedad_id, $decision, $comentarios, $usuario['id']);
             
-            $_SESSION['mensaje'] = $decision == 'aprobado' ? 
-                '✅ Propiedad aprobada. Ahora se puede agendar visita.' : 
-                '❌ Propiedad rechazada. Se ha notificado al captador.';
-            
-            // Si es rechazada, notificar también
-            if ($decision == 'rechazado') {
-                notificarCambioEtapa($propiedad_id, 'management', 'rechazado', $usuario['id']);
+            switch ($decision) {
+                case 'aprobado':
+                    $_SESSION['mensaje'] = '✅ Propiedad aprobada. Ahora se puede agendar visita.';
+                    break;
+                case 'renegociar':
+                    $_SESSION['mensaje'] = '🔄 Propiedad enviada a renegociación. El captador puede ajustar los datos.';
+                    notificarCambioEtapa($propiedad_id, 'management', 'renegociar', $usuario['id']);
+                    break;
+                case 'rechazado':
+                    $_SESSION['mensaje'] = '❌ Propiedad rechazada. Se ha notificado al captador.';
+                    notificarCambioEtapa($propiedad_id, 'management', 'rechazado', $usuario['id']);
+                    break;
             }
             
             header("Location: calificador_propiedad.php?listado=1");
@@ -485,13 +520,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     
-    // ===== ETAPA 3: GESTOR DE VISITAS =====
     if ($action === 'guardar_visita') {
         $fecha_visita = $_POST['fecha_visita'] ?? '';
         $latitud = floatval($_POST['latitud'] ?? 0);
         $longitud = floatval($_POST['longitud'] ?? 0);
         
-        // Procesar fotos de publicación
         $fotos_publicacion = [];
         if (isset($_FILES['fotos_publicacion'])) {
             foreach ($_FILES['fotos_publicacion']['tmp_name'] as $key => $tmp_name) {
@@ -506,7 +539,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         
-        // Procesar fotos de daños
         $fotos_danos = [];
         if (isset($_FILES['fotos_danos'])) {
             foreach ($_FILES['fotos_danos']['tmp_name'] as $key => $tmp_name) {
@@ -541,7 +573,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $propiedad_id
         ]);
         
-        // Notificar al captador sobre la visita agendada
         $stmt_captador = $conn->prepare("SELECT creado_por FROM propiedades_calificacion WHERE id = ?");
         $stmt_captador->execute([$propiedad_id]);
         $captador = $stmt_captador->fetch();
@@ -554,7 +585,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     
-    // ===== EXPORTAR PDF =====
     if ($action === 'exportar_pdf') {
         if ($propiedad_id > 0 && $propiedad) {
             $ruta_pdf = generarPDFPropiedad($propiedad, $costos, $usuario);
@@ -584,20 +614,63 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
     $stmt->execute();
     $propiedades_listado = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
+
+// ============================================
+// ESTADÍSTICAS PARA DASHBOARD
+// ============================================
+$stats = [
+    'total' => 0,
+    'aprobadas' => 0,
+    'rechazadas' => 0,
+    'pendientes' => 0,
+    'renegociar' => 0,
+    'con_visita' => 0
+];
+
+$stmt = $conn->prepare("SELECT go_no_go FROM propiedades_calificacion WHERE status = 1");
+$stmt->execute();
+$todas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$stats['total'] = count($todas);
+
+foreach ($todas as $p) {
+    if ($p['go_no_go'] == 'aprobado') $stats['aprobadas']++;
+    elseif ($p['go_no_go'] == 'rechazado') $stats['rechazadas']++;
+    elseif ($p['go_no_go'] == 'renegociar') $stats['renegociar']++;
+    elseif ($p['go_no_go'] == 'pendiente' || $p['go_no_go'] == null) $stats['pendientes']++;
+}
+
+$stmt = $conn->prepare("SELECT COUNT(*) as total FROM propiedades_calificacion WHERE fecha_visita IS NOT NULL AND status = 1");
+$stmt->execute();
+$stats['con_visita'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calificador de Propiedades</title>
-    <link rel="stylesheet" href="css/socios.css">
+    <title>Calificador de Propiedades | Inmobiliaria MH</title>
+    <link rel="stylesheet" href="../css/socios.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        .calificador-container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        /* ===== ESTILOS UNIFICADOS CON MENSAJES ===== */
+        :root {
+            --primary: #c9a84c;
+            --primary-dark: #b8963a;
+            --dark: #1a1a2e;
+            --gray: #6c757d;
+            --light-gray: #f8f9fa;
+        }
+
+        .calificador-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px 20px;
+        }
+
+        /* ===== HEADER DE ETAPA ===== */
         .etapa-header {
             background: linear-gradient(135deg, #1a1a2e, #2a2a4e);
             color: white;
@@ -610,7 +683,13 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
             flex-wrap: wrap;
             gap: 10px;
         }
-        .etapa-header h2 { margin: 0; font-size: 22px; }
+        .etapa-header h2 {
+            margin: 0;
+            font-size: 22px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
         .etapa-header .badge-etapa {
             background: #c9a84c;
             color: #1a1a2e;
@@ -619,11 +698,66 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
             font-weight: 600;
             font-size: 13px;
         }
+
+        /* ===== TARJETAS ESTADÍSTICAS ===== */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            transition: all 0.3s ease;
+            border-left: 4px solid var(--primary);
+        }
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+        }
+        .stat-card .stat-icon {
+            font-size: 28px;
+            color: var(--primary);
+            width: 50px;
+            height: 50px;
+            background: #f8f6f0;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .stat-card .stat-number {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--dark);
+            line-height: 1.2;
+        }
+        .stat-card .stat-label {
+            font-size: 13px;
+            color: var(--gray);
+        }
+        .stat-card.success { border-left-color: #28a745; }
+        .stat-card.success .stat-icon { color: #28a745; background: #d4edda; }
+        .stat-card.danger { border-left-color: #dc3545; }
+        .stat-card.danger .stat-icon { color: #dc3545; background: #f8d7da; }
+        .stat-card.info { border-left-color: #17a2b8; }
+        .stat-card.info .stat-icon { color: #17a2b8; background: #d1ecf1; }
+        .stat-card.warning { border-left-color: #ffc107; }
+        .stat-card.warning .stat-icon { color: #856404; background: #fff3cd; }
+
+        /* ===== CARDS DE CONTENIDO ===== */
         .card {
             background: white;
             border-radius: 12px;
             padding: 25px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
             margin-bottom: 20px;
         }
         .card-title {
@@ -635,13 +769,15 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
             align-items: center;
             gap: 10px;
         }
+
+        /* ===== FORMULARIOS ===== */
         .form-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 15px 25px;
         }
         .form-grid .full-width { grid-column: 1 / -1; }
-        .form-group { margin-bottom: 15px; }
+        .form-group { margin-bottom: 12px; }
         .form-group label {
             display: block;
             font-weight: 500;
@@ -662,6 +798,7 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
             border-radius: 6px;
             font-size: 14px;
             transition: all 0.3s ease;
+            background: white;
         }
         .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
             border-color: #c9a84c;
@@ -669,6 +806,8 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
             box-shadow: 0 0 0 3px rgba(201,168,76,0.1);
         }
         .form-group textarea { min-height: 60px; resize: vertical; }
+
+        /* ===== BOTONES ===== */
         .btn {
             padding: 8px 20px;
             border: none;
@@ -686,18 +825,24 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
         .btn-primary { background: #c9a84c; color: white; }
         .btn-primary:hover { background: #b8963a; }
         .btn-success { background: #28a745; color: white; }
+        .btn-success:hover { background: #218838; }
         .btn-danger { background: #dc3545; color: white; }
+        .btn-danger:hover { background: #c82333; }
         .btn-secondary { background: #6c757d; color: white; }
+        .btn-secondary:hover { background: #5a6268; }
         .btn-info { background: #17a2b8; color: white; }
+        .btn-info:hover { background: #138496; }
+        .btn-warning { background: #ffc107; color: #1a1a2e; }
+        .btn-warning:hover { background: #e0a800; }
         .btn-outline {
             background: transparent;
             border: 2px solid #c9a84c;
             color: #c9a84c;
         }
         .btn-outline:hover { background: #c9a84c; color: white; }
-        .btn-sm { padding: 5px 12px; font-size: 12px; }
-        
-        /* SEMÁFORO */
+        .btn-sm { padding: 4px 12px; font-size: 12px; }
+
+        /* ===== SEMÁFORO ===== */
         .semaforo-container {
             display: flex;
             gap: 20px;
@@ -747,19 +892,25 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
         }
         .semaforo-info .item .value.positivo { color: #28a745; }
         .semaforo-info .item .value.negativo { color: #dc3545; }
-        
-        /* GO/NO-GO */
+
+        /* ===== GO/NO-GO ===== */
         .go-nogo-container {
             display: flex;
             gap: 15px;
             margin-top: 15px;
             flex-wrap: wrap;
         }
-        .go-nogo-container .btn { flex: 1; justify-content: center; padding: 15px; font-size: 16px; min-width: 150px; }
-        
-        /* MAPA */
+        .go-nogo-container .btn { 
+            flex: 1; 
+            justify-content: center; 
+            padding: 15px 20px; 
+            font-size: 16px; 
+            min-width: 150px;
+        }
+
+        /* ===== MAPA ===== */
         #map {
-            height: 400px;
+            height: 350px;
             border-radius: 8px;
             border: 2px solid #ddd;
             margin-top: 10px;
@@ -777,8 +928,8 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
             border-radius: 4px;
             min-width: 120px;
         }
-        
-        /* FOTOS UPLOAD */
+
+        /* ===== FOTOS UPLOAD ===== */
         .fotos-upload-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -808,11 +959,14 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
             display: flex;
             justify-content: space-between;
         }
-        
-        /* TABLA LISTADO */
+
+        /* ===== TABLA LISTADO ===== */
         .table-container { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; }
-        table th {
+        .table-container table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .table-container table th {
             background: #f8f6f0;
             padding: 10px 15px;
             text-align: left;
@@ -821,8 +975,12 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
             color: #555;
             border-bottom: 2px solid #e8e8e8;
         }
-        table td { padding: 10px 15px; border-bottom: 1px solid #eee; font-size: 14px; }
-        table tr:hover { background: #fafaf8; }
+        .table-container table td {
+            padding: 10px 15px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+        .table-container table tr:hover { background: #fafaf8; }
         .estado-badge {
             display: inline-block;
             padding: 3px 12px;
@@ -835,20 +993,49 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
         .estado-badge.rojo { background: #f8d7da; color: #721c24; }
         .estado-badge.aprobado { background: #d4edda; color: #155724; }
         .estado-badge.rechazado { background: #f8d7da; color: #721c24; }
+        .estado-badge.renegociar { background: #fff3cd; color: #856404; }
         .estado-badge.pendiente { background: #e2e3e5; color: #383d41; }
         .estado-badge.completado { background: #cce5ff; color: #004085; }
-        
+        .estado-badge.warning { background: #fff3cd; color: #856404; }
+
         .acciones-btns { display: flex; gap: 5px; flex-wrap: wrap; }
         .acciones-btns .btn { padding: 3px 8px; font-size: 11px; }
-        
-        .valor-fijo {
-            background: #f0f0f0;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            color: #666;
+
+        /* ===== MENSAJES DE ALERTA ===== */
+        .alert-success {
+            background: #d4edda;
+            padding: 12px 18px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #28a745;
+            color: #155724;
         }
-        
+        .alert-danger {
+            background: #f8d7da;
+            padding: 12px 18px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #dc3545;
+            color: #721c24;
+        }
+        .alert-success p, .alert-danger p { margin: 0; }
+        .alert-danger ul { margin: 0; padding-left: 20px; }
+
+        /* ===== RESIDUO FINANCIERO ===== */
+        .resumen-financiero {
+            background: #f8f6f0;
+            padding: 12px 18px;
+            border-radius: 8px;
+            margin: 10px 0;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .resumen-financiero .margen-positivo { color: #28a745; }
+        .resumen-financiero .margen-negativo { color: #dc3545; }
+
+        /* ===== RESPONSIVE ===== */
         @media (max-width: 768px) {
             .form-grid { grid-template-columns: 1fr; }
             .semaforo-container { flex-direction: column; }
@@ -856,13 +1043,85 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
             .go-nogo-container { flex-direction: column; }
             .fotos-upload-grid { grid-template-columns: 1fr; }
             .etapa-header { flex-direction: column; text-align: center; gap: 10px; }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 480px) {
+            .stats-grid { grid-template-columns: 1fr; }
+        }
+
+        /* ===== BOTONES HEADER ===== */
+        .btn-header {
+            padding: 8px 18px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+        }
+
+        .sidebar {
+            background: #1a1a2e !important;
+        }
+        .btn-header:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .btn-header.primary { background: #c9a84c; color: white; }
+        .btn-header.secondary { background: #e9ecef; color: #1a1a2e; }
+        .btn-header.danger { background: #dc3545; color: white; }
+        .btn-header.danger:hover { background: #c82333; }
+
+        /* ===== ACCESO RESTRINGIDO ===== */
+        .acceso-restringido {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        .acceso-restringido .icono {
+            font-size: 64px;
+            color: #dc3545;
+            margin-bottom: 20px;
+        }
+        .acceso-restringido h3 {
+            color: #1a1a2e;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        .acceso-restringido p {
+            color: #888;
+            max-width: 500px;
+            margin: 0 auto 25px;
+        }
+        .acceso-restringido .comentarios-admin {
+            background: #f8f6f0;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: left;
+            margin: 10px auto;
+            max-width: 500px;
+        }
+        .acceso-restringido .comentarios-admin strong {
+            color: #1a1a2e;
+        }
+        .acceso-restringido .alert-renegociar {
+            color: #856404;
+            background: #fff3cd;
+            padding: 10px 15px;
+            border-radius: 6px;
+            max-width: 500px;
+            margin: 10px auto;
         }
     </style>
 </head>
 <body>
 
-<?php include 'modulos/sidebar.php'; ?>
+<!-- Overlay para móvil -->
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
 
+<?php include '../modulos/sidebar.php'; ?>
+
+<!-- ===== MAIN CONTENT ===== -->
 <main class="main-content">
     <div class="main-header">
         <div class="header-left">
@@ -870,17 +1129,28 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                 <i class="fas fa-bars"></i>
             </button>
             <h1>🏠 Calificador de Propiedades</h1>
+            <p class="welcome">
+                <i class="fas fa-clipboard-list"></i>
+                <?php echo $stats['total']; ?> propiedades · 
+                <?php echo $stats['pendientes']; ?> pendientes · 
+                <?php echo $stats['con_visita']; ?> con visita
+                <?php if ($es_administrador): ?>
+                    · <span style="color: #c9a84c;">👑 Administrador</span>
+                <?php else: ?>
+                    · <span style="color: #17a2b8;">📋 Calificador</span>
+                <?php endif; ?>
+            </p>
         </div>
         <div class="header-actions">
             <a href="?listado=1" class="btn-header secondary">
                 <i class="fas fa-list"></i> Ver todas
             </a>
             <a href="?nueva=1" class="btn-header primary">
-                <i class="fas fa-plus"></i> Nueva propiedad
+                <i class="fas fa-plus"></i> Nueva
             </a>
-            <?php if ($propiedad_id > 0): ?>
-                <button onclick="document.getElementById('exportPdfForm').submit();" class="btn-header primary" style="background: #dc3545;">
-                    <i class="fas fa-file-pdf"></i> Exportar PDF
+            <?php if ($propiedad_id > 0 && $es_administrador): ?>
+                <button onclick="document.getElementById('exportPdfForm').submit();" class="btn-header danger">
+                    <i class="fas fa-file-pdf"></i> PDF
                 </button>
                 <form id="exportPdfForm" method="POST" style="display:none;">
                     <input type="hidden" name="action" value="exportar_pdf">
@@ -891,15 +1161,16 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
 
     <div class="calificador-container">
         
+        <!-- ===== MENSAJES ===== -->
         <?php if (isset($_SESSION['mensaje'])): ?>
-            <div style="background: #d4edda; padding: 12px 18px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #28a745;">
-                <p style="margin: 0; color: #155724;"><?php echo $_SESSION['mensaje']; unset($_SESSION['mensaje']); ?></p>
+            <div class="alert-success">
+                <p><?php echo $_SESSION['mensaje']; unset($_SESSION['mensaje']); ?></p>
             </div>
         <?php endif; ?>
         
         <?php if (isset($_SESSION['errores'])): ?>
-            <div style="background: #f8d7da; padding: 12px 18px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #dc3545;">
-                <ul style="margin: 0; padding-left: 20px; color: #721c24;">
+            <div class="alert-danger">
+                <ul>
                     <?php foreach ($_SESSION['errores'] as $error): ?>
                         <li><?php echo $error; ?></li>
                     <?php endforeach; ?>
@@ -907,6 +1178,52 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
             </div>
             <?php unset($_SESSION['errores']); ?>
         <?php endif; ?>
+
+        <!-- ===== ESTADÍSTICAS ===== -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span class="stat-icon"><i class="fas fa-building"></i></span>
+                <div>
+                    <div class="stat-number"><?php echo $stats['total']; ?></div>
+                    <div class="stat-label">Total Propiedades</div>
+                </div>
+            </div>
+            <div class="stat-card success">
+                <span class="stat-icon"><i class="fas fa-check-circle"></i></span>
+                <div>
+                    <div class="stat-number"><?php echo $stats['aprobadas']; ?></div>
+                    <div class="stat-label">Aprobadas (Go)</div>
+                </div>
+            </div>
+            <div class="stat-card danger">
+                <span class="stat-icon"><i class="fas fa-times-circle"></i></span>
+                <div>
+                    <div class="stat-number"><?php echo $stats['rechazadas']; ?></div>
+                    <div class="stat-label">Rechazadas (No-Go)</div>
+                </div>
+            </div>
+            <div class="stat-card warning">
+                <span class="stat-icon"><i class="fas fa-handshake"></i></span>
+                <div>
+                    <div class="stat-number"><?php echo $stats['renegociar']; ?></div>
+                    <div class="stat-label">En Renegociación</div>
+                </div>
+            </div>
+            <div class="stat-card warning">
+                <span class="stat-icon"><i class="fas fa-clock"></i></span>
+                <div>
+                    <div class="stat-number"><?php echo $stats['pendientes']; ?></div>
+                    <div class="stat-label">Pendientes</div>
+                </div>
+            </div>
+            <div class="stat-card info">
+                <span class="stat-icon"><i class="fas fa-calendar-check"></i></span>
+                <div>
+                    <div class="stat-number"><?php echo $stats['con_visita']; ?></div>
+                    <div class="stat-label">Con Visita</div>
+                </div>
+            </div>
+        </div>
 
         <?php if (isset($_GET['listado']) || isset($_GET['listado_todos'])): ?>
             <!-- ===== LISTADO DE PROPIEDADES ===== -->
@@ -949,13 +1266,27 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                                         </td>
                                         <td>$<?php echo number_format($p['precio_pretendido'], 2); ?></td>
                                         <td>
-                                            <span class="estado-badge <?php echo $p['indicador_color'] ?? 'pendiente'; ?>">
-                                                <?php echo ucfirst($p['viabilidad'] ?? 'Sin evaluar'); ?>
-                                            </span>
+                                            <?php if ($es_administrador): ?>
+                                                <span class="estado-badge <?php echo $p['indicador_color'] ?? 'pendiente'; ?>">
+                                                    <?php echo ucfirst($p['viabilidad'] ?? 'Sin evaluar'); ?>
+                                                </span>
+                                            <?php else: ?>
+                                                <span class="estado-badge pendiente">
+                                                    En revisión
+                                                </span>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
-                                            <span class="estado-badge <?php echo $p['go_no_go'] ?? 'pendiente'; ?>">
-                                                <?php echo ucfirst($p['go_no_go'] ?? 'Pendiente'); ?>
+                                            <?php 
+                                            $decision = $p['go_no_go'] ?? 'pendiente';
+                                            $clase = $decision;
+                                            $texto = ucfirst($decision);
+                                            if ($decision == 'renegociar') {
+                                                $texto = '🔄 Renegociar';
+                                            }
+                                            ?>
+                                            <span class="estado-badge <?php echo $clase; ?>">
+                                                <?php echo $texto; ?>
                                             </span>
                                         </td>
                                         <td><?php echo htmlspecialchars($p['captador_nombre'] ?? 'N/A'); ?></td>
@@ -966,7 +1297,9 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                                                 <span class="estado-badge aprobado">Pendiente Visita</span>
                                             <?php elseif ($p['go_no_go'] == 'rechazado'): ?>
                                                 <span class="estado-badge rechazado">Rechazado</span>
-                                            <?php elseif ($p['go_no_go'] == 'pendiente'): ?>
+                                            <?php elseif ($p['go_no_go'] == 'renegociar'): ?>
+                                                <span class="estado-badge renegociar">Renegociar</span>
+                                            <?php elseif ($p['go_no_go'] == 'pendiente' || $p['go_no_go'] == null): ?>
                                                 <span class="estado-badge pendiente">En evaluación</span>
                                             <?php endif; ?>
                                         </td>
@@ -975,9 +1308,19 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                                                 <a href="?id=<?php echo $p['id']; ?>" class="btn btn-primary btn-sm">
                                                     <i class="fas fa-eye"></i>
                                                 </a>
-                                                <?php if (empty($p['fecha_visita']) && $p['go_no_go'] == 'aprobado'): ?>
+                                                <?php if ($es_administrador && empty($p['fecha_visita']) && $p['go_no_go'] == 'aprobado'): ?>
                                                     <a href="?id=<?php echo $p['id']; ?>&etapa=3" class="btn btn-info btn-sm">
                                                         <i class="fas fa-calendar-plus"></i>
+                                                    </a>
+                                                <?php endif; ?>
+                                                <?php if ($es_administrador && $p['go_no_go'] == 'renegociar'): ?>
+                                                    <a href="?id=<?php echo $p['id']; ?>&etapa=2" class="btn btn-warning btn-sm">
+                                                        <i class="fas fa-edit"></i>
+                                                    </a>
+                                                <?php endif; ?>
+                                                <?php if (!$es_administrador && $p['go_no_go'] == 'renegociar'): ?>
+                                                    <a href="?id=<?php echo $p['id']; ?>&etapa=1" class="btn btn-warning btn-sm">
+                                                        <i class="fas fa-edit"></i>
                                                     </a>
                                                 <?php endif; ?>
                                             </div>
@@ -993,15 +1336,33 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                 </div>
             </div>
             
-        <?php elseif (isset($_GET['nueva']) || ($propiedad_id > 0 && ($etapa == 1 || $propiedad['go_no_go'] == 'pendiente' && empty($propiedad['fecha_visita'])))): ?>
+        <?php elseif (isset($_GET['nueva']) || ($propiedad_id > 0 && $etapa == 1)): ?>
             <!-- ===== ETAPA 1: CAPTADOR ===== -->
             <div class="etapa-header">
                 <div>
                     <h2><i class="fas fa-pen"></i> Etapa 1: Captura de Datos</h2>
-                    <small style="opacity:0.8;">Completa la información de la propiedad</small>
+                    <small style="opacity:0.8;">
+                        <?php echo $es_administrador ? 'Completa la información de la propiedad (incluye análisis financiero)' : 'Completa la información básica de la propiedad'; ?>
+                    </small>
                 </div>
-                <span class="badge-etapa">Captador: <?php echo htmlspecialchars($usuario['name']); ?></span>
+                <span class="badge-etapa"><?php echo $es_administrador ? 'Administrador' : 'Captador'; ?>: <?php echo htmlspecialchars($usuario['name']); ?></span>
             </div>
+            
+            <!-- Mostrar mensaje de renegociación si aplica -->
+            <?php if (!$es_administrador && $propiedad && $propiedad['go_no_go'] == 'renegociar'): ?>
+                <div style="background: #fff3cd; padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+                    <p style="margin: 0; color: #856404;">
+                        <i class="fas fa-handshake"></i> <strong>Renegociación solicitada</strong><br>
+                        El administrador ha solicitado ajustes en esta propiedad. Por favor, revisa los comentarios y actualiza los datos.
+                    </p>
+                    <?php if (!empty($propiedad['comentarios_management'])): ?>
+                        <div style="background: white; padding: 12px 15px; border-radius: 6px; margin-top: 10px;">
+                            <strong style="color: #1a1a2e;">Comentarios del administrador:</strong><br>
+                            <?php echo nl2br(htmlspecialchars($propiedad['comentarios_management'])); ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
             
             <form method="POST" class="card">
                 <input type="hidden" name="action" value="guardar_captura">
@@ -1044,7 +1405,7 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                     
                     <div class="form-group">
                         <label for="banos">Baños</label>
-                        <input type="number" id="banos" name="banos" value="<?php echo htmlspecialchars($propiedad['banos'] ?? ''); ?>">
+                        <input type="number" id="banos" name="banos" value="<?php echo htmlspecialchars($propiedad['banos'] ?? ''); ?>" step="0.5" min="0">
                     </div>
                     
                     <div class="form-group">
@@ -1053,11 +1414,12 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                     </div>
                     
                     <div class="form-group">
-                        <label for="precio_pretendido">Precio pretendido (USD) <span class="required">*</span></label>
+                        <label for="precio_pretendido">Precio pretendido <span class="required">*</span></label>
                         <input type="number" id="precio_pretendido" name="precio_pretendido" value="<?php echo htmlspecialchars($propiedad['precio_pretendido'] ?? ''); ?>" step="0.01" required>
                     </div>
                     
-                    <!-- CAMPOS FIJOS MANUALES -->
+                    <!-- CAMPOS SOLO PARA ADMINISTRADOR -->
+                    <?php if ($es_administrador): ?>
                     <div class="form-group">
                         <label for="gastos_operativos_fijos">
                             Gastos Operativos (fijos) <span class="info">(ingreso manual)</span>
@@ -1072,13 +1434,18 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                             Beneficio Requerido (fijo) <span class="info">(ingreso manual)</span>
                         </label>
                         <input type="number" id="beneficio_fijo" name="beneficio_fijo" 
-                               value="<?php echo htmlspecialchars($propiedad['ganancia_requerida'] ?? ($propiedad['precio_pretendido'] * ($costos['porcentaje_ganancia'] / 100)) ?? ''); ?>" 
+                               value="<?php echo htmlspecialchars($propiedad['ganancia_requerida'] ?? ($propiedad['precio_pretendido'] * (($costos['porcentaje_ganancia'] ?? 20) / 100)) ?? ''); ?>" 
                                step="0.01">
                     </div>
+                    <?php else: ?>
+                    <!-- Campos ocultos para calificador (se calculan automáticamente) -->
+                    <input type="hidden" name="gastos_operativos_fijos" value="<?php echo $costos['gastos_operativos_por_m2'] ?? 0; ?>">
+                    <input type="hidden" name="beneficio_fijo" value="<?php echo ($propiedad['precio_pretendido'] ?? 0) * (($costos['porcentaje_ganancia'] ?? 20) / 100); ?>">
+                    <?php endif; ?>
                 </div>
                 
-                <?php if ($propiedad_id > 0 && !empty($propiedad)): ?>
-                    <!-- Mostrar semáforo si ya existe -->
+                <!-- SEMÁFORO SOLO PARA ADMINISTRADOR -->
+                <?php if ($es_administrador && $propiedad_id > 0 && !empty($propiedad)): ?>
                     <div class="semaforo-container">
                         <div class="semaforo-indicador">
                             <div class="luz <?php echo $propiedad['indicador_color'] ?? 'pendiente'; ?>"></div>
@@ -1114,21 +1481,24 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                                    ($propiedad['comisiones'] ?? 0));
                     $margen = ($propiedad['precio_comercial'] ?? 0) - $costo_total;
                     ?>
-                    <div style="background: #f8f6f0; padding: 12px 18px; border-radius: 8px; margin: 10px 0;">
-                        <strong>Resumen:</strong>
-                        <span style="margin-left: 15px;">Costo Total: <strong>$<?php echo number_format($costo_total, 2); ?></strong></span>
-                        <span style="margin-left: 15px;">Margen: <strong style="color: <?php echo $margen > 0 ? '#28a745' : '#dc3545'; ?>">$<?php echo number_format($margen, 2); ?></strong></span>
-                        <span style="margin-left: 15px; font-size: 12px; color: #888;">
-                            <i class="fas fa-info-circle"></i> Gastos y beneficio son fijos (ingreso manual)
+                    <div class="resumen-financiero">
+                        <span><strong>Costo Total:</strong> $<?php echo number_format($costo_total, 2); ?></span>
+                        <span><strong>Margen:</strong> 
+                            <strong class="<?php echo $margen > 0 ? 'margen-positivo' : 'margen-negativo'; ?>">
+                                $<?php echo number_format($margen, 2); ?>
+                            </strong>
+                        </span>
+                        <span style="font-size: 12px; color: #888;">
+                            <i class="fas fa-info-circle"></i> Gastos y beneficio son fijos
                         </span>
                     </div>
                 <?php endif; ?>
                 
                 <div style="display: flex; gap: 10px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; flex-wrap: wrap;">
                     <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-save"></i> <?php echo $propiedad_id > 0 ? 'Actualizar' : 'Guardar y continuar'; ?>
+                        <i class="fas fa-save"></i> <?php echo $propiedad_id > 0 ? 'Actualizar' : 'Guardar'; ?>
                     </button>
-                    <?php if ($propiedad_id > 0): ?>
+                    <?php if ($es_administrador && $propiedad_id > 0): ?>
                         <a href="?id=<?php echo $propiedad_id; ?>&etapa=2" class="btn btn-success">
                             <i class="fas fa-arrow-right"></i> Ir a validación
                         </a>
@@ -1139,14 +1509,14 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                 </div>
             </form>
             
-        <?php elseif ($propiedad_id > 0 && $etapa == 2 && $propiedad['go_no_go'] == 'pendiente'): ?>
-            <!-- ===== ETAPA 2: TOP MANAGEMENT - GO/NO-GO ===== -->
+        <?php elseif ($propiedad_id > 0 && $etapa == 2 && $es_administrador): ?>
+            <!-- ===== ETAPA 2: TOP MANAGEMENT (SOLO ADMIN) ===== -->
             <div class="etapa-header">
                 <div>
-                    <h2><i class="fas fa-gavel"></i> Etapa 2: Decisión Go/No-Go</h2>
-                    <small style="opacity:0.8;">Revisa los indicadores y decide si continuar</small>
+                    <h2><i class="fas fa-gavel"></i> Etapa 2: Decisión Administrativa</h2>
+                    <small style="opacity:0.8;">Revisa los indicadores financieros y toma una decisión</small>
                 </div>
-                <span class="badge-etapa">Management: <?php echo htmlspecialchars($usuario['name']); ?></span>
+                <span class="badge-etapa">Administrador: <?php echo htmlspecialchars($usuario['name']); ?></span>
             </div>
             
             <div class="card">
@@ -1164,12 +1534,20 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                     <div><strong>Precio pretendido:</strong> $<?php echo number_format($propiedad['precio_pretendido'], 2); ?></div>
                 </div>
                 
-                <!-- Semáforo detallado -->
+                <!-- ANÁLISIS FINANCIERO COMPLETO PARA ADMIN -->
                 <div class="semaforo-container">
                     <div class="semaforo-indicador">
                         <div class="luz <?php echo $propiedad['indicador_color'] ?? 'pendiente'; ?>"></div>
                         <div>
-                            <strong><?php echo ucfirst($propiedad['viabilidad'] ?? 'Sin evaluar'); ?></strong>
+                            <strong><?php 
+                                $viabilidad_texto = [
+                                    'viable' => 'Viable',
+                                    'viable_condicionado' => 'Viable con condiciones',
+                                    'no_viable' => 'No viable',
+                                    'pendiente_evaluacion' => 'Pendiente de evaluación'
+                                ];
+                                echo $viabilidad_texto[$propiedad['viabilidad']] ?? ucfirst($propiedad['viabilidad'] ?? 'Sin evaluar'); 
+                            ?></strong>
                             <br><small style="color:#888;">Viabilidad calculada</small>
                         </div>
                     </div>
@@ -1200,17 +1578,16 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                                ($propiedad['comisiones'] ?? 0));
                 $margen = ($propiedad['precio_comercial'] ?? 0) - $costo_total;
                 ?>
-                <div style="background: #f8f6f0; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                    <strong>Resumen financiero:</strong>
-                    <div style="display: flex; gap: 30px; flex-wrap: wrap; margin-top: 8px;">
-                        <span>Costo total estimado: <strong>$<?php echo number_format($costo_total, 2); ?></strong></span>
-                        <span>Margen estimado: <strong style="color: <?php echo $margen > 0 ? '#28a745' : '#dc3545'; ?>">
+                <div class="resumen-financiero">
+                    <span><strong>Costo total estimado:</strong> $<?php echo number_format($costo_total, 2); ?></span>
+                    <span><strong>Margen estimado:</strong> 
+                        <strong class="<?php echo $margen > 0 ? 'margen-positivo' : 'margen-negativo'; ?>">
                             $<?php echo number_format($margen, 2); ?>
-                        </strong></span>
-                        <span style="font-size: 12px; color: #888;">
-                            <i class="fas fa-info-circle"></i> Gastos operativos y beneficio son fijos
-                        </span>
-                    </div>
+                        </strong>
+                    </span>
+                    <span style="font-size: 12px; color: #888;">
+                        <i class="fas fa-info-circle"></i> Gastos operativos y beneficio son fijos
+                    </span>
                 </div>
                 
                 <form method="POST">
@@ -1218,21 +1595,60 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                     
                     <div class="form-group">
                         <label for="comentarios_management">Comentarios / Observaciones</label>
-                        <textarea id="comentarios_management" name="comentarios_management" placeholder="Escribe tus comentarios sobre la viabilidad de esta propiedad" rows="3"><?php echo htmlspecialchars($propiedad['comentarios_management'] ?? ''); ?></textarea>
+                        <textarea id="comentarios_management" name="comentarios_management" placeholder="Escribe tus comentarios sobre la viabilidad de esta propiedad (estos serán visibles para el captador si se renegocia)" rows="3"><?php echo htmlspecialchars($propiedad['comentarios_management'] ?? ''); ?></textarea>
                     </div>
                     
+                    <!-- 3 OPCIONES DE DECISIÓN - BOTONES GRANDES -->
                     <div class="go-nogo-container">
                         <button type="submit" name="decision" value="aprobado" class="btn btn-success" onclick="return confirm('¿Confirmas APROBAR esta propiedad?');">
-                            <i class="fas fa-check-circle"></i> ✅ APROBAR (Go)
+                            <i class="fas fa-check-circle" style="font-size: 20px;"></i> ✅ APROBAR
+                        </button>
+                        <button type="submit" name="decision" value="renegociar" class="btn btn-warning" onclick="return confirm('¿Confirmas RENEGOCIAR esta propiedad? El captador podrá ajustar los datos.');" style="background: #ffc107; color: #1a1a2e;">
+                            <i class="fas fa-handshake" style="font-size: 20px;"></i> 🔄 RENEGOCIAR
                         </button>
                         <button type="submit" name="decision" value="rechazado" class="btn btn-danger" onclick="return confirm('¿Confirmas RECHAZAR esta propiedad?');">
-                            <i class="fas fa-times-circle"></i> ❌ RECHAZAR (No-Go)
+                            <i class="fas fa-times-circle" style="font-size: 20px;"></i> ❌ RECHAZAR
                         </button>
                         <a href="?id=<?php echo $propiedad_id; ?>&etapa=1" class="btn btn-secondary">
                             <i class="fas fa-arrow-left"></i> Volver a editar
                         </a>
                     </div>
                 </form>
+            </div>
+            
+        <?php elseif ($propiedad_id > 0 && $etapa == 2 && !$es_administrador): ?>
+            <!-- ===== ACCESO RESTRINGIDO PARA CALIFICADOR ===== -->
+            <div class="card">
+                <div class="acceso-restringido">
+                    <div class="icono">
+                        <i class="fas fa-lock"></i>
+                    </div>
+                    <h3>Acceso Restringido</h3>
+                    <p>
+                        Esta propiedad está en proceso de revisión administrativa. 
+                        No tienes acceso a los detalles financieros ni a la toma de decisiones.
+                    </p>
+                    <?php if ($propiedad['go_no_go'] == 'renegociar'): ?>
+                        <div class="alert-renegociar">
+                            <i class="fas fa-handshake"></i> El administrador ha solicitado <strong>renegociar</strong> esta propiedad. 
+                            Por favor, ajusta los datos según los comentarios.
+                        </div>
+                        <?php if (!empty($propiedad['comentarios_management'])): ?>
+                            <div class="comentarios-admin">
+                                <strong>Comentarios del administrador:</strong><br>
+                                <?php echo nl2br(htmlspecialchars($propiedad['comentarios_management'])); ?>
+                            </div>
+                        <?php endif; ?>
+                        <a href="?id=<?php echo $propiedad_id; ?>&etapa=1" class="btn btn-warning" style="margin-top: 10px;">
+                            <i class="fas fa-edit"></i> Editar propiedad
+                        </a>
+                    <?php endif; ?>
+                    <div style="margin-top: 20px;">
+                        <a href="?listado=1" class="btn btn-primary">
+                            <i class="fas fa-arrow-left"></i> Volver al listado
+                        </a>
+                    </div>
+                </div>
             </div>
             
         <?php elseif ($propiedad_id > 0 && $etapa == 3 && $propiedad['go_no_go'] == 'aprobado'): ?>
@@ -1336,13 +1752,37 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                     <div><strong>Precio:</strong> $<?php echo number_format($propiedad['precio_pretendido'], 2); ?></div>
                     <div><strong>Fecha visita:</strong> <?php echo date('d/m/Y H:i', strtotime($propiedad['fecha_visita'])); ?></div>
                     <div><strong>Gestor:</strong> <?php echo htmlspecialchars($propiedad['gestor_nombre'] ?? 'N/A'); ?></div>
+                    <?php if ($es_administrador): ?>
+                        <div><strong>Decisión:</strong> 
+                            <span class="estado-badge <?php echo $propiedad['go_no_go'] ?? 'pendiente'; ?>">
+                                <?php 
+                                $decision_texto = [
+                                    'aprobado' => 'Aprobado',
+                                    'rechazado' => 'Rechazado',
+                                    'renegociar' => 'Renegociar',
+                                    'pendiente' => 'Pendiente'
+                                ];
+                                echo $decision_texto[$propiedad['go_no_go']] ?? ucfirst($propiedad['go_no_go'] ?? 'Pendiente'); 
+                                ?>
+                            </span>
+                        </div>
+                    <?php endif; ?>
                 </div>
                 
+                <?php if ($es_administrador): ?>
                 <div class="semaforo-container">
                     <div class="semaforo-indicador">
                         <div class="luz <?php echo $propiedad['indicador_color'] ?? 'pendiente'; ?>"></div>
                         <div>
-                            <strong><?php echo ucfirst($propiedad['viabilidad'] ?? 'Sin evaluar'); ?></strong>
+                            <strong><?php 
+                                $viabilidad_texto = [
+                                    'viable' => 'Viable',
+                                    'viable_condicionado' => 'Viable con condiciones',
+                                    'no_viable' => 'No viable',
+                                    'pendiente_evaluacion' => 'Pendiente de evaluación'
+                                ];
+                                echo $viabilidad_texto[$propiedad['viabilidad']] ?? ucfirst($propiedad['viabilidad'] ?? 'Sin evaluar'); 
+                            ?></strong>
                             <br><small style="color:#888;">Viabilidad</small>
                         </div>
                     </div>
@@ -1365,6 +1805,7 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                         </div>
                     </div>
                 </div>
+                <?php endif; ?>
                 
                 <?php if (!empty($propiedad['fotos_publicacion']) || !empty($propiedad['fotos_danos'])): ?>
                     <div style="margin-top: 15px;">
@@ -1416,7 +1857,12 @@ if (isset($_GET['listado']) || isset($_GET['listado_todos'])) {
                 <div style="display: flex; gap: 10px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; flex-wrap: wrap;">
                     <a href="?listado=1" class="btn btn-primary"><i class="fas fa-arrow-left"></i> Volver al listado</a>
                     <button onclick="document.getElementById('exportPdfForm').submit();" class="btn btn-danger">
-                        <i class="fas fa-file-pdf"></i> Exportar PDF
+                            <i class="fas fa-file-pdf"></i> Exportar PDF
+                    </button>
+                    <button>
+                        <a href="../vender.php" class="btn btn-secondary">
+                            <i class="fas fa-print"></i> Registrar la propiedad
+                        </a>
                     </button>
                 </div>
             </div>
@@ -1469,6 +1915,16 @@ if (overlay) {
     });
 }
 
+document.querySelectorAll('.sidebar nav a').forEach(link => {
+    link.addEventListener('click', () => {
+        if (window.innerWidth <= 992) {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('show');
+            document.body.style.overflow = '';
+        }
+    });
+});
+
 // ============================================
 // FUNCIÓN PARA MOSTRAR ARCHIVOS SELECCIONADOS
 // ============================================
@@ -1502,20 +1958,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const mapContainer = document.getElementById('map');
     if (!mapContainer) return;
     
-    // Inicializar mapa
     map = L.map('map').setView([initialLat, initialLng], 15);
     
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap'
     }).addTo(map);
     
-    // Si hay coordenadas guardadas, mostrar marcador
     if (initialLat && initialLng && initialLat != 0 && initialLng != 0) {
         marker = L.marker([initialLat, initialLng]).addTo(map);
         marker.bindPopup('📍 Ubicación de la propiedad').openPopup();
     }
     
-    // Click en el mapa para poner marcador
     map.on('click', function(e) {
         const lat = e.latlng.lat;
         const lng = e.latlng.lng;
@@ -1610,39 +2063,16 @@ function limpiarMapa() {
 }
 
 // ============================================
-// CONFIRMACIONES
-// ============================================
-// Confirmar antes de rechazar una propiedad
-document.querySelectorAll('button[name="decision"][value="rechazado"]').forEach(btn => {
-    btn.addEventListener('click', function(e) {
-        if (!confirm('⚠️ ¿Estás seguro de RECHAZAR esta propiedad? Esta acción notificará al captador.')) {
-            e.preventDefault();
-        }
-    });
-});
-
-// Confirmar antes de aprobar
-document.querySelectorAll('button[name="decision"][value="aprobado"]').forEach(btn => {
-    btn.addEventListener('click', function(e) {
-        if (!confirm('✅ ¿Confirmas APROBAR esta propiedad? Esto permitirá agendar la visita.')) {
-            e.preventDefault();
-        }
-    });
-});
-
-// ============================================
 // AUTOCOMPLETAR FECHA DE VISITA
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
     const fechaInput = document.getElementById('fecha_visita');
     if (fechaInput) {
-        // Establecer fecha mínima = ahora + 1 hora
         const ahora = new Date();
         ahora.setHours(ahora.getHours() + 1);
         const iso = ahora.toISOString().slice(0, 16);
         fechaInput.min = iso;
         
-        // Si no tiene valor, poner uno por defecto (mañana a las 10am)
         if (!fechaInput.value) {
             const manana = new Date();
             manana.setDate(manana.getDate() + 1);

@@ -110,7 +110,7 @@ $roles_espanol = [
         <?php if (ver('mensajes')): ?>
         <a href="../mensajes.php">
             <i class="fas fa-envelope"></i> Mensajes
-            <span class="badge">3</span>
+            <span class="badge"></span>
         </a>
         <?php endif; ?>
 

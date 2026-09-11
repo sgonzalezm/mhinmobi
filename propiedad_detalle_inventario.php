@@ -1793,6 +1793,14 @@ $base_url = getBaseUrl();
                     <a href="propiedad_editar.php?id=<?php echo $property_id; ?>" class="btn-detail primary">
                         <i class="fas fa-edit"></i> Editar
                     </a>
+                    <?php if (esAdmin()): ?>
+                        <a href="descargar_expediente.php?id=<?php echo $property_id; ?>" 
+                        class="btn-detail primary" 
+                        style="background: #8b5cf6;"
+                        onclick="return confirm('¿Descargar expediente completo de esta propiedad?');">
+                            <i class="fas fa-file-archive"></i> Descargar Expediente
+                        </a>
+                    <?php endif; ?>
                 </div>
             </div>
 

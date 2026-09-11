@@ -1,4 +1,8 @@
 <?php
+// ============================================
+// socios_panel.php - DASHBOARD COMPLETO
+// ============================================
+
 session_start();
 require_once 'includes/conexion.php';
 require_once 'includes/auth.php';
@@ -17,228 +21,544 @@ if (!$usuario) {
     exit;
 }
 
-// ===== FUNCIONES PARA MENSAJES Y NOTIFICACIONES =====
+$usuario_id = $_SESSION['usuario_id'];
+$es_admin = esAdmin();
 
-function obtenerMensajesNoLeidos($conn, $usuario_id) {
-    try {
-        $stmt = $conn->prepare("
-            SELECT m.*, u.nombre as sender_name 
-            FROM messages m
-            LEFT JOIN usuarios u ON m.sender_id = u.id
-            WHERE m.receiver_id = ? 
-            AND m.is_read = 0 
-            AND m.is_archived = 0
-            ORDER BY m.created_at DESC
-            LIMIT 10
-        ");
-        $stmt->execute([$usuario_id]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (PDOException $e) {
-        return [];
-    }
-}
+// ============================================================
+// 1. FUNCIONES DE MÉTRICAS (Todas las consultas reales)
+// ============================================================
 
-function obtenerVencimientosProximos($conn, $usuario_id) {
-    try {
-        $stmt = $conn->prepare("
-            SELECT d.*, p.titulo as property_title 
-            FROM deadlines d
-            JOIN propiedades p ON d.property_id = p.id
-            WHERE d.status IN ('pending', 'approaching')
-            AND d.deadline_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
-            AND p.socio_id = ?
-            ORDER BY d.deadline_date ASC
-            LIMIT 5
-        ");
-        $stmt->execute([$usuario_id]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (PDOException $e) {
-        return [];
-    }
-}
-
-function obtenerTareasPendientes($conn, $usuario_id) {
-    try {
-        $stmt = $conn->prepare("
-            SELECT * FROM tasks 
-            WHERE assigned_to = ? 
-            AND status = 'pending'
-            ORDER BY due_date ASC
-            LIMIT 5
-        ");
-        $stmt->execute([$usuario_id]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (PDOException $e) {
-        return [];
-    }
-}
-
-function obtenerActividadReciente($conn, $usuario_id) {
-    try {
-        $stmt = $conn->prepare("
-            SELECT * FROM activity_logs 
-            WHERE user_id = ?
-            ORDER BY created_at DESC
-            LIMIT 10
-        ");
-        $stmt->execute([$usuario_id]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (PDOException $e) {
-        return [];
-    }
-}
-
-// ===== OBTENER DATOS PARA ESTADÍSTICAS AVANZADAS =====
-
-function obtenerValorTotalCartera($conn, $usuario_id) {
-    try {
-        $stmt = $conn->prepare("
-            SELECT SUM(precio) as total 
-            FROM propiedades 
-            WHERE socio_id = ? AND estado IN ('activa', 'destacada')
-        ");
-        $stmt->execute([$usuario_id]);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $result['total'] ?? 0;
-    } catch (PDOException $e) {
-        return 0;
-    }
-}
-
-function obtenerComisionesGeneradas($conn, $usuario_id) {
-    try {
-        $stmt = $conn->prepare("
-            SELECT SUM(comision) as total 
-            FROM ventas 
-            WHERE socio_id = ? AND estado = 'pagada'
-        ");
-        $stmt->execute([$usuario_id]);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $result['total'] ?? 0;
-    } catch (PDOException $e) {
-        return 0;
-    }
-}
-
-function obtenerPropiedadesConOfertas($conn, $usuario_id) {
+/**
+ * Obtener KPIs principales del dashboard
+ */
+function getDashboardKPIs($conn, $usuario_id) {
+    // 1. Total de propiedades
+    $stmt = $conn->prepare("SELECT COUNT(*) as total FROM properties WHERE owner_id = ?");
+    $stmt->execute([$usuario_id]);
+    $total_propiedades = $stmt->fetchColumn();
+    
+    // 2. Propiedades activas
+    $stmt = $conn->prepare("SELECT COUNT(*) as total FROM properties WHERE owner_id = ? AND status = 'activo'");
+    $stmt->execute([$usuario_id]);
+    $propiedades_activas = $stmt->fetchColumn();
+    
+    // 3. Propiedades vendidas (desde tracking)
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total 
+        FROM property_tracking pt
+        JOIN properties p ON pt.property_id = p.id
+        WHERE pt.initiated_by = ? AND pt.status = 'completado'
+    ");
+    $stmt->execute([$usuario_id]);
+    $propiedades_vendidas = $stmt->fetchColumn();
+    
+    // 4. Procesos activos
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total 
+        FROM property_tracking 
+        WHERE initiated_by = ? AND status = 'activo'
+    ");
+    $stmt->execute([$usuario_id]);
+    $procesos_activos = $stmt->fetchColumn();
+    
+    // 5. Valor total de cartera
+    $stmt = $conn->prepare("
+        SELECT COALESCE(SUM(pf.asking_price), 0) as total
+        FROM properties p
+        LEFT JOIN property_financials pf ON p.id = pf.property_id
+        WHERE p.owner_id = ? AND p.status = 'activo'
+    ");
+    $stmt->execute([$usuario_id]);
+    $valor_cartera = $stmt->fetchColumn();
+    
+    // 6. Comisiones generadas (de propiedades completadas)
+    $stmt = $conn->prepare("
+        SELECT COALESCE(SUM(pf.asking_price * pf.commission_percentage / 100), 0) as total
+        FROM property_tracking pt
+        JOIN properties p ON pt.property_id = p.id
+        JOIN property_financials pf ON p.id = pf.property_id
+        WHERE pt.initiated_by = ? AND pt.status = 'completado'
+    ");
+    $stmt->execute([$usuario_id]);
+    $comisiones_generadas = $stmt->fetchColumn();
+    
+    // 7. Mensajes no leídos
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total 
+        FROM messages 
+        WHERE receiver_id = ? AND is_read = 0 AND is_archived = 0
+    ");
+    $stmt->execute([$usuario_id]);
+    $mensajes_no_leidos = $stmt->fetchColumn();
+    
+    // 8. Vencimientos próximos (7 días)
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total 
+        FROM deadlines d
+        JOIN properties p ON d.property_id = p.id
+        WHERE p.owner_id = ? 
+        AND d.deadline_date <= DATE_ADD(NOW(), INTERVAL 7 DAY)
+        AND d.status = 'pending'
+    ");
+    $stmt->execute([$usuario_id]);
+    $vencimientos_proximos = $stmt->fetchColumn();
+    
+    // 9. Tareas pendientes
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total 
+        FROM tasks 
+        WHERE assigned_to = ? AND status = 'pending'
+    ");
+    $stmt->execute([$usuario_id]);
+    $tareas_pendientes = $stmt->fetchColumn();
+    
+    // 10. Propiedades con ofertas (si existe la tabla)
     try {
         $stmt = $conn->prepare("
             SELECT COUNT(DISTINCT p.id) as total 
-            FROM propiedades p
-            JOIN ofertas o ON p.id = o.property_id
-            WHERE p.socio_id = ? AND o.estado = 'pendiente'
+            FROM properties p
+            JOIN offers o ON p.id = o.property_id
+            WHERE p.owner_id = ? AND o.status = 'pending'
         ");
         $stmt->execute([$usuario_id]);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $result['total'] ?? 0;
+        $ofertas_pendientes = $stmt->fetchColumn();
     } catch (PDOException $e) {
-        return 0;
+        $ofertas_pendientes = 0;
     }
-}
-
-function obtenerTasaConversion($conn, $usuario_id) {
-    try {
-        // Propiedades totales vs propiedades vendidas
-        $stmt = $conn->prepare("
-            SELECT 
-                COUNT(*) as total,
-                SUM(CASE WHEN estado = 'vendida' THEN 1 ELSE 0 END) as vendidas
-            FROM propiedades 
-            WHERE socio_id = ?
-        ");
-        $stmt->execute([$usuario_id]);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        $total = $result['total'] ?? 0;
-        $vendidas = $result['vendidas'] ?? 0;
-        
-        if ($total == 0) return 0;
-        return round(($vendidas / $total) * 100, 1);
-    } catch (PDOException $e) {
-        return 0;
-    }
-}
-
-function obtenerDistribucionPropiedades($conn, $usuario_id) {
+    
+    // 11. Clientes totales
     try {
         $stmt = $conn->prepare("
-            SELECT 
-                estado,
-                COUNT(*) as cantidad,
-                ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM propiedades WHERE socio_id = ?), 1) as porcentaje
-            FROM propiedades 
-            WHERE socio_id = ?
-            GROUP BY estado
+            SELECT COUNT(*) as total 
+            FROM clientes 
+            WHERE user_id = ? OR created_by = ?
         ");
         $stmt->execute([$usuario_id, $usuario_id]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $total_clientes = $stmt->fetchColumn();
     } catch (PDOException $e) {
-        return [];
+        $total_clientes = 0;
     }
-}
-
-// ===== RECOLECTAR TODOS LOS DATOS =====
-
-$mensajes_no_leidos = obtenerMensajesNoLeidos($conn, $_SESSION['usuario_id']);
-$total_mensajes_no_leidos = count($mensajes_no_leidos);
-$mensajes_urgentes = array_filter($mensajes_no_leidos, function($msg) {
-    return $msg['priority'] === 'urgent' || $msg['priority'] === 'high';
-});
-
-$vencimientos_proximos = obtenerVencimientosProximos($conn, $_SESSION['usuario_id']);
-$tareas_pendientes = obtenerTareasPendientes($conn, $_SESSION['usuario_id']);
-$actividad_reciente = obtenerActividadReciente($conn, $_SESSION['usuario_id']);
-
-// Datos para métricas rápidas
-$valor_total_cartera = obtenerValorTotalCartera($conn, $_SESSION['usuario_id']);
-$comisiones_generadas = obtenerComisionesGeneradas($conn, $_SESSION['usuario_id']);
-$propiedades_con_ofertas = obtenerPropiedadesConOfertas($conn, $_SESSION['usuario_id']);
-$tasa_conversion = obtenerTasaConversion($conn, $_SESSION['usuario_id']);
-$distribucion_propiedades = obtenerDistribucionPropiedades($conn, $_SESSION['usuario_id']);
-
-// Obtener propiedades del socio
-$propiedades = [];
-try {
+    
+    // 12. Propiedades nuevas este mes
     $stmt = $conn->prepare("
-        SELECT p.*, 
-               (SELECT COUNT(*) FROM property_media WHERE property_id = p.id) as media_count,
-               (SELECT COUNT(*) FROM property_documents WHERE property_id = p.id) as doc_count,
-               (SELECT COUNT(*) FROM deadlines WHERE property_id = p.id AND status != 'completed') as deadlines_count
-        FROM propiedades p 
-        WHERE p.socio_id = ? 
-        ORDER BY p.fecha_creacion DESC 
-        LIMIT 10
+        SELECT COUNT(*) as total 
+        FROM properties 
+        WHERE owner_id = ? 
+        AND created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')
     ");
-    $stmt->execute([$_SESSION['usuario_id']]);
-    $propiedades = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    $propiedades = [];
+    $stmt->execute([$usuario_id]);
+    $propiedades_nuevas_mes = $stmt->fetchColumn();
+    
+    return [
+        'total_propiedades' => (int)$total_propiedades,
+        'propiedades_activas' => (int)$propiedades_activas,
+        'propiedades_vendidas' => (int)$propiedades_vendidas,
+        'propiedades_nuevas_mes' => (int)$propiedades_nuevas_mes,
+        'procesos_activos' => (int)$procesos_activos,
+        'valor_cartera' => (float)$valor_cartera,
+        'comisiones_generadas' => (float)$comisiones_generadas,
+        'mensajes_no_leidos' => (int)$mensajes_no_leidos,
+        'vencimientos_proximos' => (int)$vencimientos_proximos,
+        'tareas_pendientes' => (int)$tareas_pendientes,
+        'ofertas_pendientes' => (int)$ofertas_pendientes,
+        'total_clientes' => (int)$total_clientes,
+    ];
 }
 
-// Estadísticas básicas
-$stats = [
-    'total' => count($propiedades),
-    'activas' => 0,
-    'vendidas' => 0,
-    'destacadas' => 0,
-    'pendientes' => 0,
-    'vencimientos' => count($vencimientos_proximos),
-    'mensajes' => $total_mensajes_no_leidos,
-    'tareas' => count($tareas_pendientes),
-    'ofertas' => $propiedades_con_ofertas,
-    'conversion' => $tasa_conversion,
-    'valor_cartera' => $valor_total_cartera,
-    'comisiones' => $comisiones_generadas
-];
+/**
+ * Obtener ventas por mes para gráfico
+ */
+function getVentasPorMes($conn, $usuario_id, $meses = 6) {
+    $stmt = $conn->prepare("
+        SELECT 
+            DATE_FORMAT(pt.initiated_at, '%Y-%m') as mes,
+            COUNT(*) as cantidad,
+            COALESCE(SUM(pf.asking_price), 0) as total_ventas,
+            COALESCE(SUM(pf.asking_price * pf.commission_percentage / 100), 0) as comisiones
+        FROM property_tracking pt
+        JOIN properties p ON pt.property_id = p.id
+        LEFT JOIN property_financials pf ON p.id = pf.property_id
+        WHERE pt.initiated_by = ? 
+        AND pt.status = 'completado'
+        AND pt.initiated_at >= DATE_SUB(NOW(), INTERVAL ? MONTH)
+        GROUP BY DATE_FORMAT(pt.initiated_at, '%Y-%m')
+        ORDER BY mes ASC
+    ");
+    $stmt->execute([$usuario_id, $meses]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
 
-foreach ($propiedades as $p) {
-    if (isset($p['estado'])) {
-        if ($p['estado'] === 'activa') $stats['activas']++;
-        if ($p['estado'] === 'vendida') $stats['vendidas']++;
-        if ($p['estado'] === 'destacada') $stats['destacadas']++;
-        if ($p['estado'] === 'pendiente') $stats['pendientes']++;
+/**
+ * Obtener distribución de propiedades por tipo
+ */
+function getDistribucionPropiedades($conn, $usuario_id) {
+    $stmt = $conn->prepare("
+        SELECT 
+            p.operation_type,
+            COUNT(*) as cantidad,
+            ROUND(COUNT(*) * 100.0 / NULLIF((SELECT COUNT(*) FROM properties WHERE owner_id = ?), 0), 1) as porcentaje
+        FROM properties p
+        WHERE p.owner_id = ?
+        GROUP BY p.operation_type
+    ");
+    $stmt->execute([$usuario_id, $usuario_id]);
+    $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Si no hay datos, devolver valores por defecto
+    if (empty($result)) {
+        return [
+            ['operation_type' => 'venta', 'cantidad' => 0, 'porcentaje' => 0],
+            ['operation_type' => 'alquiler', 'cantidad' => 0, 'porcentaje' => 0]
+        ];
     }
+    return $result;
 }
+
+/**
+ * Obtener distribución por estado de propiedades
+ */
+function getDistribucionEstados($conn, $usuario_id) {
+    $stmt = $conn->prepare("
+        SELECT 
+            status,
+            COUNT(*) as cantidad,
+            ROUND(COUNT(*) * 100.0 / NULLIF((SELECT COUNT(*) FROM properties WHERE owner_id = ?), 0), 1) as porcentaje
+        FROM properties p
+        WHERE p.owner_id = ?
+        GROUP BY status
+        ORDER BY cantidad DESC
+    ");
+    $stmt->execute([$usuario_id, $usuario_id]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Obtener procesos activos con progreso
+ */
+function getProcesosActivos($conn, $usuario_id) {
+    $stmt = $conn->prepare("
+        SELECT 
+            pt.id,
+            p.title as propiedad,
+            pt.current_stage,
+            pt.initiated_at,
+            (
+                SELECT COUNT(*) 
+                FROM tracking_stages ts 
+                WHERE ts.tracking_id = pt.id 
+                AND ts.status = 'completado'
+            ) as etapas_completadas,
+            (
+                SELECT COUNT(*) 
+                FROM tracking_stages ts 
+                WHERE ts.tracking_id = pt.id
+            ) as total_etapas,
+            DATEDIFF(NOW(), pt.initiated_at) as dias_en_proceso
+        FROM property_tracking pt
+        JOIN properties p ON pt.property_id = p.id
+        WHERE pt.status = 'activo'
+        AND pt.initiated_by = ?
+        ORDER BY pt.updated_at DESC
+        LIMIT 5
+    ");
+    $stmt->execute([$usuario_id]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Obtener actividad reciente unificada
+ */
+function getActividadReciente($conn, $usuario_id, $limite = 8) {
+    // Propiedades recientes
+    $sql_propiedades = "
+        SELECT 
+            'propiedad' as tipo,
+            title as descripcion,
+            'creada' as accion,
+            created_at as fecha,
+            'fa-home' as icono
+        FROM properties 
+        WHERE owner_id = ? 
+        ORDER BY created_at DESC 
+        LIMIT 3
+    ";
+    
+    // Procesos actualizados
+    $sql_procesos = "
+        SELECT 
+            'proceso' as tipo,
+            CONCAT(p.title, ' - ', pt.current_stage) as descripcion,
+            'actualizado' as accion,
+            pt.updated_at as fecha,
+            'fa-tasks' as icono
+        FROM property_tracking pt
+        JOIN properties p ON pt.property_id = p.id
+        WHERE pt.initiated_by = ? 
+        ORDER BY pt.updated_at DESC 
+        LIMIT 3
+    ";
+    
+    // Documentos subidos
+    $sql_documentos = "
+        SELECT 
+            'documento' as tipo,
+            file_name as descripcion,
+            'subido' as accion,
+            uploaded_at as fecha,
+            'fa-file-alt' as icono
+        FROM client_uploaded_documents
+        WHERE property_id IN (SELECT id FROM properties WHERE owner_id = ?)
+        ORDER BY uploaded_at DESC 
+        LIMIT 2
+    ";
+    
+    // Unir todo
+    $sql = "($sql_propiedades) UNION ALL ($sql_procesos) UNION ALL ($sql_documentos) ORDER BY fecha DESC LIMIT ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->execute([$usuario_id, $usuario_id, $usuario_id, $limite]);
+    
+    $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Formatear fechas
+    foreach ($result as &$item) {
+        $item['fecha_formateada'] = date('d/m/Y H:i', strtotime($item['fecha']));
+        $item['tiempo_relativo'] = tiempoRelativo($item['fecha']);
+    }
+    
+    return $result;
+}
+
+/**
+ * Función auxiliar para tiempo relativo
+ */
+function tiempoRelativo($fecha) {
+    $timestamp = strtotime($fecha);
+    $diff = time() - $timestamp;
+    
+    if ($diff < 60) return 'hace ' . $diff . ' segundos';
+    if ($diff < 3600) return 'hace ' . round($diff / 60) . ' minutos';
+    if ($diff < 86400) return 'hace ' . round($diff / 3600) . ' horas';
+    if ($diff < 604800) return 'hace ' . round($diff / 86400) . ' días';
+    return date('d/m/Y', $timestamp);
+}
+
+/**
+ * Obtener alertas inteligentes
+ */
+function getAlertasDashboard($conn, $usuario_id) {
+    $alertas = [];
+    
+    // 1. Propiedades sin precio
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total 
+        FROM properties p
+        LEFT JOIN property_financials pf ON p.id = pf.property_id
+        WHERE p.owner_id = ? 
+        AND (pf.asking_price IS NULL OR pf.asking_price = 0)
+    ");
+    $stmt->execute([$usuario_id]);
+    $sin_precio = $stmt->fetchColumn();
+    if ($sin_precio > 0) {
+        $alertas[] = [
+            'tipo' => 'warning',
+            'icono' => 'fa-exclamation-triangle',
+            'mensaje' => "{$sin_precio} propiedad(es) sin precio asignado",
+            'url' => 'mis_propiedades.php?filtro=sin_precio'
+        ];
+    }
+    
+    // 2. Propiedades sin imágenes
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total 
+        FROM properties p
+        LEFT JOIN property_media pm ON p.id = pm.property_id
+        WHERE p.owner_id = ? 
+        AND pm.id IS NULL
+    ");
+    $stmt->execute([$usuario_id]);
+    $sin_imagenes = $stmt->fetchColumn();
+    if ($sin_imagenes > 0) {
+        $alertas[] = [
+            'tipo' => 'info',
+            'icono' => 'fa-image',
+            'mensaje' => "{$sin_imagenes} propiedad(es) sin imágenes",
+            'url' => 'mis_propiedades.php?filtro=sin_imagenes'
+        ];
+    }
+    
+    // 3. Vencimientos próximos
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total 
+        FROM deadlines d
+        JOIN properties p ON d.property_id = p.id
+        WHERE p.owner_id = ? 
+        AND d.deadline_date <= DATE_ADD(NOW(), INTERVAL 7 DAY)
+        AND d.status = 'pending'
+    ");
+    $stmt->execute([$usuario_id]);
+    $vencimientos = $stmt->fetchColumn();
+    if ($vencimientos > 0) {
+        $dias_texto = $vencimientos == 1 ? 'día' : 'días';
+        $alertas[] = [
+            'tipo' => 'danger',
+            'icono' => 'fa-clock',
+            'mensaje' => "{$vencimientos} vencimiento(s) en los próximos 7 {$dias_texto}",
+            'url' => 'vencimientos.php'
+        ];
+    }
+    
+    // 4. Documentos pendientes de revisión
+    try {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*) as total 
+            FROM client_uploaded_documents c
+            JOIN properties p ON c.property_id = p.id
+            WHERE p.owner_id = ? 
+            AND c.status = 'pending_review'
+        ");
+        $stmt->execute([$usuario_id]);
+        $docs_pendientes = $stmt->fetchColumn();
+        if ($docs_pendientes > 0) {
+            $alertas[] = [
+                'tipo' => 'info',
+                'icono' => 'fa-file-alt',
+                'mensaje' => "{$docs_pendientes} documento(s) pendientes de revisión",
+                'url' => 'documentos_pendientes.php'
+            ];
+        }
+    } catch (PDOException $e) {
+        // La tabla puede no existir
+    }
+    
+    // 5. Mensajes no leídos (si son muchos)
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total 
+        FROM messages 
+        WHERE receiver_id = ? AND is_read = 0 AND is_archived = 0
+    ");
+    $stmt->execute([$usuario_id]);
+    $mensajes = $stmt->fetchColumn();
+    if ($mensajes > 5) {
+        $alertas[] = [
+            'tipo' => 'warning',
+            'icono' => 'fa-envelope',
+            'mensaje' => "Tienes {$mensajes} mensajes sin leer",
+            'url' => 'mensajes.php'
+        ];
+    }
+    
+    // 6. Propiedades antiguas (más de 30 días sin actualizar)
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total 
+        FROM properties 
+        WHERE owner_id = ? 
+        AND status = 'activo'
+        AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)
+        AND updated_at < DATE_SUB(NOW(), INTERVAL 15 DAY)
+    ");
+    $stmt->execute([$usuario_id]);
+    $antiguas = $stmt->fetchColumn();
+    if ($antiguas > 0) {
+        $alertas[] = [
+            'tipo' => 'warning',
+            'icono' => 'fa-clock',
+            'mensaje' => "{$antiguas} propiedad(es) llevan más de 30 días sin actualizar",
+            'url' => 'mis_propiedades.php?filtro=antiguas'
+        ];
+    }
+    
+    return $alertas;
+}
+
+/**
+ * Obtener estadísticas de comisiones por asesor (solo admin)
+ */
+function getEstadisticasAsesores($conn) {
+    $stmt = $conn->prepare("
+        SELECT 
+            u.id,
+            u.name,
+            u.comision_porcentaje as comision_actual,
+            COUNT(pt.id) as total_propiedades,
+            SUM(CASE WHEN pt.status = 'completado' THEN 1 ELSE 0 END) as vendidas,
+            SUM(CASE WHEN pt.status = 'completado' THEN pf.asking_price * pf.commission_percentage / 100 ELSE 0 END) as comisiones_total,
+            AVG(CASE WHEN pt.status = 'completado' THEN DATEDIFF(pt.updated_at, pt.initiated_at) ELSE NULL END) as dias_promedio
+        FROM users u
+        LEFT JOIN property_tracking pt ON pt.initiated_by = u.id
+        LEFT JOIN properties p ON pt.property_id = p.id
+        LEFT JOIN property_financials pf ON p.id = pf.property_id
+        WHERE u.role = 'asesor'
+        GROUP BY u.id
+        ORDER BY comisiones_total DESC
+        LIMIT 5
+    ");
+    $stmt->execute();
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+// ============================================================
+// 2. OBTENER TODOS LOS DATOS PARA EL DASHBOARD
+// ============================================================
+
+$kpis = getDashboardKPIs($conn, $usuario_id);
+$ventas_mensuales = getVentasPorMes($conn, $usuario_id, 6);
+$distribucion = getDistribucionPropiedades($conn, $usuario_id);
+$distribucion_estados = getDistribucionEstados($conn, $usuario_id);
+$procesos_activos = getProcesosActivos($conn, $usuario_id);
+$actividad_reciente = getActividadReciente($conn, $usuario_id);
+$alertas = getAlertasDashboard($conn, $usuario_id);
+
+// Estadísticas adicionales (solo admin)
+$estadisticas_asesores = $es_admin ? getEstadisticasAsesores($conn) : [];
+
+// ============================================================
+// 3. FUNCIONES AUXILIARES PARA VISTA
+// ============================================================
+
+function formatearMoneda($monto) {
+    if ($monto === null || $monto === '') {
+        return '$0';
+    }
+    return '$' . number_format(floatval($monto), 0, ',', '.');
+}
+
+function getColorEstado($estado) {
+    $colores = [
+        'activo' => '#10b981',
+        'pendiente' => '#f59e0b',
+        'vendido' => '#3b82f6',
+        'suspendido' => '#ef4444',
+        'completado' => '#10b981'
+    ];
+    return $colores[$estado] ?? '#6b7280';
+}
+
+// Preparar datos para gráficos (JSON)
+$ventas_labels = array_column($ventas_mensuales, 'mes');
+$ventas_values = array_column($ventas_mensuales, 'total_ventas');
+$comisiones_values = array_column($ventas_mensuales, 'comisiones');
+
+// Si no hay datos, poner valores por defecto
+if (empty($ventas_labels)) {
+    $meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun'];
+    $ventas_labels = $meses;
+    $ventas_values = array_fill(0, 6, 0);
+    $comisiones_values = array_fill(0, 6, 0);
+}
+
+$dist_labels = array_column($distribucion, 'operation_type');
+$dist_values = array_column($distribucion, 'cantidad');
+// Traducir etiquetas
+$dist_labels = array_map(function($label) {
+    return $label === 'venta' ? 'Venta' : ($label === 'alquiler' ? 'Alquiler' : ucfirst($label));
+}, $dist_labels);
+
+$estado_labels = array_column($distribucion_estados, 'status');
+$estado_values = array_column($distribucion_estados, 'cantidad');
+$estado_labels = array_map('ucfirst', $estado_labels);
+
+// Colores para gráficos
+$colores_chart = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -246,19 +566,473 @@ foreach ($propiedades as $p) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="css/socios.css">
-    <title>Panel de Socios | Inmobiliaria MH</title>
+    <title>Dashboard | Inmobiliaria MH</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
-        /* ===== TODOS LOS ESTILOS MEJORADOS ===== */
+        /* ===== ESTILOS ADICIONALES PARA EL DASHBOARD ===== */
         
-        /* Badge de notificaciones */
-        .notification-badge { position: relative; }
+        /* KPIs */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 25px;
+        }
+        
+        .kpi-card {
+            background: white;
+            border-radius: 12px;
+            padding: 18px 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            border-left: 4px solid #4f46e5;
+            transition: all 0.3s ease;
+        }
+        
+        .kpi-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+        }
+        
+        .kpi-card .kpi-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        
+        .kpi-card .kpi-icon {
+            font-size: 22px;
+            color: #4f46e5;
+            opacity: 0.7;
+        }
+        
+        .kpi-card .kpi-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1.2;
+        }
+        
+        .kpi-card .kpi-label {
+            font-size: 13px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        
+        .kpi-card .kpi-change {
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 6px;
+            padding: 2px 10px;
+            border-radius: 12px;
+            display: inline-block;
+        }
+        
+        .kpi-card .kpi-change.positive {
+            background: #dcfce7;
+            color: #16a34a;
+        }
+        
+        .kpi-card .kpi-change.negative {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+        
+        .kpi-card .kpi-change.neutral {
+            background: #f1f5f9;
+            color: #475569;
+        }
+        
+        .kpi-card.blue { border-left-color: #4f46e5; }
+        .kpi-card.green { border-left-color: #10b981; }
+        .kpi-card.orange { border-left-color: #f59e0b; }
+        .kpi-card.red { border-left-color: #ef4444; }
+        .kpi-card.purple { border-left-color: #8b5cf6; }
+        .kpi-card.teal { border-left-color: #06b6d4; }
+        
+        /* Alertas */
+        .alertas-container {
+            background: white;
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        
+        .alertas-container .alertas-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .alertas-container .alertas-header h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #0f172a;
+            margin: 0;
+        }
+        
+        .alertas-container .alertas-header .badge-alertas {
+            background: #f1f5f9;
+            padding: 2px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            color: #64748b;
+        }
+        
+        .alerta-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            transition: all 0.2s;
+        }
+        
+        .alerta-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .alerta-item:hover {
+            background: #f8fafc;
+        }
+        
+        .alerta-item .alerta-icon {
+            font-size: 18px;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        
+        .alerta-item.warning .alerta-icon {
+            background: #fef3c7;
+            color: #d97706;
+        }
+        
+        .alerta-item.danger .alerta-icon {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+        
+        .alerta-item.info .alerta-icon {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+        
+        .alerta-item.success .alerta-icon {
+            background: #dcfce7;
+            color: #16a34a;
+        }
+        
+        .alerta-item .alerta-mensaje {
+            flex: 1;
+            font-size: 14px;
+            color: #1e293b;
+        }
+        
+        .alerta-item .alerta-link {
+            font-size: 13px;
+            color: #4f46e5;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .alerta-item .alerta-link:hover {
+            text-decoration: underline;
+        }
+        
+        .no-alertas {
+            text-align: center;
+            padding: 20px;
+            color: #94a3b8;
+        }
+        
+        .no-alertas i {
+            font-size: 30px;
+            display: block;
+            margin-bottom: 8px;
+        }
+        
+        /* Gráficos */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+        
+        .chart-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        
+        .chart-card h4 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #0f172a;
+            margin: 0 0 15px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .chart-card h4 i {
+            color: #64748b;
+        }
+        
+        .chart-card canvas {
+            max-height: 220px;
+            max-width: 100%;
+        }
+        
+        /* Procesos activos */
+        .procesos-container {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        
+        .procesos-container .procesos-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .procesos-container .procesos-header h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #0f172a;
+            margin: 0;
+        }
+        
+        .procesos-container .procesos-header a {
+            font-size: 13px;
+            color: #4f46e5;
+            text-decoration: none;
+        }
+        
+        .proceso-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 14px;
+            border-bottom: 1px solid #f1f5f9;
+            transition: background 0.2s;
+        }
+        
+        .proceso-item:last-child {
+            border-bottom: none;
+        }
+        
+        .proceso-item:hover {
+            background: #f8fafc;
+        }
+        
+        .proceso-item .proceso-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .proceso-item .proceso-titulo {
+            font-weight: 600;
+            color: #0f172a;
+            font-size: 14px;
+        }
+        
+        .proceso-item .proceso-etapa {
+            font-size: 12px;
+            color: #64748b;
+            display: block;
+        }
+        
+        .proceso-item .proceso-dias {
+            font-size: 12px;
+            color: #94a3b8;
+            white-space: nowrap;
+        }
+        
+        .proceso-item .progreso-wrapper {
+            width: 120px;
+            flex-shrink: 0;
+        }
+        
+        .proceso-item .progress-bar {
+            height: 6px;
+            background: #f1f5f9;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        
+        .proceso-item .progress-bar .progress-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.6s ease;
+            background: #4f46e5;
+        }
+        
+        .proceso-item .progreso-texto {
+            font-size: 11px;
+            color: #94a3b8;
+            text-align: right;
+            margin-top: 2px;
+        }
+        
+        .proceso-item .btn-ver-proceso {
+            padding: 4px 12px;
+            background: #f1f5f9;
+            color: #475569;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        
+        .proceso-item .btn-ver-proceso:hover {
+            background: #e2e8f0;
+        }
+        
+        /* Actividad reciente */
+        .actividad-container {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        
+        .actividad-container h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #0f172a;
+            margin: 0 0 15px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .actividad-item {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 10px 0;
+            border-bottom: 1px solid #f8fafc;
+        }
+        
+        .actividad-item:last-child {
+            border-bottom: none;
+        }
+        
+        .actividad-item .act-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        
+        .actividad-item .act-icon.propiedad {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+        
+        .actividad-item .act-icon.proceso {
+            background: #dcfce7;
+            color: #16a34a;
+        }
+        
+        .actividad-item .act-icon.documento {
+            background: #fef3c7;
+            color: #d97706;
+        }
+        
+        .actividad-item .act-icon.notificacion {
+            background: #ede9fe;
+            color: #7c3aed;
+        }
+        
+        .actividad-item .act-contenido {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .actividad-item .act-descripcion {
+            font-size: 14px;
+            color: #0f172a;
+        }
+        
+        .actividad-item .act-descripcion .accion {
+            color: #64748b;
+        }
+        
+        .actividad-item .act-fecha {
+            font-size: 12px;
+            color: #94a3b8;
+            white-space: nowrap;
+        }
+        
+        .no-actividad {
+            text-align: center;
+            padding: 20px;
+            color: #94a3b8;
+        }
+        
+        /* Responsive */
+        @media (max-width: 992px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .kpi-grid {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .kpi-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            
+            .kpi-card .kpi-value {
+                font-size: 22px;
+            }
+            
+            .proceso-item {
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            
+            .proceso-item .progreso-wrapper {
+                width: 100%;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .kpi-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Badge de notificaciones en sidebar (ya existe) */
         .notification-badge .badge-count {
             position: absolute;
             top: -8px;
             right: -8px;
-            background: #e74c3c;
+            background: #ef4444;
             color: white;
             border-radius: 50%;
             padding: 2px 6px;
@@ -266,241 +1040,6 @@ foreach ($propiedades as $p) {
             font-weight: bold;
             min-width: 18px;
             text-align: center;
-        }
-        .notification-badge .badge-count.urgent { animation: pulse 1.5s infinite; }
-        
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.2); }
-            100% { transform: scale(1); }
-        }
-        
-        /* Mensajes Popup */
-        .messages-popup {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 380px;
-            max-height: 500px;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            z-index: 1000;
-            display: none;
-            overflow: hidden;
-            border: 1px solid #e0e0e0;
-        }
-        .messages-popup.active { display: block; animation: slideUp 0.3s ease-out; }
-        
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .messages-popup-header {
-            padding: 15px 20px;
-            background: linear-gradient(135deg, #2c3e50, #34495e);
-            color: white;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .messages-popup-header h4 { margin: 0; font-size: 16px; }
-        .messages-popup-header .close-popup {
-            background: none;
-            border: none;
-            color: white;
-            font-size: 20px;
-            cursor: pointer;
-            opacity: 0.7;
-            transition: opacity 0.3s;
-        }
-        .messages-popup-header .close-popup:hover { opacity: 1; }
-        
-        .messages-list {
-            max-height: 380px;
-            overflow-y: auto;
-            padding: 10px 0;
-        }
-        .message-item {
-            padding: 12px 20px;
-            border-bottom: 1px solid #f5f5f5;
-            cursor: pointer;
-            transition: background 0.2s;
-            position: relative;
-        }
-        .message-item:hover { background: #f8f9fa; }
-        .message-item.unread { border-left: 4px solid #3498db; background: #f0f7ff; }
-        .message-item.urgent { border-left: 4px solid #e74c3c; background: #fff5f5; }
-        .message-item .message-sender { font-weight: 600; font-size: 14px; color: #2c3e50; }
-        .message-item .message-subject { font-size: 13px; color: #555; margin-top: 2px; }
-        .message-item .message-time { font-size: 11px; color: #999; position: absolute; right: 20px; top: 12px; }
-        .message-item .message-priority {
-            display: inline-block;
-            padding: 1px 8px;
-            border-radius: 10px;
-            font-size: 10px;
-            font-weight: 600;
-            margin-top: 4px;
-        }
-        .message-priority.urgent { background: #e74c3c; color: white; }
-        .message-priority.high { background: #f39c12; color: white; }
-        .message-priority.medium { background: #3498db; color: white; }
-        .message-priority.low { background: #95a5a6; color: white; }
-        
-        .messages-popup-footer {
-            padding: 12px 20px;
-            border-top: 1px solid #eee;
-            text-align: center;
-        }
-        .messages-popup-footer a { color: #3498db; text-decoration: none; font-size: 14px; }
-        .messages-popup-footer a:hover { text-decoration: underline; }
-        
-        /* Deadline Widget */
-        .deadline-widget {
-            background: #fff8e1;
-            border-left: 4px solid #f39c12;
-            padding: 10px 15px;
-            border-radius: 4px;
-            margin-bottom: 8px;
-        }
-        .deadline-widget.urgent { background: #ffebee; border-left-color: #e74c3c; }
-        .deadline-widget .deadline-title { font-weight: 600; font-size: 14px; }
-        .deadline-widget .deadline-date { font-size: 12px; color: #666; }
-        .deadline-widget .deadline-days { font-size: 12px; font-weight: 600; color: #e74c3c; }
-        
-        /* Widgets de métricas rápidas */
-        .metric-card {
-            padding: 20px;
-            border-radius: 10px;
-            color: white;
-            transition: transform 0.3s, box-shadow 0.3s;
-            cursor: default;
-            position: relative;
-            overflow: hidden;
-        }
-        .metric-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-        }
-        .metric-card .metric-icon {
-            position: absolute;
-            right: 15px;
-            top: 15px;
-            font-size: 30px;
-            opacity: 0.3;
-        }
-        .metric-card .metric-label { font-size: 12px; opacity: 0.9; margin-bottom: 5px; }
-        .metric-card .metric-value { font-size: 24px; font-weight: bold; }
-        .metric-card .metric-sub { font-size: 11px; opacity: 0.8; margin-top: 5px; }
-        
-        .metric-card.purple { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-        .metric-card.pink { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-        .metric-card.blue { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
-        .metric-card.green { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: #2c3e50; }
-        .metric-card.orange { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: #2c3e50; }
-        .metric-card.red { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-        
-        /* Quick Actions */
-        .quick-actions {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-bottom: 25px;
-        }
-        .quick-action-btn {
-            padding: 10px 20px;
-            border-radius: 8px;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.3s;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            border: none;
-            cursor: pointer;
-        }
-        .quick-action-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
-        }
-        .quick-action-btn .badge {
-            background: rgba(255,255,255,0.3);
-            border-radius: 50%;
-            padding: 2px 8px;
-            font-size: 11px;
-            font-weight: bold;
-        }
-        .quick-action-btn.primary { background: #2c3e50; color: white; }
-        .quick-action-btn.info { background: #3498db; color: white; }
-        .quick-action-btn.success { background: #27ae60; color: white; }
-        .quick-action-btn.warning { background: #f39c12; color: white; }
-        .quick-action-btn.danger { background: #e74c3c; color: white; }
-        
-        /* Chart containers */
-        .chart-container {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-            margin-bottom: 20px;
-        }
-        .chart-container h4 {
-            margin: 0 0 15px 0;
-            font-size: 15px;
-            color: #2c3e50;
-        }
-        .chart-container canvas { max-height: 250px; }
-        
-        /* Botón flotante de mensajes */
-        .float-message-btn {
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #2c3e50, #34495e);
-            color: white;
-            border: none;
-            font-size: 24px;
-            cursor: pointer;
-            box-shadow: 0 4px 15px rgba(44, 62, 80, 0.3);
-            transition: all 0.3s;
-            z-index: 999;
-        }
-        .float-message-btn:hover { transform: scale(1.1); box-shadow: 0 6px 25px rgba(44, 62, 80, 0.4); }
-        .float-message-btn .btn-badge {
-            position: absolute;
-            top: -5px;
-            right: -5px;
-            background: #e74c3c;
-            color: white;
-            border-radius: 50%;
-            padding: 3px 8px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-        
-        /* Responsive */
-        @media (max-width: 768px) {
-            .messages-popup {
-                width: calc(100% - 20px);
-                bottom: 80px;
-                right: 10px;
-                max-height: 70vh;
-            }
-            .float-message-btn {
-                width: 50px;
-                height: 50px;
-                font-size: 20px;
-                bottom: 20px;
-                right: 20px;
-            }
-            .metric-card .metric-value { font-size: 18px; }
-            .quick-actions { flex-direction: column; }
-            .quick-action-btn { width: 100%; justify-content: center; }
         }
     </style>
 </head>
@@ -533,377 +1072,201 @@ foreach ($propiedades as $p) {
             </p>
         </div>
         <div class="header-actions">
-            <button class="btn-header" onclick="toggleMessagesPopup()" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #2c3e50; position: relative;">
-                <i class="fas fa-envelope"></i>
-                <?php if ($total_mensajes_no_leidos > 0): ?>
-                    <span style="position: absolute; top: -5px; right: -8px; background: #e74c3c; color: white; border-radius: 50%; padding: 2px 6px; font-size: 10px; font-weight: bold;">
-                        <?php echo $total_mensajes_no_leidos; ?>
-                    </span>
-                <?php endif; ?>
-            </button>
             <a href="vender.php" class="btn-header primary">
                 <i class="fas fa-plus-circle"></i> Publicar Propiedad
             </a>
         </div>
     </div>
 
-    <!-- ===== ESTADÍSTICAS BÁSICAS ===== -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <span class="stat-icon"><i class="fas fa-building"></i></span>
-            <div class="stat-number"><?php echo $stats['total']; ?></div>
-            <div class="stat-label">Total Propiedades</div>
-        </div>
-        <div class="stat-card success">
-            <span class="stat-icon"><i class="fas fa-check-circle"></i></span>
-            <div class="stat-number"><?php echo $stats['activas']; ?></div>
-            <div class="stat-label">Activas</div>
-        </div>
-        <div class="stat-card warning">
-            <span class="stat-icon"><i class="fas fa-star"></i></span>
-            <div class="stat-number"><?php echo $stats['destacadas']; ?></div>
-            <div class="stat-label">Destacadas</div>
-        </div>
-        <div class="stat-card danger">
-            <span class="stat-icon"><i class="fas fa-sold-out"></i></span>
-            <div class="stat-number"><?php echo $stats['vendidas']; ?></div>
-            <div class="stat-label">Vendidas</div>
-        </div>
-        <div class="stat-card info" style="cursor: pointer;" onclick="location.href='mensajes.php'">
-            <span class="stat-icon has-notifications"><i class="fas fa-envelope"></i></span>
-            <div class="stat-number"><?php echo $stats['mensajes']; ?></div>
-            <div class="stat-label">
-                Mensajes No Leídos
-                <?php if (count($mensajes_urgentes) > 0): ?>
-                    <span style="font-size: 11px; color: #e74c3c; display: block; font-weight: 600;">
-                        <?php echo count($mensajes_urgentes); ?> urgentes
-                    </span>
-                <?php endif; ?>
+    <!-- ===== KPIS ===== -->
+    <div class="kpi-grid">
+        <div class="kpi-card blue">
+            <div class="kpi-top">
+                <div>
+                    <div class="kpi-value"><?php echo $kpis['total_propiedades']; ?></div>
+                    <div class="kpi-label">Total Propiedades</div>
+                </div>
+                <div class="kpi-icon"><i class="fas fa-building"></i></div>
             </div>
-        </div>
-        <div class="stat-card warning" style="cursor: pointer;" onclick="location.href='vencimientos.php'">
-            <span class="stat-icon"><i class="fas fa-clock"></i></span>
-            <div class="stat-number"><?php echo $stats['vencimientos']; ?></div>
-            <div class="stat-label">Vencimientos Próximos</div>
-        </div>
-        <div class="stat-card primary" style="cursor: pointer;" onclick="location.href='tareas.php'">
-            <span class="stat-icon"><i class="fas fa-tasks"></i></span>
-            <div class="stat-number"><?php echo $stats['tareas']; ?></div>
-            <div class="stat-label">Tareas Pendientes</div>
-        </div>
-        <div class="stat-card">
-            <span class="stat-icon"><i class="fas fa-file-alt"></i></span>
-            <div class="stat-number"><?php echo $stats['pendientes']; ?></div>
-            <div class="stat-label">En Proceso</div>
-        </div>
-    </div>
-
-    <!-- ===== WIDGET DE MÉTRICAS RÁPIDAS ===== -->
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px;">
-        <div class="metric-card purple">
-            <i class="fas fa-chart-pie metric-icon"></i>
-            <div class="metric-label">Valor Total Cartera</div>
-            <div class="metric-value">$<?php echo number_format($stats['valor_cartera'], 0, ',', '.'); ?></div>
-            <div class="metric-sub"><?php echo $stats['activas']; ?> propiedades activas</div>
-        </div>
-        <div class="metric-card pink">
-            <i class="fas fa-coins metric-icon"></i>
-            <div class="metric-label">Comisiones Generadas</div>
-            <div class="metric-value">$<?php echo number_format($stats['comisiones'], 0, ',', '.'); ?></div>
-            <div class="metric-sub"><?php echo $stats['vendidas']; ?> propiedades vendidas</div>
-        </div>
-        <div class="metric-card blue">
-            <i class="fas fa-hand-holding-usd metric-icon"></i>
-            <div class="metric-label">Propiedades con Ofertas</div>
-            <div class="metric-value"><?php echo $stats['ofertas']; ?></div>
-            <div class="metric-sub">Clientes interesados</div>
-        </div>
-        <div class="metric-card green">
-            <i class="fas fa-percent metric-icon"></i>
-            <div class="metric-label">Tasa de Conversión</div>
-            <div class="metric-value"><?php echo $stats['conversion']; ?>%</div>
-            <div class="metric-sub"><?php echo $stats['vendidas']; ?> de <?php echo $stats['total']; ?> propiedades</div>
-        </div>
-    </div>
-
-    <!-- ===== ACCESOS DIRECTOS (QUICK ACTIONS) ===== -->
-    <div class="quick-actions">
-        <a href="nuevo_cliente.php" class="quick-action-btn primary">
-            <i class="fas fa-user-plus"></i> Nuevo Cliente
-        </a>
-        <a href="agendar_cita.php" class="quick-action-btn info">
-            <i class="fas fa-calendar-plus"></i> Agendar Cita
-        </a>
-        <a href="generar_informe.php" class="quick-action-btn success">
-            <i class="fas fa-file-pdf"></i> Generar Informe
-        </a>
-        <a href="recordatorios.php" class="quick-action-btn warning">
-            <i class="fas fa-bell"></i> Recordatorios
-            <?php if (count($vencimientos_proximos) > 0): ?>
-                <span class="badge"><?php echo count($vencimientos_proximos); ?></span>
-            <?php endif; ?>
-        </a>
-        <a href="ofertas_recibidas.php" class="quick-action-btn danger">
-            <i class="fas fa-gavel"></i> Ofertas Recibidas
-            <?php if ($stats['ofertas'] > 0): ?>
-                <span class="badge"><?php echo $stats['ofertas']; ?></span>
-            <?php endif; ?>
-        </a>
-        <a href="analiticas.php" class="quick-action-btn" style="background: #8e44ad; color: white;">
-            <i class="fas fa-chart-bar"></i> Ver Analíticas
-        </a>
-    </div>
-
-    <!-- ===== GRÁFICOS Y VISUALIZACIONES ===== -->
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
-        <!-- Gráfico de distribución de propiedades -->
-        <div class="chart-container">
-            <h4><i class="fas fa-chart-doughnut"></i> Distribución de Propiedades</h4>
-            <canvas id="propertyChart"></canvas>
+            <div class="kpi-change <?php echo $kpis['propiedades_nuevas_mes'] > 0 ? 'positive' : 'neutral'; ?>">
+                <?php echo $kpis['propiedades_nuevas_mes']; ?> nuevas este mes
+            </div>
         </div>
         
-        <!-- Gráfico de actividad reciente -->
-        <div class="chart-container">
-            <h4><i class="fas fa-chart-line"></i> Actividad Últimos 7 Días</h4>
-            <canvas id="activityChart"></canvas>
-        </div>
-    </div>
-
-    <!-- ===== DASHBOARD DE ACTIVIDAD RECIENTE Y VENCIMIENTOS ===== -->
-    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 30px;">
-        <!-- Columna izquierda: Actividad reciente -->
-        <div class="table-container">
-            <div class="table-header">
-                <h3><i class="fas fa-history"></i> Actividad Reciente</h3>
-            </div>
-            <div style="padding: 15px;">
-                <?php if (empty($actividad_reciente)): ?>
-                    <p style="color: #999; text-align: center; padding: 20px;">
-                        <i class="fas fa-inbox" style="font-size: 30px; display: block; margin-bottom: 10px;"></i>
-                        No hay actividad reciente
-                    </p>
-                <?php else: ?>
-                    <div style="max-height: 300px; overflow-y: auto;">
-                        <?php foreach ($actividad_reciente as $actividad): ?>
-                            <div style="display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f0f0;">
-                                <div style="width: 40px; height: 40px; border-radius: 50%; background: #e8f0fe; display: flex; align-items: center; justify-content: center; margin-right: 12px;">
-                                    <i class="fas fa-<?php 
-                                        echo match($actividad['action_type'] ?? '') {
-                                            'create' => 'plus-circle',
-                                            'update' => 'edit',
-                                            'delete' => 'trash',
-                                            'view' => 'eye',
-                                            'message' => 'envelope',
-                                            'deadline' => 'clock',
-                                            default => 'circle'
-                                        };
-                                    ?>" style="color: #2c3e50;"></i>
-                                </div>
-                                <div style="flex: 1;">
-                                    <div style="font-size: 14px; color: #333;">
-                                        <?php echo htmlspecialchars($actividad['description'] ?? 'Actividad'); ?>
-                                    </div>
-                                    <div style="font-size: 12px; color: #999;">
-                                        <?php echo date('d/m/Y H:i', strtotime($actividad['created_at'] ?? 'now')); ?>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-        </div>
-
-        <!-- Columna derecha: Vencimientos próximos -->
-        <div class="table-container">
-            <div class="table-header">
-                <h3><i class="fas fa-clock"></i> Vencimientos Próximos</h3>
-                <a href="vencimientos.php" style="font-size: 13px; color: #3498db; text-decoration: none;">Ver todos</a>
-            </div>
-            <div style="padding: 15px;">
-                <?php if (empty($vencimientos_proximos)): ?>
-                    <p style="color: #999; text-align: center; padding: 20px;">
-                        <i class="fas fa-check-circle" style="font-size: 30px; color: #27ae60; display: block; margin-bottom: 10px;"></i>
-                        No hay vencimientos próximos
-                    </p>
-                <?php else: ?>
-                    <?php foreach ($vencimientos_proximos as $vencimiento): ?>
-                        <?php 
-                            $dias_restantes = (strtotime($vencimiento['deadline_date']) - time()) / 86400;
-                            $dias_restantes = ceil($dias_restantes);
-                            $es_urgente = $dias_restantes <= 3;
-                        ?>
-                        <div class="deadline-widget <?php echo $es_urgente ? 'urgent' : ''; ?>">
-                            <div class="deadline-title">
-                                <?php echo htmlspecialchars($vencimiento['property_title'] ?? 'Propiedad'); ?>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-                                <span class="deadline-date">
-                                    <i class="far fa-calendar-alt"></i> 
-                                    <?php echo date('d/m/Y', strtotime($vencimiento['deadline_date'])); ?>
-                                </span>
-                                <span class="deadline-days">
-                                    <?php if ($dias_restantes <= 0): ?>
-                                        ⚠️ Vencido
-                                    <?php elseif ($dias_restantes == 1): ?>
-                                        🔴 Último día
-                                    <?php else: ?>
-                                        <?php echo $dias_restantes; ?> días
-                                    <?php endif; ?>
-                                </span>
-                            </div>
-                            <div style="font-size: 12px; color: #666; margin-top: 2px;">
-                                <?php echo htmlspecialchars($vencimiento['description']); ?>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-
-    <!-- ===== TABLA DE PROPIEDADES MEJORADA ===== -->
-    <div class="table-container">
-        <div class="table-header">
-            <h3><i class="fas fa-list"></i> Mis Propiedades</h3>
-            <div class="search-box">
-                <input type="text" placeholder="Buscar propiedad..." id="searchTable">
-                <a href="vender.php" class="btn-header primary" style="padding: 8px 15px; font-size: 0.85rem;">
-                    <i class="fas fa-plus"></i> Nueva
-                </a>
-            </div>
-        </div>
-
-        <div class="table-responsive">
-            <?php if (empty($propiedades)): ?>
-                <div class="empty-state">
-                    <i class="fas fa-home"></i>
-                    <h3>No tienes propiedades publicadas</h3>
-                    <p style="color: var(--gray);">Comienza publicando tu primera propiedad</p>
-                    <a href="vender.php" class="btn-header primary" style="margin-top: 20px;">
-                        <i class="fas fa-plus-circle"></i> Publicar Propiedad
-                    </a>
+        <div class="kpi-card green">
+            <div class="kpi-top">
+                <div>
+                    <div class="kpi-value"><?php echo $kpis['propiedades_activas']; ?></div>
+                    <div class="kpi-label">Activas</div>
                 </div>
-            <?php else: ?>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Propiedad</th>
-                            <th>Ubicación</th>
-                            <th>Precio</th>
-                            <th>Estado</th>
-                            <th>Docs</th>
-                            <th>Vencimientos</th>
-                            <th>Fecha</th>
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($propiedades as $propiedad): ?>
-                            <tr>
-                                <td>
-                                    <strong><?php echo htmlspecialchars($propiedad['titulo'] ?? 'Sin título'); ?></strong>
-                                </td>
-                                <td><?php echo htmlspecialchars($propiedad['ubicacion'] ?? 'N/A'); ?></td>
-                                <td>$<?php echo number_format($propiedad['precio'] ?? 0, 0, ',', '.'); ?></td>
-                                <td>
-                                    <span class="status-badge <?php echo $propiedad['estado'] ?? 'pendiente'; ?>">
-                                        <?php echo ucfirst($propiedad['estado'] ?? 'Pendiente'); ?>
-                                    </span>
-                                </td>
-                                <td style="text-align: center;">
-                                    <span style="font-size: 12px;">
-                                        📄 <?php echo $propiedad['doc_count'] ?? 0; ?>
-                                        🖼️ <?php echo $propiedad['media_count'] ?? 0; ?>
-                                    </span>
-                                </td>
-                                <td style="text-align: center;">
-                                    <?php if (($propiedad['deadlines_count'] ?? 0) > 0): ?>
-                                        <span style="background: #fff3cd; padding: 2px 8px; border-radius: 10px; font-size: 11px; color: #856404;">
-                                            ⚠️ <?php echo $propiedad['deadlines_count']; ?>
-                                        </span>
-                                    <?php else: ?>
-                                        <span style="color: #999; font-size: 12px;">✓</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td><?php echo date('d/m/Y', strtotime($propiedad['fecha_creacion'] ?? 'now')); ?></td>
-                                <td>
-                                    <div class="action-btns">
-                                        <a href="propiedad.php?id=<?php echo $propiedad['id']; ?>" class="action-btn view">
-                                            <i class="fas fa-eye"></i>
-                                        </a>
-                                        <a href="editar_propiedad.php?id=<?php echo $propiedad['id']; ?>" class="action-btn edit">
-                                            <i class="fas fa-edit"></i>
-                                        </a>
-                                        <button class="action-btn delete" onclick="eliminarPropiedad(<?php echo $propiedad['id']; ?>)">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            <?php endif; ?>
+                <div class="kpi-icon"><i class="fas fa-check-circle"></i></div>
+            </div>
+        </div>
+        
+        <div class="kpi-card orange">
+            <div class="kpi-top">
+                <div>
+                    <div class="kpi-value"><?php echo $kpis['procesos_activos']; ?></div>
+                    <div class="kpi-label">Procesos Activos</div>
+                </div>
+                <div class="kpi-icon"><i class="fas fa-tasks"></i></div>
+            </div>
+        </div>
+        
+        <div class="kpi-card purple">
+            <div class="kpi-top">
+                <div>
+                    <div class="kpi-value"><?php echo formatearMoneda($kpis['valor_cartera']); ?></div>
+                    <div class="kpi-label">Valor Cartera</div>
+                </div>
+                <div class="kpi-icon"><i class="fas fa-coins"></i></div>
+            </div>
+        </div>
+        
+        <div class="kpi-card teal">
+            <div class="kpi-top">
+                <div>
+                    <div class="kpi-value"><?php echo formatearMoneda($kpis['comisiones_generadas']); ?></div>
+                    <div class="kpi-label">Comisiones Generadas</div>
+                </div>
+                <div class="kpi-icon"><i class="fas fa-hand-holding-usd"></i></div>
+            </div>
+            <div class="kpi-change neutral"><?php echo $kpis['propiedades_vendidas']; ?> propiedades vendidas</div>
+        </div>
+        
+        <div class="kpi-card red" style="cursor: pointer;" onclick="location.href='mensajes.php'">
+            <div class="kpi-top">
+                <div>
+                    <div class="kpi-value">
+                        <?php echo $kpis['mensajes_no_leidos']; ?>
+                        <?php if ($kpis['mensajes_no_leidos'] > 0): ?>
+                            <span style="font-size: 14px; color: #ef4444; font-weight: 400;">📩</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="kpi-label">Mensajes no leídos</div>
+                </div>
+                <div class="kpi-icon"><i class="fas fa-envelope"></i></div>
+            </div>
         </div>
     </div>
-</main>
 
-<!-- ===== POPUP DE MENSAJES ===== -->
-<div class="messages-popup" id="messagesPopup">
-    <div class="messages-popup-header">
-        <h4><i class="fas fa-envelope"></i> Mensajes</h4>
-        <button class="close-popup" onclick="toggleMessagesPopup()">&times;</button>
-    </div>
-    <div class="messages-list">
-        <?php if (empty($mensajes_no_leidos)): ?>
-            <div style="text-align: center; padding: 30px 20px; color: #999;">
-                <i class="fas fa-inbox" style="font-size: 40px; display: block; margin-bottom: 10px;"></i>
-                No tienes mensajes nuevos
+    <!-- ===== ALERTAS ===== -->
+    <div class="alertas-container">
+        <div class="alertas-header">
+            <h3><i class="fas fa-bell" style="color: #f59e0b;"></i> Alertas y Pendientes</h3>
+            <span class="badge-alertas"><?php echo count($alertas); ?> alertas</span>
+        </div>
+        
+        <?php if (empty($alertas)): ?>
+            <div class="no-alertas">
+                <i class="fas fa-check-circle" style="color: #10b981;"></i>
+                <p>¡Todo en orden! No hay alertas pendientes.</p>
             </div>
         <?php else: ?>
-            <?php foreach ($mensajes_no_leidos as $mensaje): ?>
-                <div class="message-item <?php echo $mensaje['is_read'] ? '' : 'unread'; ?> <?php echo ($mensaje['priority'] ?? 'medium') === 'urgent' ? 'urgent' : ''; ?>" 
-                     onclick="location.href='mensajes.php?ver=<?php echo $mensaje['id']; ?>'">
-                    <div class="message-sender">
-                        <?php echo htmlspecialchars($mensaje['sender_name'] ?? 'Sistema'); ?>
-                        <span class="message-time">
-                            <?php echo date('d/m/Y H:i', strtotime($mensaje['created_at'])); ?>
+            <?php foreach ($alertas as $alerta): ?>
+                <div class="alerta-item <?php echo $alerta['tipo']; ?>">
+                    <div class="alerta-icon">
+                        <i class="fas <?php echo $alerta['icono']; ?>"></i>
+                    </div>
+                    <span class="alerta-mensaje"><?php echo $alerta['mensaje']; ?></span>
+                    <a href="<?php echo $alerta['url']; ?>" class="alerta-link">Ver <i class="fas fa-arrow-right"></i></a>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+
+    <!-- ===== GRÁFICOS ===== -->
+    <div class="charts-grid">
+        <div class="chart-card">
+            <h4><i class="fas fa-chart-bar"></i> Ventas Mensuales</h4>
+            <canvas id="ventasChart"></canvas>
+        </div>
+        
+        <div class="chart-card">
+            <h4><i class="fas fa-chart-pie"></i> Distribución por Tipo</h4>
+            <canvas id="distribucionChart"></canvas>
+        </div>
+    </div>
+
+    <!-- ===== PROCESOS ACTIVOS ===== -->
+    <div class="procesos-container">
+        <div class="procesos-header">
+            <h3><i class="fas fa-route" style="color: #4f46e5;"></i> Procesos Activos</h3>
+            <a href="rastreabilidad.php">Ver todos <i class="fas fa-arrow-right"></i></a>
+        </div>
+        
+        <?php if (empty($procesos_activos)): ?>
+            <div class="no-actividad">
+                <i class="fas fa-check-circle" style="color: #10b981;"></i>
+                <p>No hay procesos activos en este momento.</p>
+            </div>
+        <?php else: ?>
+            <?php foreach ($procesos_activos as $proceso): 
+                $progreso = $proceso['total_etapas'] > 0 ? round(($proceso['etapas_completadas'] / $proceso['total_etapas']) * 100) : 0;
+                $color_progreso = $progreso >= 80 ? '#10b981' : ($progreso >= 50 ? '#f59e0b' : '#4f46e5');
+            ?>
+                <div class="proceso-item">
+                    <div class="proceso-info">
+                        <span class="proceso-titulo"><?php echo htmlspecialchars($proceso['propiedad']); ?></span>
+                        <span class="proceso-etapa">
+                            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: <?php echo getColorEstado($proceso['current_stage']); ?>; margin-right: 4px;"></span>
+                            <?php echo ucfirst(str_replace('_', ' ', $proceso['current_stage'])); ?>
                         </span>
                     </div>
-                    <div class="message-subject">
-                        <?php echo htmlspecialchars($mensaje['subject'] ?? 'Sin asunto'); ?>
+                    
+                    <div class="proceso-dias">
+                        <i class="far fa-calendar-alt"></i> <?php echo $proceso['dias_en_proceso']; ?> días
                     </div>
-                    <div>
-                        <span class="message-priority <?php echo $mensaje['priority'] ?? 'medium'; ?>">
-                            <?php echo ucfirst($mensaje['priority'] ?? 'Medio'); ?>
-                        </span>
-                        <?php if (!$mensaje['is_read']): ?>
-                            <span style="background: #3498db; color: white; padding: 1px 8px; border-radius: 10px; font-size: 10px; font-weight: 600;">
-                                Nuevo
-                            </span>
-                        <?php endif; ?>
+                    
+                    <div class="progreso-wrapper">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: <?php echo $progreso; ?>%; background: <?php echo $color_progreso; ?>;"></div>
+                        </div>
+                        <div class="progreso-texto"><?php echo $progreso; ?>% (<?php echo $proceso['etapas_completadas']; ?>/<?php echo $proceso['total_etapas']; ?>)</div>
+                    </div>
+                    
+                    <a href="proceso_detalle.php?id=<?php echo $proceso['id']; ?>" class="btn-ver-proceso">
+                        <i class="fas fa-eye"></i> Ver
+                    </a>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+
+    <!-- ===== ACTIVIDAD RECIENTE ===== -->
+    <div class="actividad-container">
+        <h3><i class="fas fa-history" style="color: #64748b;"></i> Actividad Reciente</h3>
+        
+        <?php if (empty($actividad_reciente)): ?>
+            <div class="no-actividad">
+                <i class="fas fa-inbox"></i>
+                <p>No hay actividad reciente</p>
+            </div>
+        <?php else: ?>
+            <?php foreach ($actividad_reciente as $actividad): ?>
+                <div class="actividad-item">
+                    <div class="act-icon <?php echo $actividad['tipo']; ?>">
+                        <i class="fas <?php echo $actividad['icono']; ?>"></i>
+                    </div>
+                    <div class="act-contenido">
+                        <div class="act-descripcion">
+                            <?php echo htmlspecialchars($actividad['descripcion']); ?>
+                            <span class="accion"><?php echo $actividad['accion']; ?></span>
+                        </div>
+                    </div>
+                    <div class="act-fecha" title="<?php echo $actividad['fecha_formateada']; ?>">
+                        <?php echo $actividad['tiempo_relativo']; ?>
                     </div>
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>
     </div>
-    <div class="messages-popup-footer">
-        <a href="mensajes.php"><i class="fas fa-arrow-right"></i> Ver todos los mensajes</a>
-    </div>
-</div>
 
-<!-- ===== BOTÓN FLOTANTE DE MENSAJES ===== -->
-<button class="float-message-btn" onclick="toggleMessagesPopup()" id="messageFloatBtn">
-    <i class="fas fa-envelope"></i>
-    <?php if ($total_mensajes_no_leidos > 0): ?>
-        <span class="btn-badge"><?php echo $total_mensajes_no_leidos; ?></span>
-    <?php endif; ?>
-</button>
+</main>
 
-<!-- ===== SCRIPTS ===== -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<!-- ===== SCRIPTS PARA GRÁFICOS ===== -->
 <script>
+document.addEventListener('DOMContentLoaded', function() {
     // ===== MENÚ MÓVIL =====
     const menuToggle = document.getElementById('menuToggle');
     const sidebar = document.getElementById('sidebar');
@@ -915,8 +1278,12 @@ foreach ($propiedades as $p) {
         document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : '';
     }
 
-    menuToggle.addEventListener('click', toggleSidebar);
-    overlay.addEventListener('click', toggleSidebar);
+    if (menuToggle) {
+        menuToggle.addEventListener('click', toggleSidebar);
+    }
+    if (overlay) {
+        overlay.addEventListener('click', toggleSidebar);
+    }
 
     document.querySelectorAll('.sidebar nav a').forEach(link => {
         link.addEventListener('click', () => {
@@ -924,151 +1291,146 @@ foreach ($propiedades as $p) {
         });
     });
 
-    // ===== POPUP DE MENSAJES =====
-    let messagesPopupOpen = false;
-
-    function toggleMessagesPopup() {
-        const popup = document.getElementById('messagesPopup');
-        messagesPopupOpen = !messagesPopupOpen;
-        popup.classList.toggle('active', messagesPopupOpen);
+    // ===== GRÁFICO DE VENTAS =====
+    const ctxVentas = document.getElementById('ventasChart').getContext('2d');
+    const ventasLabels = <?php echo json_encode($ventas_labels); ?>;
+    const ventasValues = <?php echo json_encode($ventas_values); ?>;
+    const comisionesValues = <?php echo json_encode($comisiones_values); ?>;
+    
+    // Si no hay datos, mostrar mensaje
+    if (ventasValues.every(v => v === 0)) {
+        ctxVentas.canvas.parentElement.innerHTML = `
+            <div style="text-align: center; padding: 30px; color: #94a3b8;">
+                <i class="fas fa-chart-simple" style="font-size: 30px; display: block; margin-bottom: 10px;"></i>
+                <p>No hay datos de ventas aún</p>
+                <small>Las propiedades vendidas aparecerán aquí</small>
+            </div>
+        `;
+    } else {
+        new Chart(ctxVentas, {
+            type: 'bar',
+            data: {
+                labels: ventasLabels,
+                datasets: [
+                    {
+                        label: 'Ventas ($)',
+                        data: ventasValues,
+                        backgroundColor: 'rgba(79, 70, 229, 0.7)',
+                        borderColor: '#4f46e5',
+                        borderWidth: 1,
+                        borderRadius: 4,
+                        order: 1
+                    },
+                    {
+                        label: 'Comisiones ($)',
+                        data: comisionesValues,
+                        backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                        borderColor: '#10b981',
+                        borderWidth: 1,
+                        borderRadius: 4,
+                        order: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            font: { size: 11 },
+                            boxWidth: 12,
+                            padding: 10
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value.toLocaleString();
+                            },
+                            font: { size: 10 }
+                        }
+                    },
+                    x: {
+                        ticks: { font: { size: 10 } }
+                    }
+                }
+            }
+        });
     }
 
-    document.addEventListener('click', function(e) {
-        const popup = document.getElementById('messagesPopup');
-        const btn = document.getElementById('messageFloatBtn');
-        const headerBtn = document.querySelector('.header-actions .btn-header');
+    // ===== GRÁFICO DE DISTRIBUCIÓN =====
+    const ctxDist = document.getElementById('distribucionChart').getContext('2d');
+    const distLabels = <?php echo json_encode($dist_labels); ?>;
+    const distValues = <?php echo json_encode($dist_values); ?>;
+    
+    if (distValues.every(v => v === 0)) {
+        ctxDist.canvas.parentElement.innerHTML = `
+            <div style="text-align: center; padding: 30px; color: #94a3b8;">
+                <i class="fas fa-chart-pie" style="font-size: 30px; display: block; margin-bottom: 10px;"></i>
+                <p>No hay propiedades para distribuir</p>
+            </div>
+        `;
+    } else {
+        const colores = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
         
-        if (messagesPopupOpen && 
-            !popup.contains(e.target) && 
-            !btn.contains(e.target) &&
-            !headerBtn?.contains(e.target)) {
-            toggleMessagesPopup();
-        }
-    });
-
-    // ===== GRÁFICOS =====
-    // Datos de distribución de propiedades
-    const distribucionData = <?php 
-        $labels = [];
-        $data = [];
-        $colors = [];
-        $colorMap = [
-            'activa' => '#2ecc71',
-            'destacada' => '#f39c12',
-            'vendida' => '#e74c3c',
-            'pendiente' => '#3498db',
-            'suspendido' => '#95a5a6'
-        ];
-        foreach ($distribucion_propiedades as $item) {
-            $labels[] = ucfirst($item['estado']);
-            $data[] = $item['cantidad'];
-            $colors[] = $colorMap[$item['estado']] ?? '#95a5a6';
-        }
-        echo json_encode(['labels' => $labels, 'data' => $data, 'colors' => $colors]);
-    ?>;
-
-    // Gráfico de distribución
-    if (distribucionData.labels.length > 0) {
-        new Chart(document.getElementById('propertyChart'), {
+        new Chart(ctxDist, {
             type: 'doughnut',
             data: {
-                labels: distribucionData.labels,
+                labels: distLabels,
                 datasets: [{
-                    data: distribucionData.data,
-                    backgroundColor: distribucionData.colors,
-                    borderWidth: 0
+                    data: distValues,
+                    backgroundColor: colores.slice(0, distLabels.length),
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
                 }]
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: true,
                 plugins: {
                     legend: {
-                        position: 'bottom'
+                        position: 'bottom',
+                        labels: {
+                            font: { size: 11 },
+                            boxWidth: 12,
+                            padding: 10
+                        }
                     }
                 },
-                cutout: '60%'
+                cutout: '65%'
             }
         });
     }
+});
 
-    // Gráfico de actividad (simulado con datos de ejemplo)
-    new Chart(document.getElementById('activityChart'), {
-        type: 'line',
-        data: {
-            labels: ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'],
-            datasets: [{
-                label: 'Actividad',
-                data: [4, 7, 5, 9, 12, 3, 2],
-                borderColor: '#3498db',
-                backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                fill: true,
-                tension: 0.4
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: {
-                    display: false
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { stepSize: 1 }
-                }
-            }
-        }
-    });
-
-    // ===== BUSCAR EN TABLA =====
-    document.getElementById('searchTable').addEventListener('keyup', function() {
-        const searchText = this.value.toLowerCase();
-        const rows = document.querySelectorAll('table tbody tr');
-        
-        rows.forEach(row => {
-            const text = row.textContent.toLowerCase();
-            row.style.display = text.includes(searchText) ? '' : 'none';
-        });
-    });
-
-    // ===== ELIMINAR PROPIEDAD =====
-    function eliminarPropiedad(id) {
-        if (confirm('¿Estás seguro de que quieres eliminar esta propiedad? Esta acción no se puede deshacer.')) {
-            window.location.href = 'eliminar_propiedad.php?id=' + id;
-        }
-    }
-
-    // ===== CERRAR SESIÓN =====
-    document.querySelector('.logout-section a')?.addEventListener('click', function(e) {
-        if (!confirm('¿Seguro que quieres cerrar sesión?')) e.preventDefault();
-    });
-
-    // ===== NOTIFICACIONES EN TIEMPO REAL =====
-    setInterval(function() {
-        fetch('api/notificaciones.php')
-            .then(response => response.json())
-            .then(data => {
-                if (data.total_no_leidos !== undefined) {
-                    const badges = document.querySelectorAll('.badge-count, .btn-badge');
-                    const statNumber = document.querySelector('.stat-card.info .stat-number');
-                    
-                    badges.forEach(badge => {
-                        if (badge.classList.contains('badge-count') || badge.classList.contains('btn-badge')) {
-                            if (data.total_no_leidos > 0) {
-                                badge.textContent = data.total_no_leidos;
-                                badge.style.display = '';
-                            } else {
-                                badge.style.display = 'none';
-                            }
-                        }
-                    });
-                    
-                    if (statNumber) statNumber.textContent = data.total_no_leidos || 0;
-                }
-            })
-            .catch(error => console.log('Error:', error));
-    }, 30000);
+// ===== ACTUALIZACIÓN AUTOMÁTICA CADA 30 SEGUNDOS =====
+setInterval(function() {
+    fetch(window.location.href + '?refresh=1')
+        .then(response => response.text())
+        .then(html => {
+            // Actualizar solo las partes dinámicas
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            // Actualizar KPIs
+            document.querySelector('.kpi-grid').innerHTML = doc.querySelector('.kpi-grid').innerHTML;
+            
+            // Actualizar alertas
+            document.querySelector('.alertas-container').innerHTML = doc.querySelector('.alertas-container').innerHTML;
+            
+            // Actualizar procesos
+            document.querySelector('.procesos-container').innerHTML = doc.querySelector('.procesos-container').innerHTML;
+            
+            // Actualizar actividad
+            document.querySelector('.actividad-container').innerHTML = doc.querySelector('.actividad-container').innerHTML;
+        })
+        .catch(error => console.log('Error refreshing dashboard:', error));
+}, 30000);
 </script>
 
 </body>

@@ -35,35 +35,7 @@ try {
     $mensajes = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     // Si no existe la tabla, mostrar mensajes de ejemplo
-    $mensajes = [
-        [
-            'id' => 1,
-            'remitente_id' => 1,
-            'asunto' => 'Consulta sobre propiedad',
-            'mensaje' => 'Hola, estoy interesado en la propiedad que publicaste...',
-            'fecha_envio' => '2024-06-15 10:30:00',
-            'leido' => 0,
-            'tipo' => 'recibido'
-        ],
-        [
-            'id' => 2,
-            'remitente_id' => 2,
-            'asunto' => 'Confirmación de visita',
-            'mensaje' => 'Perfecto, confirmo la visita para el sábado a las 11am...',
-            'fecha_envio' => '2024-06-14 16:45:00',
-            'leido' => 1,
-            'tipo' => 'enviado'
-        ],
-        [
-            'id' => 3,
-            'remitente_id' => 1,
-            'asunto' => 'Oferta por la propiedad',
-            'mensaje' => 'Me gustaría hacer una oferta de $150,000 por la propiedad...',
-            'fecha_envio' => '2024-06-14 09:15:00',
-            'leido' => 0,
-            'tipo' => 'recibido'
-        ]
-    ];
+    
 }
 
 // Estadísticas de mensajes
