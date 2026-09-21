@@ -1,3 +1,93 @@
+<?php
+// ===== DEPURACIÓN (quitar en producción) =====
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+// ===== CONEXIÓN PDO =====
+require_once 'includes/conexion.php';
+
+// ===== FUNCIONES AUXILIARES =====
+function formatearPrecio($precio) {
+    if ($precio === null || $precio == 0) {
+        return 'Consultar precio';
+    }
+    return '$' . number_format(floatval($precio), 0, ',', '.');
+}
+
+function getImagenUrl($imagen) {
+    if (empty($imagen)) {
+        return 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=600&q=80';
+    }
+    if (strpos($imagen, 'uploads/') === 0) {
+        return htmlspecialchars($imagen);
+    }
+    return 'uploads/propiedades/' . htmlspecialchars($imagen);
+}
+
+function getUbicacionCompleta($propiedad) {
+    $parts = [];
+    if (!empty($propiedad['address_municipality'])) {
+        $parts[] = $propiedad['address_municipality'];
+    }
+    if (!empty($propiedad['address_city'])) {
+        $parts[] = $propiedad['address_city'];
+    }
+    return !empty($parts) ? implode(', ', $parts) : 'Ubicación no especificada';
+}
+
+function tieneFeaturing($propiedad) {
+    return !empty($propiedad['featuring_id']) && $propiedad['featuring_status'] === 'active';
+}
+
+// ===== CONSULTAR PROPIEDADES DESTACADAS =====
+$propiedades_destacadas = [];
+
+if ($conn) {
+    try {
+        $sql = "
+            SELECT 
+                p.id,
+                p.title,
+                p.operation_type,
+                p.address_city,
+                p.address_municipality,
+                p.status,
+                p.property_type,
+                p.created_at,
+                pd.square_meters,
+                pd.bedrooms,
+                pd.bathrooms,
+                pd.parking_spots,
+                pf.asking_price as price,
+                f.id as featuring_id,
+                f.status as featuring_status,
+                f.end_date as featuring_end,
+                (SELECT file_path FROM property_media 
+                 WHERE property_id = p.id AND is_primary = 1 
+                 ORDER BY sort_order ASC LIMIT 1) as imagen_principal
+            FROM properties p
+            LEFT JOIN property_details pd ON p.id = pd.property_id
+            LEFT JOIN property_financials pf ON p.id = pf.property_id
+            LEFT JOIN property_featuring f ON p.id = f.property_id AND f.status = 'active'
+            WHERE p.status = 'activo'
+            GROUP BY p.id
+            ORDER BY 
+                CASE WHEN f.status = 'active' THEN 0 ELSE 1 END,
+                p.created_at DESC
+            LIMIT 6
+        ";
+
+        $stmt = $conn->prepare($sql);
+        $stmt->execute();
+        $propiedades_destacadas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    } catch (PDOException $e) {
+        error_log("Error al consultar propiedades destacadas: " . $e->getMessage());
+        $propiedades_destacadas = [];
+    }
+}
+?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -276,6 +366,136 @@
             opacity: 0.8;
         }
 
+        /* ===== SECCIÓN "ME INTERESA" ===== */
+        .interest-section {
+            padding: 70px 5%;
+            background: var(--light-bg);
+            text-align: center;
+        }
+
+        .interest-section .section-title {
+            margin-bottom: 8px;
+        }
+
+        .interest-section .section-subtitle {
+            margin-bottom: 45px;
+        }
+
+        .interest-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            align-items: stretch;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .interest-btn {
+            flex: 1 1 240px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 30px 24px;
+            border-radius: var(--radius);
+            background: #fff;
+            border: 2px solid transparent;
+            box-shadow: var(--shadow);
+            cursor: pointer;
+            transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition), background var(--transition);
+            font-family: 'Montserrat', sans-serif;
+            text-align: center;
+            min-width: 220px;
+        }
+
+        .interest-btn i {
+            font-size: 2rem;
+            transition: transform var(--transition);
+        }
+
+        .interest-btn .interest-label {
+            font-weight: 600;
+            font-size: 1rem;
+            color: var(--navy);
+            letter-spacing: 0.3px;
+        }
+
+        .interest-btn .interest-sub {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .interest-btn:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 15px 40px rgba(11, 31, 58, 0.12);
+        }
+
+        .interest-btn:hover i {
+            transform: scale(1.1);
+        }
+
+        /* Botón Vender (outline dorado) */
+        .interest-btn.btn-sell {
+            border-color: var(--gold);
+        }
+
+        .interest-btn.btn-sell i {
+            color: var(--gold);
+        }
+
+        .interest-btn.btn-sell:hover {
+            background: var(--gold-light);
+        }
+
+        /* Botón Comprar (relleno dorado) */
+        .interest-btn.btn-buy {
+            background: var(--gold);
+            border-color: var(--gold);
+        }
+
+        .interest-btn.btn-buy i {
+            color: #fff;
+        }
+
+        .interest-btn.btn-buy .interest-label {
+            color: #fff;
+        }
+
+        .interest-btn.btn-buy .interest-sub {
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .interest-btn.btn-buy:hover {
+            background: var(--gold-hover);
+            border-color: var(--gold-hover);
+        }
+
+        /* Botón WhatsApp (verde) */
+        .interest-btn.btn-whatsapp-card {
+            background: #25D366;
+            border-color: #25D366;
+        }
+
+        .interest-btn.btn-whatsapp-card i {
+            color: #fff;
+        }
+
+        .interest-btn.btn-whatsapp-card .interest-label {
+            color: #fff;
+        }
+
+        .interest-btn.btn-whatsapp-card .interest-sub {
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .interest-btn.btn-whatsapp-card:hover {
+            background: #1da85a;
+            border-color: #1da85a;
+        }
+
         /* ===== PROPIEDADES DESTACADAS ===== */
         .properties-section {
             padding: 70px 5%;
@@ -305,19 +525,22 @@
 
         .property-img-container {
             position: relative;
-            height: 220px;
+            width: 100%;
+            aspect-ratio: 4 / 3;          /* Proporción más natural para fotos de casas */
             overflow: hidden;
+            background: #f0f0f0;          /* Fondo mientras carga */
         }
 
         .property-img-container img {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            transition: transform 0.5s ease;
+            object-position: center center; /* Centra el recorte */
+            transition: transform 0.6s ease;
         }
 
         .property-card:hover .property-img-container img {
-            transform: scale(1.05);
+            transform: scale(1.06);
         }
 
         .property-badge {
@@ -500,7 +723,7 @@
 
         /* ===== FOOTER ===== */
         footer {
-            background: var(--navy);
+            background: #ffffff;
             color: #fff;
             padding: 30px 5%;
             display: flex;
@@ -530,7 +753,7 @@
             display: flex;
             flex-wrap: wrap;
             gap: 20px;
-            color: #ccc;
+            color: #000;
         }
 
         .footer-contact i {
@@ -544,7 +767,7 @@
         }
 
         .social-links a {
-            color: #fff;
+            color: #494848;
             font-size: 1.1rem;
             transition: color var(--transition), transform var(--transition);
             width: 38px;
@@ -604,6 +827,21 @@
                 font-size: 1.8rem;
             }
 
+            .interest-section {
+                padding: 50px 5%;
+            }
+
+            .interest-buttons {
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            .interest-btn {
+                flex: 1 1 auto;
+                width: 100%;
+                padding: 24px 20px;
+            }
+
             .properties-grid {
                 grid-template-columns: 1fr;
             }
@@ -639,6 +877,14 @@
                 padding: 12px 28px;
                 font-size: 0.85rem;
             }
+
+            .interest-btn i {
+                font-size: 1.6rem;
+            }
+
+            .interest-btn .interest-label {
+                font-size: 0.9rem;
+            }
         }
     </style>
 </head>
@@ -651,8 +897,8 @@
         <div class="hero-content">
             <div class="tag"><i class="fas fa-star"></i> Confianza y excelencia</div>
             <h1>Certeza jurídica y valor patrimonial <span>en cada propiedad.</span></h1>
-            <p>Más de 15 años asesorando a nuestros clientes con transparencia, ética y un profundo conocimiento del mercado inmobiliario.</p>
-            <a href="#" class="btn-gold"><i class="fas fa-check-circle"></i> Explorar propiedades</a>
+            <p>Más de 10 años asesorando a nuestros clientes con transparencia, ética y un profundo conocimiento del mercado inmobiliario.</p>
+            <a href="#interes" class="btn-gold"><i class="fas fa-check-circle"></i> Explorar propiedades</a>
             <div class="hero-stats">
                 <div class="stat">
                     <div class="stat-number">+150</div>
@@ -670,71 +916,96 @@
         </div>
     </section>
 
-    <!-- ===== PROPIEDADES DESTACADAS ===== -->
+    <!-- ===== SECCIÓN "ME INTERESA" ===== -->
+    <section class="interest-section" id="interes">
+        <div class="container">
+            <h2 class="section-title">Me interesa</h2>
+            <p class="section-subtitle">Cuéntanos qué necesitas y te acompañamos en cada paso del camino.</p>
+
+            <div class="interest-buttons">
+
+                <!-- Botón 1: Vender (destino por definir) -->
+                <a href="vender_formulario.php" id="btn-vender" class="interest-btn btn-sell" aria-label="Quiero vender mi casa">
+                    <i class="fas fa-hand-holding-dollar"></i>
+                    <span class="interest-label">Quiero vender mi casa</span>
+                    <span class="interest-sub">Recibe una valuación sin compromiso</span>
+                </a>
+
+                <!-- Botón 2: Comprar -->
+                <a href="propiedades.php" class="interest-btn btn-buy" aria-label="Quiero comprar una casa">
+                    <i class="fas fa-house-chimney"></i>
+                    <span class="interest-label">Quiero comprar una casa</span>
+                    <span class="interest-sub">Explora nuestro catálogo disponible</span>
+                </a>
+
+                <!-- Botón 3: WhatsApp -->
+                <a href="https://wa.me/523311586937?text=Hola%2C%20estoy%20interesado%20en%20una%20asesor%C3%ADa%20inmobiliaria%20con%20Vera%20Terra"
+                   target="_blank"
+                   rel="noopener"
+                   class="interest-btn btn-whatsapp-card"
+                   aria-label="Contáctanos por WhatsApp">
+                    <i class="fab fa-whatsapp"></i>
+                    <span class="interest-label">Contáctanos por WhatsApp</span>
+                    <span class="interest-sub">Atención inmediata y personalizada</span>
+                </a>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== PROPIEDADES DESTACADAS (DESDE BD) ===== -->
     <section class="properties-section" id="propiedades">
         <div class="container">
             <h2 class="section-title">Propiedades destacadas</h2>
             <p class="section-subtitle">Selección exclusiva de inmuebles con alto potencial de inversión y plusvalía.</p>
             <div class="properties-grid">
 
-                <?php 
-                // Incluir codigo para obtener propiedades desde la base de datos o un array
-                ?>
-
-                <div class="property-card">
-                    <div class="property-img-container">
-                        <img src="https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=600&q=80" alt="Penthouse en Polanco" loading="lazy" />
-                        <div class="property-badge"><i class="fas fa-gem"></i></div>
-                    </div>
-                    <div class="property-info">
-                        <h3>Penthouse en Polanco</h3>
-                        <div class="location"><i class="fas fa-location-dot"></i> Polanco, CDMX</div>
-                        <div class="price">$2,850,000 MXN</div>
-                        <div class="features">
-                            <span><i class="fas fa-bed"></i> 3</span>
-                            <span><i class="fas fa-bath"></i> 3.5</span>
-                            <span><i class="fas fa-vector-square"></i> 260 m²</span>
+                <?php if (!empty($propiedades_destacadas)): ?>
+                    <?php foreach ($propiedades_destacadas as $prop): 
+                        $tiene_featuring = tieneFeaturing($prop);
+                        $ubicacion       = getUbicacionCompleta($prop);
+                        $precio          = formatearPrecio($prop['price']);
+                        $imagen          = getImagenUrl($prop['imagen_principal']);
+                    ?>
+                        <div class="property-card">
+                            <div class="property-img-container">
+                                <img src="<?php echo $imagen; ?>" 
+                                     alt="<?php echo htmlspecialchars($prop['title']); ?>" 
+                                     loading="lazy" />
+                                <div class="property-badge">
+                                    <i class="fas fa-gem"></i>
+                                </div>
+                            </div>
+                            <div class="property-info">
+                                <h3><?php echo htmlspecialchars($prop['title']); ?></h3>
+                                <div class="location">
+                                    <i class="fas fa-location-dot"></i> 
+                                    <?php echo htmlspecialchars($ubicacion); ?>
+                                </div>
+                                <div class="price"><?php echo $precio; ?></div>
+                                <div class="features">
+                                    <?php if (!empty($prop['bedrooms']) && $prop['bedrooms'] > 0): ?>
+                                        <span><i class="fas fa-bed"></i> <?php echo htmlspecialchars($prop['bedrooms']); ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($prop['bathrooms']) && $prop['bathrooms'] > 0): ?>
+                                        <span><i class="fas fa-bath"></i> <?php echo htmlspecialchars($prop['bathrooms']); ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($prop['square_meters']) && $prop['square_meters'] > 0): ?>
+                                        <span><i class="fas fa-vector-square"></i> <?php echo number_format($prop['square_meters'], 0, ',', '.'); ?> m²</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
-
-                <div class="property-card">
-                    <div class="property-img-container">
-                        <img src="https://images.unsplash.com/photo-1613977257363-707ba9348227?auto=format&fit=crop&w=600&q=80" alt="Residencia en Club de Golf" loading="lazy" />
-                        <div class="property-badge"><i class="fas fa-gem"></i></div>
-                    </div>
-                    <div class="property-info">
-                        <h3>Residencia en Club de Golf</h3>
-                        <div class="location"><i class="fas fa-location-dot"></i> Bosques de las Lomas</div>
-                        <div class="price">$4,200,000 MXN</div>
-                        <div class="features">
-                            <span><i class="fas fa-bed"></i> 4</span>
-                            <span><i class="fas fa-bath"></i> 4.5</span>
-                            <span><i class="fas fa-vector-square"></i> 450 m²</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="property-card">
-                    <div class="property-img-container">
-                        <img src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80" alt="Oficina Corporativa" loading="lazy" />
-                        <div class="property-badge"><i class="fas fa-gem"></i></div>
-                    </div>
-                    <div class="property-info">
-                        <h3>Oficina Corporativa en Reforma</h3>
-                        <div class="location"><i class="fas fa-location-dot"></i> Av. Reforma, CDMX</div>
-                        <div class="price">$3,100,000 MXN</div>
-                        <div class="features">
-                            <span><i class="fas fa-bed"></i> N/A</span>
-                            <span><i class="fas fa-bath"></i> 2</span>
-                            <span><i class="fas fa-vector-square"></i> 320 m²</span>
-                        </div>
-                    </div>
-                </div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <p style="grid-column: 1/-1; text-align:center; color: var(--text-muted);">
+                        No hay propiedades destacadas por el momento.
+                    </p>
+                <?php endif; ?>
 
             </div>
             <div style="margin-top: 35px;">
-                <a href="#" class="btn-outline-gold">Ver todas las propiedades <i class="fas fa-arrow-right"></i></a>
+                <a href="propiedades.php" class="btn-outline-gold">Ver todas las propiedades <i class="fas fa-arrow-right"></i></a>
             </div>
         </div>
     </section>
@@ -747,27 +1018,33 @@
             <div class="services-grid">
 
                 <div class="service-item">
-                    <div class="service-icon"><i class="fas fa-gem"></i></div>
-                    <h3>Asesoría Jurídica</h3>
-                    <p>Revisión de contratos, escrituras y due diligence para garantizar certeza legal en cada transacción.</p>
+                    <div class="service-icon"><i class="fas fa-handshake"></i></div>
+                    <h3>Compra-Venta de propiedades</h3>
+                    <p>Asesoramiento completo en la compra y venta de propiedades, garantizando procesos seguros y eficientes.</p>
                 </div>
 
                 <div class="service-item">
-                    <div class="service-icon"><i class="fas fa-handshake"></i></div>
-                    <h3>Gestión Inmobiliaria</h3>
-                    <p>Administración de propiedades, búsqueda de inquilinos y mantenimiento integral.</p>
+                    <div class="service-icon"><i class="fas fa-hammer"></i></div>
+                    <h3>Remodelaciones</h3>
+                    <p>Diseño y ejecución de proyectos de remodelación para transformar tu espacio en el hogar o negocio.</p>
                 </div>
 
                 <div class="service-item">
                     <div class="service-icon"><i class="fas fa-vector-square"></i></div>
-                    <h3>Valoración de Activos</h3>
+                    <h3>Avalúos</h3>
                     <p>Estudios de mercado y avalúos profesionales para tomar decisiones con información precisa.</p>
                 </div>
 
                 <div class="service-item">
                     <div class="service-icon"><i class="fas fa-coins"></i></div>
-                    <h3>Asesoría Financiera</h3>
+                    <h3>Creditos hipotecarios y Asesoría Financiera</h3>
                     <p>Planeación fiscal, análisis de rentabilidad y acompañamiento en créditos hipotecarios.</p>
+                </div>
+
+                <div class="service-item">
+                    <div class="service-icon"><i class="fas fa-file-contract"></i></div>
+                    <h3>Tramites Infonavit y notariales</h3>
+                    <p>Asistencia en trámites relacionados con Infonavit y procesos notariales para garantizar la legalidad de tus transacciones inmobiliarias.</p>
                 </div>
 
             </div>

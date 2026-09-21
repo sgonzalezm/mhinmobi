@@ -4,7 +4,7 @@
             <img src="css/Logo1_veraterra.png" alt="VT" class="logo-icon">
             <div class="logo-text">
                 VERA TERRA
-                <span>Inmobiliaria</span>
+                <span>Grupo Inmobiliario</span>
             </div>
         </a>
 

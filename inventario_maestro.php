@@ -20,6 +20,12 @@ if (!$usuario) {
     exit;
 }
 
+// ===== Vista seleccionada: activas | vendidas | todas =====
+$vista = $_GET['vista'] ?? 'activas';
+if (!in_array($vista, ['activas', 'vendidas', 'todas'])) {
+    $vista = 'activas';
+}
+
 // Obtener propiedades del inventario general con datos financieros y multimedia
 $propiedades = [];
 $error_msg = '';
@@ -35,6 +41,15 @@ try {
     } elseif ($checkFinancial->rowCount() == 0) {
         $error_msg = "La tabla 'property_financials' no existe en la base de datos.";
     } else {
+        // Construir WHERE según vista
+        $whereSql = '';
+        if ($vista === 'activas') {
+            $whereSql = "WHERE p.status = 'activo'";
+        } elseif ($vista === 'vendidas') {
+            $whereSql = "WHERE p.status = 'vendido'";
+        }
+        // 'todas' => sin WHERE
+
         // Consulta con JOIN para obtener datos de ambas tablas y la imagen principal
         $stmt = $conn->prepare("
             SELECT 
@@ -53,9 +68,9 @@ try {
             FROM properties p
             LEFT JOIN property_financials f ON p.id = f.property_id
             LEFT JOIN property_media m ON p.id = m.property_id AND m.is_primary = 1
-            WHERE p.status = 'activo'
+            $whereSql
             ORDER BY p.created_at DESC
-            LIMIT 20
+            LIMIT 100
         ");
         $stmt->execute();
         $propiedades = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -81,16 +96,35 @@ try {
         }
         
         // Depuración: Ver cuántos registros se obtuvieron
-        error_log("Propiedades encontradas: " . count($propiedades));
+        error_log("Propiedades encontradas (vista=$vista): " . count($propiedades));
         
-        // Si no hay resultados, mostrar mensaje informativo
+        // Si no hay resultados, mostrar mensaje informativo según vista
         if (empty($propiedades)) {
-            $error_msg = "No hay propiedades activas en el sistema.";
+            if ($vista === 'activas') {
+                $error_msg = "No hay propiedades activas en el sistema.";
+            } elseif ($vista === 'vendidas') {
+                $error_msg = "Aún no hay propiedades vendidas en el historial.";
+            } else {
+                $error_msg = "No hay propiedades registradas en el sistema.";
+            }
         }
     }
 } catch (PDOException $e) {
     $error_msg = "Error al cargar propiedades: " . $e->getMessage();
-    error_log("Error en inventario.php: " . $e->getMessage());
+    error_log("Error en inventario_maestro.php: " . $e->getMessage());
+}
+
+// ===== Contadores globales (para mostrar en los tabs) =====
+$countActivas     = 0;
+$countVendidas = 0;
+$countTodas       = 0;
+
+try {
+    $countActivas     = (int)$conn->query("SELECT COUNT(*) FROM properties WHERE status = 'activo'")->fetchColumn();
+    $countVendidas = (int)$conn->query("SELECT COUNT(*) FROM properties WHERE status = 'vendido'")->fetchColumn();
+    $countTodas       = (int)$conn->query("SELECT COUNT(*) FROM properties")->fetchColumn();
+} catch (PDOException $e) {
+    error_log("Error contadores: " . $e->getMessage());
 }
 
 // Estadísticas de propiedades
@@ -161,15 +195,15 @@ function getImagePath($imageUrl) {
     return 'uploads/propiedades/' . htmlspecialchars($imageUrl);
 }
 
-// Función para obtener el estado
+// Función para obtener el estado (AHORA SOPORTA "finalizada")
 function getStatusBadge($status) {
     $status = strtolower(trim($status ?? ''));
     if ($status === 'activo') {
         return ['class' => 'status-active', 'label' => 'Activo'];
     } elseif ($status === 'inactivo') {
         return ['class' => 'status-inactive', 'label' => 'Inactivo'];
-    } elseif ($status === 'vendido') {
-        return ['class' => 'status-sold', 'label' => 'Vendido'];
+    } elseif (in_array($status, ['finalizada', 'finalizado', 'vendido', 'vendida'])) {
+        return ['class' => 'status-sold', 'label' => 'Finalizada'];
     } else {
         return ['class' => 'status-other', 'label' => ucfirst($status)];
     }
@@ -476,6 +510,63 @@ function getStatusBadge($status) {
             font-size: 0.7rem;
         }
 
+        /* ===== Tabs de vista ===== */
+        .view-tabs {
+            display: flex;
+            gap: 6px;
+            margin: 0 0 12px 0;
+            padding: 4px;
+            background: #f1f5f9;
+            border-radius: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .view-tab {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #475569;
+            text-decoration: none;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .view-tab:hover { 
+            background: #e2e8f0; 
+            color: #0f172a; 
+        }
+        .view-tab.active { 
+            background: #fff; 
+            color: #0f172a; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08); 
+        }
+        .view-tab .tab-count {
+            background: #cbd5e1;
+            color: #334155;
+            font-size: 0.68rem;
+            padding: 1px 7px;
+            border-radius: 10px;
+            font-weight: 700;
+            min-width: 18px;
+            text-align: center;
+        }
+        .view-tab.active .tab-count { 
+            background: #1d4ed8; 
+            color: #fff; 
+        }
+        .view-tab.portal-link {
+            margin-left: auto;
+            background: #1d4ed8;
+            color: #fff;
+        }
+        .view-tab.portal-link:hover {
+            background: #1e40af;
+            color: #fff;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .property-row {
@@ -520,6 +611,10 @@ function getStatusBadge($status) {
             .property-row-commission {
                 font-size: 0.65rem;
             }
+        }
+
+        @media (max-width: 600px) {
+            .view-tab.portal-link { margin-left: 0; }
         }
 
         @media (max-width: 480px) {
@@ -605,6 +700,25 @@ function getStatusBadge($status) {
         <span><i class="fas fa-image" style="color: #94a3b8;"></i> Sin imagen: <?php echo $stats['sin_imagen']; ?></span>
     </div>
 
+    <!-- ===== Tabs de vista ===== -->
+    <div class="view-tabs">
+        <a href="?vista=activas" class="view-tab <?php echo $vista === 'activas' ? 'active' : ''; ?>">
+            <i class="fas fa-home"></i> Activas
+            <span class="tab-count"><?php echo $countActivas; ?></span>
+        </a>
+        <a href="?vista=vendidas" class="view-tab <?php echo $vista === 'vendidas' ? 'active' : ''; ?>">
+            <i class="fas fa-check-circle"></i> Historial / Vendidas
+            <span class="tab-count"><?php echo $countVendidas; ?></span>
+        </a>
+        <a href="?vista=todas" class="view-tab <?php echo $vista === 'todas' ? 'active' : ''; ?>">
+            <i class="fas fa-list"></i> Todas
+            <span class="tab-count"><?php echo $countTodas; ?></span>
+        </a>
+        <a href="mapa_ventas.php" class="view-tab portal-link">
+            <i class="fas fa-map-marked-alt"></i> Portal de Métricas
+        </a>
+    </div>
+
     <div class="table-container">
         <div class="table-header">
             <h3><i class="fas fa-list-ul"></i> Listado de Inmuebles</h3>
@@ -665,6 +779,8 @@ function getStatusBadge($status) {
                         $title = htmlspecialchars($propiedad['title'] ?? 'Sin título');
                         $municipality = htmlspecialchars($propiedad['municipality'] ?? 'Ubicación no especificada');
                         $commission = $propiedad['commission_percentage'] ?? 0;
+                        $statusLower = strtolower(trim($propiedad['status'] ?? ''));
+                        $esVendida = in_array($statusLower, ['vendido', 'vendida']);
                     ?>
                         <div class="property-row" 
                              data-text="<?php echo strtolower($title . ' ' . $municipality); ?>" 
@@ -712,6 +828,13 @@ function getStatusBadge($status) {
                                         <i class="fas fa-percent"></i> <?php echo number_format($commission, 1); ?>%
                                     </div>
                                 <?php endif; ?>
+
+                                <!-- Etiqueta histórica para vendidas -->
+                                <?php if ($esVendida): ?>
+                                    <div class="property-row-commission" style="color:#92400e;">
+                                        <i class="fas fa-flag-checkered"></i> Histórica
+                                    </div>
+                                <?php endif; ?>
                             </div>
 
                             <!-- Precio -->
@@ -727,9 +850,6 @@ function getStatusBadge($status) {
                             <div class="property-row-actions">
                                 <button class="action-btn view" title="Ver detalles" onclick="verPropiedad('<?php echo $propiedad['id']; ?>')">
                                     <i class="fas fa-eye"></i>
-                                </button>
-                                <button class="action-btn edit" title="Editar" onclick="editarPropiedad('<?php echo $propiedad['id']; ?>')">
-                                    <i class="fas fa-edit"></i>
                                 </button>
                             </div>
                         </div>

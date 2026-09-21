@@ -1,6 +1,6 @@
 <?php
 // ============================================
-// propiedades_portal.php
+// propiedades.php
 // Página pública de propiedades con datos de BD
 // ============================================
 
@@ -127,7 +127,7 @@ try {
     $propiedades = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
 } catch (PDOException $e) {
-    error_log("Error en propiedades_portal: " . $e->getMessage());
+    error_log("Error en propiedades: " . $e->getMessage());
     $propiedades = [];
     $total_paginas = 0;
     $total_propiedades = 0;
@@ -1001,7 +1001,7 @@ try {
                         </select>
                         <input type="text" name="busqueda" id="filterSearch" placeholder="Buscar por ubicación..." value="<?php echo htmlspecialchars($filtro_busqueda); ?>" />
                         <button type="submit" class="btn-outline-gold"><i class="fa-solid fa-sliders"></i> Filtrar</button>
-                        <a href="propiedades_portal.php" class="btn-outline-gold"><i class="fa-solid fa-rotate"></i> Reiniciar</a>
+                        <a href="propiedades.php" class="btn-outline-gold"><i class="fa-solid fa-rotate"></i> Reiniciar</a>
                     </form>
                 </div>
                 <div class="results-count">
@@ -1074,7 +1074,7 @@ try {
                                     </div>
                                 <?php endif; ?>
                                 <div class="property-actions">
-                                    <a href="https://wa.me/5213318852307?text=Hola%2C%20me%20interesa%20la%20propiedad%3A%20<?php echo urlencode($prop['title']); ?>%20en%20<?php echo urlencode($ubicacion); ?>%20con%20precio%20<?php echo urlencode($precio); ?>" 
+                                    <a href="https://wa.me/5213311586937?text=Hola%2C%20me%20interesa%20la%20propiedad%3A%20<?php echo urlencode($prop['title']); ?>%20en%20<?php echo urlencode($ubicacion); ?>%20con%20precio%20<?php echo urlencode($precio); ?>" 
                                        target="_blank" 
                                        class="btn-whatsapp">
                                         <i class="fa-brands fa-whatsapp"></i> Consultar
@@ -1139,7 +1139,7 @@ try {
     </section>
 
     <!-- ===== WHATSAPP FLOATING BUTTON ===== -->
-    <a href="https://wa.me/523318852307?text=Hola%2C%20estoy%20interesado%20en%20una%20propiedad%20de%20Vera%20Terra" 
+    <a href="https://wa.me/523311586937?text=Hola%2C%20estoy%20interesado%20en%20una%20propiedad%20de%20Vera%20Terra" 
        target="_blank" 
        class="whatsapp-float" 
        aria-label="Contactar por WhatsApp">

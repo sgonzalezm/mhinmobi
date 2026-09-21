@@ -981,7 +981,7 @@ if (isset($_SESSION['usuario_id'])) {
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="precio">Precio (USD) <span class="required">*</span></label>
+                            <label for="precio">Precio <span class="required">*</span></label>
                             <input type="number" id="precio" name="precio" value="<?php echo htmlspecialchars($data['precio'] ?? ''); ?>" placeholder="0.00" min="0" step="0.01" required>
                         </div>
                         <div class="form-group">
@@ -1054,7 +1054,7 @@ if (isset($_SESSION['usuario_id'])) {
                     <div class="form-row">
                         <div class="form-group">
                             <label for="banos">Baños</label>
-                            <input type="number" id="banos" name="banos" value="<?php echo htmlspecialchars($data['banos'] ?? ''); ?>" placeholder="Ej: 2" min="0" max="10">
+                            <input type="number" id="banos" name="banos" value="<?php echo number_format($data['banos'] ?? 2, 1, '.', ''); ?>" placeholder="Ej: 2" min="0" max="10" step="0.5">
                         </div>
                         <div class="form-group">
                             <label for="estacionamiento">Estacionamientos</label>
@@ -1313,7 +1313,7 @@ if (isset($_SESSION['usuario_id'])) {
                         <div class="resumen-item"><span class="label">Metros Cuadrados</span><span class="value"><?php echo htmlspecialchars($data['m2'] ?? 'No especificado'); ?> m²</span></div>
                         <div class="resumen-item"><span class="label">Recámaras</span><span class="value"><?php echo htmlspecialchars($data['recamaras'] ?? 'No especificado'); ?></span></div>
                         <?php if (!empty($data['banos'])): ?>
-                            <div class="resumen-item"><span class="label">Baños</span><span class="value"><?php echo htmlspecialchars($data['banos']); ?></span></div>
+                            <div class="resumen-item"><span class="label">Baños</span><span class="value"><?php echo number_format($data['banos'], 0, 1); ?></span></div>
                         <?php endif; ?>
                         <?php if (!empty($data['estacionamiento'])): ?>
                             <div class="resumen-item"><span class="label">Estacionamientos</span><span class="value"><?php echo htmlspecialchars($data['estacionamiento']); ?></span></div>

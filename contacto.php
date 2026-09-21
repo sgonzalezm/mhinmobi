@@ -398,7 +398,7 @@ try {
 
         /* ===== FOOTER ===== */
         footer {
-            background: var(--navy);
+            background: #ffffff;
             color: #fff;
             padding: 30px 5%;
             display: flex;
@@ -421,7 +421,7 @@ try {
             display: flex;
             flex-wrap: wrap;
             gap: 20px;
-            color: #ccc;
+            color: #000;
         }
         .footer-contact i { color: var(--gold); margin-right: 6px; }
         .social-links {
@@ -429,7 +429,7 @@ try {
             gap: 16px;
         }
         .social-links a {
-            color: #fff;
+            color: #494848;
             font-size: 1.1rem;
             transition: color var(--transition), transform var(--transition);
             width: 38px;
@@ -530,14 +530,14 @@ try {
                         <div class="icon-circle"><i class="fa-solid fa-phone"></i></div>
                         <div class="info">
                             <h4>Teléfono</h4>
-                            <p><a href="tel:+523318852307">+52 33 1885 2307</a></p>
+                            <p><a href="tel:+523311586937">+52 33 1158 6937</a></p>
                         </div>
                     </div>
                     <div class="contact-detail-item">
                         <div class="icon-circle"><i class="fa-solid fa-envelope"></i></div>
                         <div class="info">
                             <h4>Email</h4>
-                            <p><a href="mailto:contacto@veraterra.com">contacto@veraterra.com</a></p>
+                            <p><a href="mailto:atencion@veraterra.com">atencion@veraterra.com</a></p>
                         </div>
                     </div>
                     <div class="contact-detail-item">
@@ -671,7 +671,7 @@ try {
 <section class="map-section">
     <div class="map-container">
         <iframe
-            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d119437.65863176374!2d-103.39760691240206!3d20.65978732830243!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x8428b18cb52fd39b%3A0xd63d9302bf865750!2sGuadalajara%2C%20Jal.%2C%20Mexico!5e0!3m2!1sen!2sus!4v1700000000000"
+            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d933.2072534402444!2d-103.36964213043724!3d20.67653425352818!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x8428ae1ab84befaf%3A0x7ae8961d6a42dc42!2sEdificio%20De%20Cristal!5e0!3m2!1ses!2smx!4v1789696836063!5m2!1ses!2smx" width="600" height="450" style="border:0;" allowfullscreen="" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"
             allowfullscreen=""
             loading="lazy"
             referrerpolicy="no-referrer-when-downgrade">
@@ -680,7 +680,7 @@ try {
 </section>
 
 <!-- ===== WHATSAPP FLOATING ===== -->
-<a href="https://wa.me/523318852307?text=Hola%2C%20estoy%20interesado%20en%20una%20propiedad%20de%20Vera%20Terra"
+<a href="https://wa.me/523311586937?text=Hola%2C%20estoy%20interesado%20en%20una%20propiedad%20de%20Vera%20Terra"
    target="_blank"
    class="whatsapp-float"
    aria-label="Contactar por WhatsApp">
