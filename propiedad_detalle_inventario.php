@@ -701,26 +701,25 @@ if (!$propiedad) {
     recargarPropiedad($conn, $property_id);
 }
 
-// Obtener imagen principal
-$imagen_principal = '';
+// ===== OBTENER TODAS LAS IMÁGENES DE LA PROPIEDAD =====
+$imagenes_propiedad = [];
 if ($propiedad) {
     try {
         $stmtImg = $conn->prepare("
-            SELECT file_path, is_primary
+            SELECT id, file_path, is_primary, sort_order
             FROM property_media
             WHERE property_id = ?
             ORDER BY is_primary DESC, sort_order ASC
-            LIMIT 1
         ");
         $stmtImg->execute([$property_id]);
-        $img = $stmtImg->fetch(PDO::FETCH_ASSOC);
-        if ($img) {
-            $imagen_principal = $img['file_path'];
-        }
+        $imagenes_propiedad = $stmtImg->fetchAll(PDO::FETCH_ASSOC);
     } catch (PDOException $e) {
         // Ignorar error de imágenes
     }
 }
+
+// La imagen principal será la primera (ya ordenada por is_primary DESC)
+$imagen_principal = !empty($imagenes_propiedad) ? $imagenes_propiedad[0]['file_path'] : '';
 
 // Obtener tokens generados para esta propiedad (para mostrar historial)
 $tokens_generados = [];
@@ -1094,13 +1093,6 @@ $base_url = getBaseUrl();
         .status-badge.status-apartada { background: #fef3c7; color: #92400e; }
         .status-badge.status-other { background: #f1f5f9; color: #475569; }
 
-        .prop-image {
-            width: 100%;
-            max-height: 300px;
-            object-fit: cover;
-            background: #f1f5f9;
-        }
-
         .prop-image-placeholder {
             width: 100%;
             height: 200px;
@@ -1110,6 +1102,7 @@ $base_url = getBaseUrl();
             background: #f1f5f9;
             color: #94a3b8;
             font-size: 3rem;
+            flex-direction: column;
         }
 
         .info-tag {
@@ -1178,6 +1171,281 @@ $base_url = getBaseUrl();
         .message-box.error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
         .message-box.success { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
         .message-box.info { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+
+        /* ===== GALERÍA DE IMÁGENES ===== */
+        .galeria-card {
+            overflow: hidden;
+            padding: 0;
+        }
+
+        /* Imagen principal: ancho completo, aspect ratio 4:3, fondo claro */
+        .galeria-principal {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            max-height: 460px;
+            background: #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            cursor: zoom-in;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .galeria-principal .imagen-principal-grande {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            transition: opacity 0.25s ease;
+            display: block;
+        }
+
+        .galeria-principal .imagen-principal-grande.cambiando {
+            opacity: 0.3;
+        }
+
+        /* Contador */
+        .galeria-contador {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            background: rgba(15, 23, 42, 0.75);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        /* Acciones (descargar) */
+        .galeria-acciones {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            display: flex;
+            gap: 6px;
+            z-index: 3;
+        }
+
+        .btn-galeria-accion {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(15, 23, 42, 0.75);
+            color: white;
+            font-size: 0.9rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(8px);
+            transition: all 0.2s;
+        }
+
+        .btn-galeria-accion:hover {
+            background: #1d4ed8;
+            transform: scale(1.08);
+        }
+
+        /* Flechas */
+        .galeria-flecha {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(15, 23, 42, 0.6);
+            color: white;
+            font-size: 0.95rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(8px);
+            transition: all 0.2s;
+            z-index: 3;
+            opacity: 0;
+        }
+
+        .galeria-principal:hover .galeria-flecha {
+            opacity: 1;
+        }
+
+        .galeria-flecha:hover {
+            background: #1d4ed8;
+            transform: translateY(-50%) scale(1.08);
+        }
+
+        .galeria-flecha-prev { left: 14px; }
+        .galeria-flecha-next { right: 14px; }
+
+        /* Miniaturas en fila horizontal abajo */
+        .galeria-miniaturas {
+            display: flex;
+            gap: 8px;
+            padding: 12px 14px;
+            background: #ffffff;
+            border-top: 1px solid #e8edf4;
+            overflow-x: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 transparent;
+        }
+
+        .galeria-miniaturas::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .galeria-miniaturas::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .galeria-miniaturas::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        .miniatura-item {
+            position: relative;
+            width: 92px;
+            height: 70px;
+            flex-shrink: 0;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s ease;
+            background: #e2e8f0;
+            opacity: 0.75;
+        }
+
+        .miniatura-item:hover {
+            border-color: #93c5fd;
+            opacity: 1;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(29, 78, 216, 0.2);
+        }
+
+        .miniatura-item.activa {
+            border-color: #1d4ed8;
+            opacity: 1;
+            box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.2);
+        }
+
+        .miniatura-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .miniatura-badge {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: #f59e0b;
+            color: white;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            font-size: 7px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+
+        /* Lightbox */
+        .lightbox-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.92);
+            z-index: 99999;
+            justify-content: center;
+            align-items: center;
+            padding: 30px;
+        }
+
+        .lightbox-overlay.active {
+            display: flex;
+        }
+
+        .lightbox-overlay img {
+            max-width: 90vw;
+            max-height: 85vh;
+            object-fit: contain;
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+
+        .lightbox-close {
+            position: absolute;
+            top: 20px;
+            right: 25px;
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: white;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            font-size: 1.4rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .lightbox-close:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .lightbox-nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: white;
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            font-size: 1.3rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .lightbox-nav:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .lightbox-nav.prev { left: 25px; }
+        .lightbox-nav.next { right: 25px; }
+
+        .lightbox-counter {
+            position: absolute;
+            bottom: 25px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 0.9rem;
+            background: rgba(0,0,0,0.5);
+            padding: 6px 18px;
+            border-radius: 20px;
+        }
 
         /* ===== MODAL ESTILOS ===== */
         .modal-overlay {
@@ -1628,6 +1896,74 @@ $base_url = getBaseUrl();
             color: #94a3b8;
         }
 
+        /* ===== MODAL DE DESCARGA PARA MÓVIL ===== */
+        .download-modal-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 12px;
+        }
+
+        .download-modal-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border: 1px solid #e8edf4;
+            gap: 10px;
+        }
+
+        .download-modal-item .file-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .download-modal-item .file-info i {
+            font-size: 1.2rem;
+            color: #1d4ed8;
+            flex-shrink: 0;
+        }
+
+        .download-modal-item .file-info .file-name {
+            font-size: 0.85rem;
+            color: #0f172a;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .download-modal-item .file-info .file-meta {
+            font-size: 0.7rem;
+            color: #94a3b8;
+        }
+
+        .download-modal-item .btn-download-single {
+            padding: 6px 12px;
+            background: #1d4ed8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+            text-decoration: none;
+        }
+
+        .download-modal-item .btn-download-single:hover {
+            background: #1e40af;
+        }
+
         @media (max-width: 768px) {
             .two-col {
                 grid-template-columns: 1fr;
@@ -1688,6 +2024,55 @@ $base_url = getBaseUrl();
                 font-size: 8px;
                 line-height: 16px;
             }
+
+            /* Galería responsive: miniaturas abajo en móvil */
+            .galeria-layout {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto;
+            }
+
+            .galeria-principal {
+                aspect-ratio: 4 / 3;
+                max-height: 280px;
+            }
+
+            .galeria-miniaturas {
+                flex-direction: row;
+                overflow-x: auto;
+                overflow-y: hidden;
+                padding: 8px;
+                gap: 6px;
+            }
+
+            .miniatura-item {
+                width: 70px;
+                min-width: 70px;
+                aspect-ratio: 4 / 3;
+            }
+
+            .galeria-flecha {
+                width: 34px;
+                height: 34px;
+                opacity: 1;
+                font-size: 0.8rem;
+            }
+
+            .galeria-flecha-prev { left: 8px; }
+            .galeria-flecha-next { right: 8px; }
+
+            .galeria-acciones .btn-galeria-accion {
+                width: 32px;
+                height: 32px;
+                font-size: 0.75rem;
+            }
+
+            .lightbox-nav {
+                width: 42px;
+                height: 42px;
+            }
+
+            .lightbox-nav.prev { left: 10px; }
+            .lightbox-nav.next { right: 10px; }
         }
     </style>
 </head>
@@ -1794,25 +2179,72 @@ $base_url = getBaseUrl();
                         <i class="fas fa-edit"></i> Editar
                     </a>
                     <?php if (esAdmin()): ?>
-                        <a href="descargar_expediente.php?id=<?php echo $property_id; ?>" 
-                        class="btn-detail primary" 
-                        style="background: #8b5cf6;"
-                        onclick="return confirm('¿Descargar expediente completo de esta propiedad?');">
+                        <button type="button" 
+                                class="btn-detail primary" 
+                                style="background: #8b5cf6;"
+                                onclick="descargarExpediente()">
                             <i class="fas fa-file-archive"></i> Descargar Expediente
-                        </a>
+                        </button>
                     <?php endif; ?>
                 </div>
             </div>
 
-            <!-- Imagen Principal -->
-            <div class="main-card">
-                <?php if (!empty($imagen_principal)): ?>
-                    <img src="<?php echo getImagePath($imagen_principal); ?>" 
-                         alt="<?php echo htmlspecialchars($propiedad['title']); ?>"
-                         class="prop-image">
+                        <!-- Galería de Imágenes -->
+            <div class="main-card galeria-card">
+                <?php if (!empty($imagenes_propiedad)): ?>
+                    <!-- Imagen Principal Grande -->
+                    <div class="galeria-principal" id="galeriaPrincipal">
+                        <img src="<?php echo getImagePath($imagenes_propiedad[0]['file_path']); ?>" 
+                             alt="<?php echo htmlspecialchars($propiedad['title']); ?>"
+                             id="imagenPrincipal"
+                             class="imagen-principal-grande"
+                             onclick="abrirLightbox(0)">
+                        <div class="galeria-contador">
+                            <i class="fas fa-images"></i> 
+                            <span id="contadorImagen">1</span> / <?php echo count($imagenes_propiedad); ?>
+                        </div>
+                        <div class="galeria-acciones">
+                            <button class="btn-galeria-accion" onclick="descargarImagenActual()" title="Descargar imagen actual">
+                                <i class="fas fa-download"></i>
+                            </button>
+                            <button class="btn-galeria-accion" onclick="descargarTodasLasImagenes()" title="Descargar todas las imágenes">
+                                <i class="fas fa-images"></i>
+                            </button>
+                        </div>
+                        <?php if (count($imagenes_propiedad) > 1): ?>
+                        <button class="galeria-flecha galeria-flecha-prev" onclick="navegarGaleria(-1)" title="Anterior">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <button class="galeria-flecha galeria-flecha-next" onclick="navegarGaleria(1)" title="Siguiente">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- Miniaturas (fila horizontal abajo) -->
+                    <?php if (count($imagenes_propiedad) > 1): ?>
+                    <div class="galeria-miniaturas" id="galeriaMiniaturas">
+                        <?php foreach ($imagenes_propiedad as $index => $img): ?>
+                            <div class="miniatura-item <?php echo $index === 0 ? 'activa' : ''; ?>" 
+                                 data-index="<?php echo $index; ?>"
+                                 onclick="seleccionarImagen(<?php echo $index; ?>)">
+                                <img src="<?php echo getImagePath($img['file_path']); ?>" 
+                                     alt="Miniatura <?php echo $index + 1; ?>"
+                                     loading="lazy">
+                                <?php if ($img['is_primary']): ?>
+                                    <span class="miniatura-badge" title="Imagen principal">
+                                        <i class="fas fa-star"></i>
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php endif; ?>
+
                 <?php else: ?>
                     <div class="prop-image-placeholder">
                         <i class="fas fa-building"></i>
+                        <p style="font-size: 0.9rem; margin-top: 10px;">Sin imágenes disponibles</p>
                     </div>
                 <?php endif; ?>
             </div>
@@ -1904,14 +2336,6 @@ $base_url = getBaseUrl();
                                 <span class="value <?php echo ($propiedad['potential_profit_margin'] ?? 0) > 0 ? 'success' : ''; ?>">
                                     <?php echo number_format($propiedad['potential_profit_margin'] ?? 0, 1); ?>%
                                 </span>
-                            </div>
-                            <div class="info-row">
-                                <span class="label">Comisión</span>
-                                <span class="value"><?php echo number_format($propiedad['commission_percentage'] ?? 0, 1); ?>%</span>
-                            </div>
-                            <div class="info-row" style="border-top: 2px solid #e8edf4; padding-top: 10px; margin-top: 4px;">
-                                <span class="label" style="font-weight: 700;">Comisión estimada</span>
-                                <span class="value highlight"><?php echo formatearPrecio($propiedad['commission_amount'] ?? 0); ?></span>
                             </div>
                         </div>
                     </div>
@@ -2614,12 +3038,370 @@ $base_url = getBaseUrl();
     </div>
 </div>
 
+<!-- ===== MODAL DE DESCARGA PARA MÓVIL ===== -->
+<div class="modal-overlay" id="modalDescargaMovil">
+    <div class="modal-box" style="max-width: 560px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white;">
+            <h3 style="color: white;">
+                <i class="fas fa-download" style="color: white;"></i> 
+                Descargar Expediente
+            </h3>
+            <button class="modal-close" onclick="cerrarModalDescargaMovil()" style="color: white;">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 12px;">
+                <i class="fas fa-mobile-alt" style="color: #8b5cf6;"></i>
+                En tu dispositivo, cada archivo se descarga en su formato original. 
+                Presiona <strong>"Descargar"</strong> en cada uno, o usa <strong>"Descargar Todos"</strong> para iniciar todas las descargas secuencialmente.
+            </p>
+            <div style="background: #f5f3ff; padding: 10px 14px; border-radius: 8px; font-size: 0.8rem; color: #5b21b6; margin-bottom: 12px;">
+                <i class="fas fa-info-circle"></i>
+                <strong>Total:</strong> <?php 
+                    echo count($imagenes_propiedad) + 
+                         $documentos_propiedad['total'] + 
+                         count(array_filter($datos_biometricos, function($b) { return !empty($b['file_path']) && file_exists($b['file_path']); })); 
+                ?> archivos disponibles
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                <button onclick="descargarTodosMovil()" class="btn-modal primary" style="flex: 1; background: #8b5cf6;">
+                    <i class="fas fa-download"></i> Descargar Todos
+                </button>
+                <button onclick="cerrarModalDescargaMovil()" class="btn-modal secondary" style="flex: 0 0 auto;">
+                    Cerrar
+                </button>
+            </div>
+
+            <div class="download-modal-list" id="listaDescargasMovil">
+                <!-- Imágenes -->
+                <?php if (!empty($imagenes_propiedad)): ?>
+                    <h4 style="font-size: 0.75rem; color: #64748b; margin: 8px 0 4px 0; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <i class="fas fa-images"></i> Imágenes (<?php echo count($imagenes_propiedad); ?>)
+                    </h4>
+                    <?php foreach ($imagenes_propiedad as $index => $img): 
+                        $ext = strtolower(pathinfo($img['file_path'], PATHINFO_EXTENSION)) ?: 'jpg';
+                    ?>
+                        <div class="download-modal-item">
+                            <div class="file-info">
+                                <i class="fas fa-image" style="color: #3b82f6;"></i>
+                                <div style="min-width: 0; flex: 1;">
+                                    <div class="file-name">Imagen <?php echo $index + 1; ?>.<?php echo $ext; ?></div>
+                                    <div class="file-meta"><?php echo $img['is_primary'] ? '⭐ Principal' : 'Imagen'; ?></div>
+                                </div>
+                            </div>
+                            <a href="<?php echo getImagePath($img['file_path']); ?>" 
+                               download="propiedad_<?php echo $property_id; ?>_img_<?php echo $index + 1; ?>.<?php echo $ext; ?>"
+                               class="btn-download-single">
+                                <i class="fas fa-download"></i> Descargar
+                            </a>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+
+                <!-- Documentos generales -->
+                <?php if (!empty($documentos_propiedad['generales'])): ?>
+                    <h4 style="font-size: 0.75rem; color: #64748b; margin: 12px 0 4px 0; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <i class="fas fa-folder-open"></i> Documentos Generales (<?php echo count($documentos_propiedad['generales']); ?>)
+                    </h4>
+                    <?php foreach ($documentos_propiedad['generales'] as $doc): ?>
+                        <div class="download-modal-item">
+                            <div class="file-info">
+                                <i class="fas <?php echo getDocumentIcon($doc['document_type']); ?>" style="color: <?php echo getDocumentColor($doc['document_type']); ?>;"></i>
+                                <div style="min-width: 0; flex: 1;">
+                                    <div class="file-name"><?php echo htmlspecialchars($doc['file_name']); ?></div>
+                                    <div class="file-meta"><?php echo formatFileSize($doc['file_size']); ?></div>
+                                </div>
+                            </div>
+                            <a href="<?php echo htmlspecialchars($doc['file_path']); ?>" 
+                               download="<?php echo htmlspecialchars($doc['file_name']); ?>"
+                               class="btn-download-single">
+                                <i class="fas fa-download"></i> Descargar
+                            </a>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+
+                <!-- Documentos de clientes -->
+                <?php if (!empty($documentos_propiedad['clientes'])): ?>
+                    <h4 style="font-size: 0.75rem; color: #64748b; margin: 12px 0 4px 0; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <i class="fas fa-users"></i> Documentos de Clientes (<?php echo count($documentos_propiedad['clientes']); ?>)
+                    </h4>
+                    <?php foreach ($documentos_propiedad['clientes'] as $doc): ?>
+                        <div class="download-modal-item">
+                            <div class="file-info">
+                                <i class="fas <?php echo getDocumentIcon($doc['document_type']); ?>" style="color: <?php echo getDocumentColor($doc['document_type']); ?>;"></i>
+                                <div style="min-width: 0; flex: 1;">
+                                    <div class="file-name"><?php echo htmlspecialchars($doc['file_name']); ?></div>
+                                    <div class="file-meta">
+                                        <?php echo formatFileSize($doc['file_size']); ?>
+                                        <?php if (!empty($doc['client_name'])): ?>
+                                            • <?php echo htmlspecialchars($doc['client_name']); ?>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                            <a href="<?php echo htmlspecialchars($doc['file_path']); ?>" 
+                               download="<?php echo htmlspecialchars($doc['file_name']); ?>"
+                               class="btn-download-single">
+                                <i class="fas fa-download"></i> Descargar
+                            </a>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+
+                <!-- Biométricos -->
+                <?php 
+                $biometricos_con_archivo = array_filter($datos_biometricos, function($b) { 
+                    return !empty($b['file_path']) && file_exists($b['file_path']); 
+                });
+                if (!empty($biometricos_con_archivo)): 
+                ?>
+                    <h4 style="font-size: 0.75rem; color: #64748b; margin: 12px 0 4px 0; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <i class="fas fa-fingerprint"></i> Biométricos (<?php echo count($biometricos_con_archivo); ?>)
+                    </h4>
+                    <?php foreach ($biometricos_con_archivo as $bio): 
+                        $es_huella = $bio['tipo_biometrico'] === 'huella';
+                        $nombre_archivo = $es_huella 
+                            ? 'huella_' . ($bio['dedo'] ?? 'desconocido') 
+                            : 'firma';
+                    ?>
+                        <div class="download-modal-item">
+                            <div class="file-info">
+                                <i class="fas <?php echo $es_huella ? 'fa-fingerprint' : 'fa-pen'; ?>" style="color: <?php echo $es_huella ? '#667eea' : '#f59e0b'; ?>;"></i>
+                                <div style="min-width: 0; flex: 1;">
+                                    <div class="file-name"><?php echo htmlspecialchars($nombre_archivo . '.' . pathinfo($bio['file_path'], PATHINFO_EXTENSION)); ?></div>
+                                    <div class="file-meta"><?php echo date('d/m/Y H:i', strtotime($bio['created_at'])); ?></div>
+                                </div>
+                            </div>
+                            <a href="<?php echo htmlspecialchars($bio['file_path']); ?>" 
+                               download="<?php echo htmlspecialchars($nombre_archivo . '.' . pathinfo($bio['file_path'], PATHINFO_EXTENSION)); ?>"
+                               class="btn-download-single">
+                                <i class="fas fa-download"></i> Descargar
+                            </a>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-modal secondary" onclick="cerrarModalDescargaMovil()">
+                Cerrar
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Lightbox para ver imágenes en grande -->
+<div class="lightbox-overlay" id="lightbox">
+    <button class="lightbox-close" onclick="cerrarLightbox()">&times;</button>
+    <button class="lightbox-nav prev" onclick="navegarLightbox(-1)">
+        <i class="fas fa-chevron-left"></i>
+    </button>
+    <img src="" alt="Imagen ampliada" id="lightboxImg">
+    <button class="lightbox-nav next" onclick="navegarLightbox(1)">
+        <i class="fas fa-chevron-right"></i>
+    </button>
+    <div class="lightbox-counter">
+        <span id="lightboxContador">1</span> / <?php echo count($imagenes_propiedad); ?>
+    </div>
+</div>
+
 <!-- Toast container -->
 <div class="toast-container" id="toastContainer">
     <div class="toast" id="toast">Mensaje</div>
 </div>
 
 <script>
+// ===== GALERÍA DE IMÁGENES =====
+const imagenesGaleria = <?php echo json_encode(array_map(function($img) {
+    return [
+        'src' => getImagePath($img['file_path']),
+        'nombre' => basename($img['file_path'])
+    ];
+}, $imagenes_propiedad)); ?>;
+
+let indiceActual = 0;
+let lightboxAbierto = false;
+
+function seleccionarImagen(index) {
+    if (index < 0 || index >= imagenesGaleria.length) return;
+    
+    indiceActual = index;
+    const imgPrincipal = document.getElementById('imagenPrincipal');
+    
+    // Efecto de transición
+    imgPrincipal.classList.add('cambiando');
+    
+    setTimeout(() => {
+        imgPrincipal.src = imagenesGaleria[index].src;
+        imgPrincipal.classList.remove('cambiando');
+    }, 150);
+    
+    // Actualizar contador
+    document.getElementById('contadorImagen').textContent = index + 1;
+    
+    // Actualizar miniaturas
+    document.querySelectorAll('.miniatura-item').forEach((item, i) => {
+        item.classList.toggle('activa', i === index);
+    });
+    
+    // Actualizar lightbox si está abierto
+    if (lightboxAbierto) {
+        document.getElementById('lightboxImg').src = imagenesGaleria[index].src;
+        document.getElementById('lightboxContador').textContent = index + 1;
+    }
+    
+    // Scroll a la miniatura activa
+    const miniaturaActiva = document.querySelector('.miniatura-item.activa');
+    if (miniaturaActiva) {
+        miniaturaActiva.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+}
+
+function navegarGaleria(direccion) {
+    let nuevoIndice = indiceActual + direccion;
+    
+    if (nuevoIndice < 0) {
+        nuevoIndice = imagenesGaleria.length - 1;
+    } else if (nuevoIndice >= imagenesGaleria.length) {
+        nuevoIndice = 0;
+    }
+    
+    seleccionarImagen(nuevoIndice);
+}
+
+function abrirLightbox(index) {
+    indiceActual = index;
+    lightboxAbierto = true;
+    document.getElementById('lightboxImg').src = imagenesGaleria[index].src;
+    document.getElementById('lightboxContador').textContent = index + 1;
+    document.getElementById('lightbox').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function cerrarLightbox() {
+    lightboxAbierto = false;
+    document.getElementById('lightbox').classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+function navegarLightbox(direccion) {
+    let nuevoIndice = indiceActual + direccion;
+    
+    if (nuevoIndice < 0) {
+        nuevoIndice = imagenesGaleria.length - 1;
+    } else if (nuevoIndice >= imagenesGaleria.length) {
+        nuevoIndice = 0;
+    }
+    
+    seleccionarImagen(nuevoIndice);
+}
+
+// Cerrar lightbox con click en el fondo
+document.getElementById('lightbox')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        cerrarLightbox();
+    }
+});
+
+// Navegación con teclado
+document.addEventListener('keydown', function(e) {
+    if (lightboxAbierto) {
+        if (e.key === 'Escape') cerrarLightbox();
+        if (e.key === 'ArrowLeft') navegarLightbox(-1);
+        if (e.key === 'ArrowRight') navegarLightbox(1);
+    }
+});
+
+// Descargar imagen actual
+function descargarImagenActual() {
+    if (imagenesGaleria.length === 0) return;
+    
+    const img = imagenesGaleria[indiceActual];
+    const link = document.createElement('a');
+    link.href = img.src;
+    link.download = img.nombre || ('imagen_' + (indiceActual + 1) + '.jpg');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    mostrarToast('📥 Descargando imagen...');
+}
+
+// Descargar todas las imágenes (una a una, con delay para no saturar)
+function descargarTodasLasImagenes() {
+    if (imagenesGaleria.length === 0) return;
+    
+    mostrarToast('📥 Iniciando descarga de ' + imagenesGaleria.length + ' imágenes...');
+    
+    imagenesGaleria.forEach((img, i) => {
+        setTimeout(() => {
+            const link = document.createElement('a');
+            link.href = img.src;
+            link.download = img.nombre || ('imagen_' + (i + 1) + '.jpg');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }, i * 500);
+    });
+}
+
+// ===== DESCARGA DE EXPEDIENTE (ZIP en escritorio, individual en móvil) =====
+function descargarExpediente() {
+    const esMovil = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+                    || (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
+    
+    if (esMovil) {
+        // En móvil: abrir modal con descargas individuales
+        abrirModalDescargaMovil();
+    } else {
+        // En escritorio: descargar ZIP normal
+        if (confirm('¿Descargar expediente completo de esta propiedad?')) {
+            window.location.href = 'descargar_expediente.php?id=<?php echo $property_id; ?>';
+        }
+    }
+}
+
+// ===== MODAL DE DESCARGA MÓVIL =====
+function abrirModalDescargaMovil() {
+    document.getElementById('modalDescargaMovil').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function cerrarModalDescargaMovil() {
+    document.getElementById('modalDescargaMovil').classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+document.getElementById('modalDescargaMovil')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        cerrarModalDescargaMovil();
+    }
+});
+
+// Descargar todos los archivos desde el modal (secuencialmente)
+function descargarTodosMovil() {
+    const links = document.querySelectorAll('#listaDescargasMovil .btn-download-single');
+    if (links.length === 0) return;
+    
+    mostrarToast('📥 Iniciando descarga de ' + links.length + ' archivos...');
+    
+    links.forEach((link, i) => {
+        setTimeout(() => {
+            // Crear un anchor temporal para forzar la descarga
+            const a = document.createElement('a');
+            a.href = link.href;
+            a.download = link.getAttribute('download') || 'archivo';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }, i * 600);
+    });
+    
+    setTimeout(() => {
+        mostrarToast('✅ Descargas completadas');
+    }, links.length * 600 + 1000);
+}
+
 // ===== MODAL ENLACE DOCUMENTOS =====
 function abrirModalEnlace() {
     document.getElementById('modalEnlace').classList.add('active');

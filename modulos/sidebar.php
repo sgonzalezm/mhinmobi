@@ -7,6 +7,7 @@ $rol_actual = $_SESSION['usuario_rol'] ?? 'externo';
 $permisos = [
     'admin' => ['inicio', 'calificador', 'calendario', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'crm_clientes', 'rastreabilidad', 'mensajes', 'gestion_acceso', 'administracion', 'audit_log'],
     'asesor' => ['inicio', 'calificador', 'calendario', 'mis_propiedades', 'publicar_propiedad', 'rastreabilidad', 'mensajes'],
+    'captador' => ['inicio', 'calificador', 'calendario', 'publicar_propiedad', 'mensajes'],
     'propietario' => ['mis_propiedades', 'publicar_propiedad', 'mensajes'],
     'externo' => ['mensajes']
 ];
@@ -23,6 +24,7 @@ function ver($item) {
 $roles_espanol = [
     'admin' => 'Administrador',
     'asesor' => 'Asesor',
+    'captador' => 'Captador',
     'propietario' => 'Propietario',
     'externo' => 'Externo'
 ];
@@ -31,7 +33,7 @@ $roles_espanol = [
 <aside class="sidebar" id="sidebar">
     <a href="index.php" class="logo">
         <i class="fas fa-building"></i>
-        <span>INMOBILIARIA MH</span>
+        <span>Vera Terra</span>
     </a>
 
     <div class="user-info">

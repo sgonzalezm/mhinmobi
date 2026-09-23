@@ -62,7 +62,6 @@ try {
                 f.asking_price as price,
                 f.min_acceptable_price,
                 f.potential_profit_margin,
-                f.commission_percentage,
                 m.file_path as image_url,
                 m.is_primary as is_primary_image
             FROM properties p
@@ -376,17 +375,6 @@ function getStatusBadge($status) {
             color: #475569;
         }
 
-        /* Comisión */
-        .property-row-commission {
-            font-size: 0.7rem;
-            color: #64748b;
-            white-space: nowrap;
-        }
-
-        .property-row-commission i {
-            color: #8b5cf6;
-            font-size: 0.65rem;
-        }
 
         /* Precio - destacado y con coma */
         .property-row-price {
@@ -608,9 +596,6 @@ function getStatusBadge($status) {
                 padding: 1px 8px;
             }
 
-            .property-row-commission {
-                font-size: 0.65rem;
-            }
         }
 
         @media (max-width: 600px) {
@@ -778,7 +763,6 @@ function getStatusBadge($status) {
                         $hasImage = !empty($imagePath);
                         $title = htmlspecialchars($propiedad['title'] ?? 'Sin título');
                         $municipality = htmlspecialchars($propiedad['municipality'] ?? 'Ubicación no especificada');
-                        $commission = $propiedad['commission_percentage'] ?? 0;
                         $statusLower = strtolower(trim($propiedad['status'] ?? ''));
                         $esVendida = in_array($statusLower, ['vendido', 'vendida']);
                     ?>
@@ -821,13 +805,6 @@ function getStatusBadge($status) {
                                 <span class="property-row-status <?php echo $statusBadge['class']; ?>">
                                     <?php echo $statusBadge['label']; ?>
                                 </span>
-
-                                <!-- Comisión -->
-                                <?php if ($commission > 0): ?>
-                                    <div class="property-row-commission">
-                                        <i class="fas fa-percent"></i> <?php echo number_format($commission, 1); ?>%
-                                    </div>
-                                <?php endif; ?>
 
                                 <!-- Etiqueta histórica para vendidas -->
                                 <?php if ($esVendida): ?>

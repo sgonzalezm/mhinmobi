@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($usuario['role'] === 'admin') {
                 header('Location: accesos.php');
             } else if ($usuario['role'] === 'captador') {
-                header('Location: calificador_propiedad.php');
+                header('Location: ../admin/calificador_propiedad.php');
             } else if ($usuario['role'] === 'asesor') {
                 header('Location: accesos.php');
             }else {
@@ -59,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Acceso al Sistema | Inmobiliaria MH</title>
+    <title>Acceso al Sistema | Vera Terra</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
         /* Estilos del login (mantén los que ya tenías) */

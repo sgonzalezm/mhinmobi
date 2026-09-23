@@ -594,6 +594,7 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
                             <option value="asesor">Asesor</option>
                             <option value="admin">Administrador</option>
                             <option value="externo">Externo</option>
+                            <option value="captador">Captador</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -640,6 +641,7 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
                                 <option value="asesor" <?php echo ($usuario_editar['role'] ?? '') === 'asesor' ? 'selected' : ''; ?>>Asesor</option>
                                 <option value="admin" <?php echo ($usuario_editar['role'] ?? '') === 'admin' ? 'selected' : ''; ?>>Administrador</option>
                                 <option value="inmobiliaria" <?php echo ($usuario_editar['role'] ?? '') === 'inmobiliaria' ? 'selected' : ''; ?>>Inmobiliaria</option>
+                                <option value="captador" <?php echo ($usuario_editar['role'] ?? '') === 'captador' ? 'selected' : ''; ?>>Captador</option>
                             </select>
                         </div>
                         <div class="form-group">
