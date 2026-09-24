@@ -1028,7 +1028,6 @@ if (isset($_SESSION['usuario_id'])) {
                             <select id="tipo_operacion" name="tipo_operacion" required>
                                 <option value="">Seleccionar</option>
                                 <option value="venta" <?php echo (isset($data['tipo_operacion']) && $data['tipo_operacion'] == 'venta') ? 'selected' : ''; ?>>Venta</option>
-                                <option value="alquiler" <?php echo (isset($data['tipo_operacion']) && $data['tipo_operacion'] == 'alquiler') ? 'selected' : ''; ?>>Alquiler</option>
                             </select>
                         </div>
                     </div>

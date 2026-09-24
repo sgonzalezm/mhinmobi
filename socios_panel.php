@@ -85,10 +85,10 @@ function getDashboardKPIs($conn, $usuario_id) {
     // 7. Mensajes no leídos
     $stmt = $conn->prepare("
         SELECT COUNT(*) as total 
-        FROM messages 
-        WHERE receiver_id = ? AND is_read = 0 AND is_archived = 0
+        FROM contactos 
+        WHERE status = 'nuevo'
     ");
-    $stmt->execute([$usuario_id]);
+    $stmt->execute();
     $mensajes_no_leidos = $stmt->fetchColumn();
     
     // 8. Vencimientos próximos (7 días)

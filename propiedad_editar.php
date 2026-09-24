@@ -54,10 +54,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $ciudad = trim($partes[0] ?? '');
         $municipio = trim($partes[1] ?? $ciudad);
 
+        // NUEVO: Capturar coordenadas GPS
+        $address_lat = !empty($_POST['address_lat']) ? (float)$_POST['address_lat'] : null;
+        $address_lng = !empty($_POST['address_lng']) ? (float)$_POST['address_lng'] : null;
+
         $stmt = $conn->prepare("
             UPDATE properties SET
                 title = ?, operation_type = ?, property_type = ?,
-                address_city = ?, address_municipality = ?, updated_at = NOW()
+                address_city = ?, address_municipality = ?,
+                address_lat = ?, address_lng = ?,
+                updated_at = NOW()
             WHERE id = ?
         ");
         $stmt->execute([
@@ -66,6 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_POST['tipo_vivienda'] ?? '',
             $ciudad,
             $municipio,
+            $address_lat,
+            $address_lng,
             $property_id
         ]);
 
@@ -369,9 +377,14 @@ try {
         .btn { padding: 11px 28px; border-radius: 8px; font-weight: 600; font-size: 14px; border: none; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s; }
         .btn-dorado { background: #c9a84c; color: white; }
         .btn-dorado:hover { background: #b8963a; transform: translateY(-2px); }
+        .btn-dorado:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
         .btn-secondary { background: #e8e8e8; color: #333; }
         .btn-secondary:hover { background: #d5d5d5; }
         .drag-instruction { font-size: 12px; color: #c9a84c; margin-top: 8px; display: flex; align-items: center; gap: 5px; }
+        .geo-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .geo-status { font-size: 13px; color: #666; }
+        .geo-map-container { display: none; margin-top: 12px; }
+        .geo-map-frame { width: 100%; height: 280px; border: 1px solid #ddd; border-radius: 8px; }
         @media (max-width: 768px) {
             .form-row, .form-row-3 { grid-template-columns: 1fr; }
             .accesorios-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
@@ -509,6 +522,45 @@ try {
                     <div class="form-group">
                         <label for="ubicacion">Ubicación</label>
                         <input type="text" id="ubicacion" name="ubicacion" value="<?php echo htmlspecialchars(trim(($prop['address_city'] ?? '') . ', ' . ($prop['address_municipality'] ?? ''), ', ')); ?>">
+                    </div>
+                </div>
+
+                <!-- NUEVO: Geolocalización GPS -->
+                <div class="form-group">
+                    <label>
+                        <i class="fas fa-map-marker-alt" style="color:#c9a84c;"></i> 
+                        Coordenadas GPS
+                    </label>
+                    <div class="geo-controls">
+                        <button type="button" id="btnGeo" class="btn btn-dorado" style="padding:10px 18px;">
+                            <i class="fas fa-crosshairs"></i> Capturar ubicación
+                        </button>
+                        <button type="button" id="btnGeoClear" class="btn btn-secondary" style="padding:10px 18px; <?php echo (!empty($prop['address_lat']) && !empty($prop['address_lng'])) ? '' : 'display:none;'; ?>">
+                            <i class="fas fa-times"></i> Limpiar
+                        </button>
+                        <span id="geoStatus" class="geo-status"></span>
+                    </div>
+                    <div class="form-row" style="margin-top:12px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label for="address_lat" style="font-size:12px; color:#888;">Latitud</label>
+                            <input type="text" id="address_lat" name="address_lat" 
+                                   value="<?php echo htmlspecialchars($prop['address_lat'] ?? ''); ?>" 
+                                   readonly placeholder="—">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label for="address_lng" style="font-size:12px; color:#888;">Longitud</label>
+                            <input type="text" id="address_lng" name="address_lng" 
+                                   value="<?php echo htmlspecialchars($prop['address_lng'] ?? ''); ?>" 
+                                   readonly placeholder="—">
+                        </div>
+                    </div>
+                    <div id="geoMapContainer" class="geo-map-container">
+                        <iframe id="geoMapFrame" class="geo-map-frame" loading="lazy"></iframe>
+                        <div style="margin-top:8px; text-align:right;">
+                            <a id="geoMapLink" href="#" target="_blank" class="btn btn-secondary" style="padding:8px 14px; font-size:13px;">
+                                <i class="fas fa-external-link-alt"></i> Abrir en Google Maps
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -925,6 +977,99 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateHidden() {
         imagenesGuardadas.value = JSON.stringify(imagenes);
     }
+
+    // ===== GEOLOCALIZACIÓN GPS =====
+    const btnGeo = document.getElementById('btnGeo');
+    const btnGeoClear = document.getElementById('btnGeoClear');
+    const geoStatus = document.getElementById('geoStatus');
+    const inputLat = document.getElementById('address_lat');
+    const inputLng = document.getElementById('address_lng');
+    const geoMapContainer = document.getElementById('geoMapContainer');
+    const geoMapFrame = document.getElementById('geoMapFrame');
+    const geoMapLink = document.getElementById('geoMapLink');
+
+    function mostrarMapa(lat, lng) {
+        if (!lat || !lng) {
+            geoMapContainer.style.display = 'none';
+            return;
+        }
+        const bbox = `${(parseFloat(lng)-0.003).toFixed(6)},${(parseFloat(lat)-0.002).toFixed(6)},${(parseFloat(lng)+0.003).toFixed(6)},${(parseFloat(lat)+0.002).toFixed(6)}`;
+        geoMapFrame.src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
+        geoMapLink.href = `https://www.google.com/maps?q=${lat},${lng}`;
+        geoMapContainer.style.display = 'block';
+    }
+
+    // Mostrar mapa si ya hay coordenadas guardadas
+    if (inputLat.value && inputLng.value) {
+        mostrarMapa(inputLat.value, inputLng.value);
+        btnGeoClear.style.display = 'inline-flex';
+    }
+
+    btnGeo.addEventListener('click', function() {
+        if (!navigator.geolocation) {
+            Swal.fire({ icon: 'error', title: 'No soportado', text: 'Tu navegador no soporta geolocalización', confirmButtonColor: '#c9a84c' });
+            return;
+        }
+
+        geoStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Obteniendo ubicación...';
+        btnGeo.disabled = true;
+
+        navigator.geolocation.getCurrentPosition(
+            function(position) {
+                const lat = position.coords.latitude.toFixed(6);
+                const lng = position.coords.longitude.toFixed(6);
+                inputLat.value = lat;
+                inputLng.value = lng;
+
+                const precision = position.coords.accuracy ? Math.round(position.coords.accuracy) + 'm' : '—';
+                geoStatus.innerHTML = `<i class="fas fa-check-circle" style="color:#28a745;"></i> Capturada (precisión: ${precision})`;
+                btnGeo.disabled = false;
+                btnGeoClear.style.display = 'inline-flex';
+                mostrarMapa(lat, lng);
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Ubicación capturada',
+                    html: `Lat: <b>${lat}</b><br>Lng: <b>${lng}</b><br><small>Precisión: ${precision}</small>`,
+                    confirmButtonColor: '#c9a84c',
+                    timer: 2500,
+                    showConfirmButton: false
+                });
+            },
+            function(error) {
+                btnGeo.disabled = false;
+                let msg = 'Error desconocido';
+                switch(error.code) {
+                    case error.PERMISSION_DENIED: msg = 'Permiso denegado. Activa el GPS.'; break;
+                    case error.POSITION_UNAVAILABLE: msg = 'Ubicación no disponible.'; break;
+                    case error.TIMEOUT: msg = 'Tiempo de espera agotado.'; break;
+                }
+                geoStatus.innerHTML = `<i class="fas fa-exclamation-triangle" style="color:#dc3545;"></i> ${msg}`;
+                Swal.fire({ icon: 'error', title: 'Error', text: msg, confirmButtonColor: '#c9a84c' });
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+    });
+
+    btnGeoClear.addEventListener('click', function() {
+        Swal.fire({
+            title: '¿Borrar coordenadas?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Borrar',
+            cancelButtonText: 'Cancelar'
+        }).then(r => {
+            if (r.isConfirmed) {
+                inputLat.value = '';
+                inputLng.value = '';
+                geoStatus.textContent = '';
+                geoMapContainer.style.display = 'none';
+                btnGeoClear.style.display = 'none';
+            }
+        });
+    });
 });
 </script>
 

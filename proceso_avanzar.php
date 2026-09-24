@@ -147,7 +147,7 @@ try {
         // Actualizar el estado de la propiedad
         $stmtProperty = $conn->prepare("
             UPDATE properties p
-            SET p.status = 'vendido'
+            SET p.status = 'vendido', p.sold_at = NOW()
             WHERE p.id = (
                 SELECT property_id FROM property_tracking WHERE id = ?
             )
