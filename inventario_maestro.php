@@ -1,7 +1,5 @@
 <?php
 session_start();
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
 
 require_once 'includes/conexion.php';
 require_once 'includes/auth.php';
@@ -56,7 +54,10 @@ try {
                 p.id,
                 p.title,
                 p.operation_type,
-                p.address_municipality as municipality,
+                p.municipio,
+                p.estado,
+                p.colonia,
+                p.domicilio,
                 p.status,
                 p.created_at,
                 f.asking_price as price,
@@ -214,45 +215,70 @@ function getStatusBadge($status) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="css/socios.css">
-    <title>Inventario de Propiedades | Inmobiliaria MH</title>
+    <title>Inventario de Propiedades | Vera Terra </title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    
+    <!-- ===== Librerías para exportación XLSX con estilos ===== -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    
     <style>
         /* ===== ESTILOS CORPORATIVOS ===== */
         * {
             box-sizing: border-box;
         }
 
-        .properties-grid {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            margin-top: 15px;
+        /* ===== TABLA DE PROPIEDADES ===== */
+        .properties-table-wrapper {
+            overflow-x: auto;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+            background: #fff;
         }
 
-        /* Tarjeta horizontal delgada - estilo corporativo */
-        .property-row {
-            display: flex;
-            align-items: center;
-            background: #ffffff;
-            border: 1px solid #e8edf4;
-            border-radius: 8px;
-            padding: 8px 12px;
-            transition: all 0.15s ease;
-            cursor: default;
-            min-height: 64px;
-            gap: 12px;
+        .properties-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+            min-width: 900px;
         }
 
-        .property-row:hover {
+        .properties-table thead th {
+            background: #f8fafc;
+            color: #334155;
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 0.68rem;
+            letter-spacing: 0.5px;
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 2px solid #e2e8f0;
+            white-space: nowrap;
+        }
+
+        .properties-table tbody td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #0f172a;
+            vertical-align: middle;
+        }
+
+        .properties-table tbody tr:hover {
             background: #f8faff;
-            border-color: #c7d2e0;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
         }
 
-        /* Columna de imagen - pequeña */
-        .property-row-image {
+        .properties-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Columna imagen */
+        .col-img {
+            width: 60px;
+            text-align: center;
+        }
+
+        .col-img .thumb {
             width: 48px;
-            min-width: 48px;
             height: 48px;
             border-radius: 6px;
             overflow: hidden;
@@ -260,180 +286,153 @@ function getStatusBadge($status) {
             display: flex;
             align-items: center;
             justify-content: center;
+            margin: 0 auto;
             position: relative;
-            flex-shrink: 0;
         }
 
-        .property-row-image img {
+        .col-img .thumb img {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
 
-        .property-row-image .no-image {
+        .col-img .thumb .no-image {
             color: #94a3b8;
-            font-size: 1.2rem;
+            font-size: 1.1rem;
         }
 
-        .property-row-image .no-image i {
-            font-size: 1.2rem;
+        /* Columna título */
+        .col-title {
+            min-width: 180px;
+            max-width: 260px;
+            font-weight: 600;
         }
 
-        /* Badge de operación - más pequeño */
-        .property-row-badge {
-            position: absolute;
-            top: -2px;
-            left: -2px;
-            font-size: 0.5rem;
+        .col-title .op-badge {
+            display: inline-block;
+            font-size: 0.55rem;
             font-weight: 700;
-            padding: 1px 5px;
+            padding: 1px 6px;
             border-radius: 4px;
             text-transform: uppercase;
             letter-spacing: 0.3px;
-            color: white;
-            background: #10b981;
+            color: #fff;
+            margin-right: 6px;
+            vertical-align: middle;
         }
 
-        .property-row-badge.venta {
-            background: #10b981;
-        }
-        .property-row-badge.renta {
-            background: #3b82f6;
-        }
-        .property-row-badge.general {
-            background: #6b7280;
-        }
+        .op-badge.venta { background: #10b981; }
+        .op-badge.renta { background: #3b82f6; }
+        .op-badge.general { background: #6b7280; }
 
-        /* Columna de información principal */
-        .property-row-info {
-            flex: 1;
-            min-width: 0;
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            flex-wrap: wrap;
-        }
-
-        .property-row-title {
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: #0f172a;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 280px;
-        }
-
-        .property-row-title i {
-            color: #64748b;
-            font-size: 0.7rem;
-            margin-right: 4px;
-        }
-
-        .property-row-location {
-            font-size: 0.75rem;
-            color: #64748b;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            white-space: nowrap;
-        }
-
-        .property-row-location i {
-            color: #10b981;
-            font-size: 0.7rem;
-        }
-
-        /* Estado de la propiedad */
-        .property-row-status {
+        /* Estados */
+        .status-pill {
+            display: inline-block;
             font-size: 0.65rem;
-            font-weight: 600;
+            font-weight: 700;
             padding: 2px 10px;
             border-radius: 12px;
             text-transform: uppercase;
             letter-spacing: 0.3px;
             white-space: nowrap;
         }
+        .status-pill.status-active { background: #dcfce7; color: #166534; }
+        .status-pill.status-inactive { background: #fee2e2; color: #991b1b; }
+        .status-pill.status-sold { background: #fef3c7; color: #92400e; }
+        .status-pill.status-other { background: #f1f5f9; color: #475569; }
 
-        .property-row-status.status-active {
-            background: #dcfce7;
-            color: #166534;
-        }
-
-        .property-row-status.status-inactive {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .property-row-status.status-sold {
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        .property-row-status.status-other {
-            background: #f1f5f9;
-            color: #475569;
-        }
-
-
-        /* Precio - destacado y con coma */
-        .property-row-price {
-            font-size: 0.95rem;
-            font-weight: 700;
-            color: #0f172a;
-            white-space: nowrap;
-            min-width: 120px;
+        /* Precio */
+        .col-price {
             text-align: right;
+            font-weight: 700;
             font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+            color: #0f172a;
         }
-
-        .property-row-price .currency {
-            color: #64748b;
-            font-weight: 600;
-            font-size: 0.8rem;
-        }
-
-        .property-row-price.no-price {
+        .col-price.no-price {
             color: #94a3b8;
             font-weight: 500;
             font-size: 0.75rem;
         }
 
         /* Acciones */
-        .property-row-actions {
-            display: flex;
-            gap: 4px;
-            flex-shrink: 0;
+        .col-actions {
+            text-align: center;
+            white-space: nowrap;
         }
-
-        .property-row-actions .action-btn {
-            width: 28px;
-            height: 28px;
+        .action-btn {
+            width: 30px;
+            height: 30px;
             border: none;
             background: transparent;
             color: #94a3b8;
             border-radius: 6px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             cursor: pointer;
             transition: all 0.15s;
             font-size: 0.8rem;
         }
+        .action-btn:hover { background: #f1f5f9; color: #0f172a; }
+        .action-btn.view:hover { background: #dbeafe; color: #1d4ed8; }
+        .action-btn.excel:hover { background: #dcfce7; color: #16a34a; }
 
-        .property-row-actions .action-btn:hover {
-            background: #f1f5f9;
+        /* Barra superior de la tabla */
+        .table-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #e2e8f0;
+            background: #fff;
+            flex-wrap: wrap;
+        }
+        .table-toolbar .toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .table-toolbar .toolbar-left h3 {
+            margin: 0;
+            font-size: 0.9rem;
             color: #0f172a;
         }
-
-        .property-row-actions .action-btn.view:hover {
-            background: #dbeafe;
-            color: #1d4ed8;
+        .table-toolbar .search-box {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
         }
-
-        .property-row-actions .action-btn.edit:hover {
-            background: #dcfce7;
-            color: #16a34a;
+        .table-toolbar .search-box input,
+        .table-toolbar .search-box select {
+            padding: 7px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            outline: none;
+            transition: border 0.15s;
+        }
+        .table-toolbar .search-box input:focus,
+        .table-toolbar .search-box select:focus {
+            border-color: #1d4ed8;
+        }
+        .btn-excel {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 14px;
+            background: #16a34a;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-excel:hover { background: #15803d; }
+        .btn-excel:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
         }
 
         /* Mensajes */
@@ -473,29 +472,6 @@ function getStatusBadge($status) {
 
         .message-box i {
             font-size: 1rem;
-        }
-
-        /* Estadísticas adicionales - más compactas */
-        .stats-extra {
-            display: flex;
-            gap: 8px;
-            font-size: 0.78rem;
-            color: #64748b;
-            margin-top: 4px;
-            flex-wrap: wrap;
-        }
-
-        .stats-extra span {
-            background: #f1f5f9;
-            padding: 2px 10px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .stats-extra span i {
-            font-size: 0.7rem;
         }
 
         /* ===== Tabs de vista ===== */
@@ -555,78 +531,45 @@ function getStatusBadge($status) {
             color: #fff;
         }
 
+        /* Spinner de carga para exportación */
+        .export-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .export-overlay.show { display: flex; }
+        .export-box {
+            background: #fff;
+            padding: 24px 32px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        .export-box i {
+            font-size: 1.6rem;
+            color: #16a34a;
+        }
+        .export-box span {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #0f172a;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
-            .property-row {
-                flex-wrap: wrap;
-                padding: 10px 12px;
-                min-height: auto;
-                gap: 8px;
-            }
-
-            .property-row-info {
-                flex: 1 1 100%;
-                gap: 8px;
-            }
-
-            .property-row-title {
-                max-width: 100%;
-                white-space: normal;
-                font-size: 0.8rem;
-            }
-
-            .property-row-location {
-                font-size: 0.7rem;
-                width: 100%;
-            }
-
-            .property-row-price {
-                min-width: auto;
-                text-align: left;
-                font-size: 0.9rem;
-                margin-left: auto;
-            }
-
-            .property-row-actions {
-                margin-left: auto;
-            }
-
-            .property-row-status {
-                font-size: 0.6rem;
-                padding: 1px 8px;
-            }
-
+            .table-toolbar { flex-direction: column; align-items: stretch; }
+            .table-toolbar .search-box { width: 100%; }
+            .table-toolbar .search-box input { flex: 1; }
         }
 
         @media (max-width: 600px) {
             .view-tab.portal-link { margin-left: 0; }
-        }
-
-        @media (max-width: 480px) {
-            .property-row {
-                padding: 8px 10px;
-            }
-
-            .property-row-image {
-                width: 40px;
-                min-width: 40px;
-                height: 40px;
-            }
-
-            .property-row-title {
-                font-size: 0.75rem;
-            }
-
-            .property-row-price {
-                font-size: 0.8rem;
-                min-width: 80px;
-            }
-
-            .property-row-actions .action-btn {
-                width: 24px;
-                height: 24px;
-                font-size: 0.7rem;
-            }
         }
 
         /* Scroll horizontal para tabla en móvil */
@@ -659,32 +602,6 @@ function getStatusBadge($status) {
         </div>
     </div>
 
-    <div class="stats-grid">
-        <div class="stat-card">
-            <span class="stat-icon"><i class="fas fa-home"></i></span>
-            <div class="stat-number"><?php echo $stats['total']; ?></div>
-            <div class="stat-label">Total Inmuebles</div>
-        </div>
-        <div class="stat-card success">
-            <span class="stat-icon"><i class="fas fa-tag"></i></span>
-            <div class="stat-number"><?php echo $stats['venta']; ?></div>
-            <div class="stat-label">En Venta</div>
-        </div>
-        <div class="stat-card warning">
-            <span class="stat-icon"><i class="fas fa-key"></i></span>
-            <div class="stat-number"><?php echo $stats['renta']; ?></div>
-            <div class="stat-label">En Renta</div>
-        </div>
-    </div>
-
-    <!-- Estadísticas adicionales -->
-    <div class="stats-extra">
-        <span><i class="fas fa-check-circle" style="color: #10b981;"></i> Con precio: <?php echo $stats['con_precio']; ?></span>
-        <span><i class="fas fa-exclamation-circle" style="color: #f59e0b;"></i> Sin precio: <?php echo $stats['sin_precio']; ?></span>
-        <span><i class="fas fa-image" style="color: #3b82f6;"></i> Con imagen: <?php echo $stats['con_imagen']; ?></span>
-        <span><i class="fas fa-image" style="color: #94a3b8;"></i> Sin imagen: <?php echo $stats['sin_imagen']; ?></span>
-    </div>
-
     <!-- ===== Tabs de vista ===== -->
     <div class="view-tabs">
         <a href="?vista=activas" class="view-tab <?php echo $vista === 'activas' ? 'active' : ''; ?>">
@@ -705,15 +622,20 @@ function getStatusBadge($status) {
     </div>
 
     <div class="table-container">
-        <div class="table-header">
-            <h3><i class="fas fa-list-ul"></i> Listado de Inmuebles</h3>
+        <div class="table-toolbar">
+            <div class="toolbar-left">
+                <h3><i class="fas fa-list-ul"></i> Listado de Inmuebles</h3>
+            </div>
             <div class="search-box">
                 <input type="text" placeholder="Buscar por municipio o título..." id="searchTable">
                 <select id="filterOperation">
                     <option value="">Todas las operaciones</option>
                     <option value="venta">Venta</option>
-                    <option value="renta">Renta</option>
+                    <option value="compra">Compra</option>
                 </select>
+                <button class="btn-excel" id="btnExportar" onclick="exportarExcel()">
+                    <i class="fas fa-file-excel"></i> Exportar Excel
+                </button>
             </div>
         </div>
 
@@ -743,94 +665,93 @@ function getStatusBadge($status) {
 
             <?php if (empty($propiedades) && empty($error_msg)): ?>
                 <div class="empty-state" style="text-align: center; padding: 40px;">
-                    <i class="fas fa-home" style="font-size: 3rem; color: var(--gray); margin-bottom: 15px;"></i>
+                    <i class="fas fa-home" style="font-size: 3rem; color: #94a3b8; margin-bottom: 15px;"></i>
                     <h3>No hay propiedades registradas</h3>
-                    <p style="color: var(--gray);">Comienza dando de alta una propiedad en el sistema</p>
+                    <p style="color: #94a3b8;">Comienza dando de alta una propiedad en el sistema</p>
                     <button onclick="nuevaPropiedad()" class="btn-header primary" style="margin-top: 20px;">
                         <i class="fas fa-plus"></i> Agregar Propiedad
                     </button>
                 </div>
             <?php elseif (!empty($propiedades)): ?>
-                <div class="properties-grid" id="propertiesGrid">
-                    <?php foreach ($propiedades as $propiedad): 
-                        $badge = getOperationBadge($propiedad['operation_type'] ?? '');
-                        $statusBadge = getStatusBadge($propiedad['status'] ?? '');
-                        $price = $propiedad['price'] ?? null;
-                        $hasPrice = ($price !== null && $price > 0);
-                        $priceClass = $hasPrice ? '' : 'no-price';
-                        $priceText = $hasPrice ? formatearPrecio($price) : 'Sin precio';
-                        $imagePath = getImagePath($propiedad['image_url'] ?? '');
-                        $hasImage = !empty($imagePath);
-                        $title = htmlspecialchars($propiedad['title'] ?? 'Sin título');
-                        $municipality = htmlspecialchars($propiedad['municipality'] ?? 'Ubicación no especificada');
-                        $statusLower = strtolower(trim($propiedad['status'] ?? ''));
-                        $esVendida = in_array($statusLower, ['vendido', 'vendida']);
-                    ?>
-                        <div class="property-row" 
-                             data-text="<?php echo strtolower($title . ' ' . $municipality); ?>" 
-                             data-operation="<?php echo strtolower(trim($propiedad['operation_type'] ?? '')); ?>">
-                            
-                            <!-- Imagen -->
-                            <div class="property-row-image">
-                                <span class="property-row-badge <?php echo $badge['class']; ?>">
-                                    <?php echo $badge['label']; ?>
-                                </span>
-                                <?php if ($hasImage): ?>
-                                    <img src="<?php echo $imagePath; ?>" 
-                                         alt="<?php echo $title; ?>" 
-                                         loading="lazy"
-                                         onerror="this.style.display='none'; this.parentElement.querySelector('.no-image').style.display='flex';">
-                                    <div class="no-image" style="display: none;">
-                                        <i class="fas fa-image"></i>
-                                    </div>
-                                <?php else: ?>
-                                    <div class="no-image">
-                                        <i class="fas fa-building"></i>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-
-                            <!-- Información -->
-                            <div class="property-row-info">
-                                <div class="property-row-title" title="<?php echo $title; ?>">
-                                    <i class="fas fa-home"></i> <?php echo $title; ?>
-                                </div>
-                                
-                                <div class="property-row-location">
-                                    <i class="fas fa-map-marker-alt"></i>
-                                    <span><?php echo $municipality; ?></span>
-                                </div>
-
-                                <!-- Estado -->
-                                <span class="property-row-status <?php echo $statusBadge['class']; ?>">
-                                    <?php echo $statusBadge['label']; ?>
-                                </span>
-
-                                <!-- Etiqueta histórica para vendidas -->
-                                <?php if ($esVendida): ?>
-                                    <div class="property-row-commission" style="color:#92400e;">
-                                        <i class="fas fa-flag-checkered"></i> Histórica
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-
-                            <!-- Precio -->
-                            <div class="property-row-price <?php echo $priceClass; ?>">
-                                <?php if ($hasPrice): ?>
-                                    <span class="currency">$</span><?php echo number_format(floatval($price), 0, ',', '.'); ?>
-                                <?php else: ?>
-                                    <?php echo $priceText; ?>
-                                <?php endif; ?>
-                            </div>
-
-                            <!-- Acciones -->
-                            <div class="property-row-actions">
-                                <button class="action-btn view" title="Ver detalles" onclick="verPropiedad('<?php echo $propiedad['id']; ?>')">
-                                    <i class="fas fa-eye"></i>
-                                </button>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
+                <div class="properties-table-wrapper">
+                    <table class="properties-table" id="propertiesTable">
+                        <thead>
+                            <tr>
+                                <th class="col-img">Imagen</th>
+                                <th class="col-title">Título</th>
+                                <th>Status</th>
+                                <th>Estado Geo.</th>
+                                <th>Municipio</th>
+                                <th>Colonia</th>
+                                <th>Dirección</th>
+                                <th style="text-align:right;">Precio</th>
+                                <th class="col-actions">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($propiedades as $propiedad): 
+                                $badge = getOperationBadge($propiedad['operation_type'] ?? '');
+                                $statusBadge = getStatusBadge($propiedad['status'] ?? '');
+                                $price = $propiedad['price'] ?? null;
+                                $hasPrice = ($price !== null && $price > 0);
+                                $priceClass = $hasPrice ? '' : 'no-price';
+                                $priceText = $hasPrice ? formatearPrecio($price) : 'Sin precio';
+                                $imagePath = getImagePath($propiedad['image_url'] ?? '');
+                                $hasImage = !empty($imagePath);
+                                $title = htmlspecialchars($propiedad['title'] ?? 'Sin título');
+                                $domicilio = htmlspecialchars($propiedad['domicilio'] ?? 'No especificado');
+                                $estado = htmlspecialchars($propiedad['status'] ?? 'No especificado');
+                                $estadoGeo = htmlspecialchars($propiedad['estado'] ?? 'No especificado');
+                                $municipio = htmlspecialchars($propiedad['municipio'] ?? 'No especificado');
+                                $colonia = htmlspecialchars($propiedad['colonia'] ?? 'No especificada');
+                                $opType = strtolower(trim($propiedad['operation_type'] ?? ''));
+                                $statusLower = strtolower(trim($propiedad['status'] ?? ''));
+                                $esVendida = in_array($statusLower, ['vendido', 'vendida']);
+                            ?>
+                                <tr data-text="<?php echo strtolower($title . ' ' . $municipio . ' ' . $domicilio . ' ' . $colonia . ' ' . $estadoGeo); ?>"
+                                    data-operation="<?php echo $opType; ?>">
+                                    <td class="col-img">
+                                        <div class="thumb">
+                                            <?php if ($hasImage): ?>
+                                                <img src="<?php echo $imagePath; ?>" 
+                                                     alt="<?php echo $title; ?>" 
+                                                     loading="lazy"
+                                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                                <div class="no-image" style="display:none;"><i class="fas fa-image"></i></div>
+                                            <?php else: ?>
+                                                <div class="no-image"><i class="fas fa-building"></i></div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
+                                    <td class="col-title" data-raw-title="<?php echo $title; ?>">
+                                        <span class="op-badge <?php echo $badge['class']; ?>" data-exclude="true"><?php echo $badge['label']; ?></span>
+                                        <?php echo $title; ?>
+                                        <?php if ($esVendida): ?>
+                                            <i class="fas fa-flag-checkered" style="color:#92400e; margin-left:4px;" title="Histórica"></i>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <span class="status-pill <?php echo $statusBadge['class']; ?>">
+                                            <?php echo $statusBadge['label']; ?>
+                                        </span>
+                                    </td>
+                                    <td><?php echo $estadoGeo; ?></td>
+                                    <td><?php echo $municipio; ?></td>
+                                    <td><?php echo $colonia; ?></td>
+                                    <td><?php echo $domicilio; ?></td>
+                                    <td class="col-price <?php echo $priceClass; ?>" 
+                                        data-raw-price="<?php echo $hasPrice ? floatval($price) : ''; ?>">
+                                        <?php echo $priceText; ?>
+                                    </td>
+                                    <td class="col-actions">
+                                        <button class="action-btn view" title="Ver detalles" onclick="verPropiedad('<?php echo $propiedad['id']; ?>')">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
                 </div>
                 
                 <!-- Mostrar datos de depuración (solo en desarrollo) -->
@@ -844,6 +765,14 @@ function getStatusBadge($status) {
         </div>
     </div>
 </main>
+
+<!-- Overlay de carga para exportación -->
+<div class="export-overlay" id="exportOverlay">
+    <div class="export-box">
+        <i class="fas fa-file-excel fa-spin"></i>
+        <span>Generando archivo Excel...</span>
+    </div>
+</div>
 
 <script>
 // ===== Menú móvil =====
@@ -889,7 +818,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function filtrarFilas() {
         const searchText = (searchInput.value || '').toLowerCase().trim();
         const operationVal = (filterOperation.value || '').toLowerCase().trim();
-        const rows = document.querySelectorAll('.property-row');
+        const rows = document.querySelectorAll('.properties-table tbody tr');
 
         rows.forEach(row => {
             const rowText = (row.getAttribute('data-text') || '').toLowerCase();
@@ -915,6 +844,248 @@ document.addEventListener('DOMContentLoaded', function() {
         window.location.href = 'propiedad_editar_inventario.php?id=' + id;
     };
 });
+
+// ===== Exportar a Excel (.xlsx) con formato corporativo usando ExcelJS =====
+window.exportarExcel = async function() {
+    const tabla = document.getElementById('propertiesTable');
+    if (!tabla) {
+        alert('No hay datos para exportar.');
+        return;
+    }
+
+    if (typeof ExcelJS === 'undefined' || typeof saveAs === 'undefined') {
+        alert('Las librerías de exportación no se cargaron. Verifica tu conexión a internet.');
+        return;
+    }
+
+    // Mostrar overlay de carga
+    const overlay = document.getElementById('exportOverlay');
+    const btnExportar = document.getElementById('btnExportar');
+    if (overlay) overlay.classList.add('show');
+    if (btnExportar) btnExportar.disabled = true;
+
+    try {
+        // ===== Recopilar datos de la tabla =====
+        const filas = [];
+        const headers = [];
+
+        // Encabezados (excepto la última columna "Acciones")
+        tabla.querySelectorAll('thead th').forEach((th, idx, arr) => {
+            if (idx < arr.length - 1) {
+                headers.push(th.innerText.trim().toUpperCase());
+            }
+        });
+
+        // Filas de datos (excepto la última celda "Acciones")
+        tabla.querySelectorAll('tbody tr').forEach(tr => {
+            const celdas = tr.querySelectorAll('td');
+            const fila = [];
+            celdas.forEach((td, idx) => {
+                if (idx < celdas.length - 1) {
+                    // 1) Precio: usar data-raw-price
+                    const rawPrice = td.getAttribute('data-raw-price');
+                    if (rawPrice !== null && rawPrice !== '' && !isNaN(parseFloat(rawPrice))) {
+                        fila.push({ tipo: 'numero', valor: parseFloat(rawPrice) });
+                        return;
+                    }
+                    if (rawPrice !== null && rawPrice === '') {
+                        fila.push({ tipo: 'texto', valor: 'Sin precio' });
+                        return;
+                    }
+
+                    // 2) Título: usar data-raw-title (sin badge)
+                    const rawTitle = td.getAttribute('data-raw-title');
+                    if (rawTitle !== null) {
+                        fila.push({ tipo: 'texto', valor: rawTitle.trim() });
+                        return;
+                    }
+
+                    // 3) Resto: clonar, quitar elementos excluidos e iconos, leer texto limpio
+                    const clon = td.cloneNode(true);
+                    clon.querySelectorAll('[data-exclude="true"]').forEach(el => el.remove());
+                    clon.querySelectorAll('i.fa').forEach(el => el.remove());
+                    let texto = clon.innerText.trim().replace(/\s+/g, ' ');
+                    fila.push({ tipo: 'texto', valor: texto });
+                }
+            });
+            filas.push(fila);
+        });
+
+        if (filas.length === 0) {
+            alert('No hay datos para exportar.');
+            return;
+        }
+
+        // ===== Crear workbook =====
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = 'Vera Terra Inmobiliaria';
+        workbook.created = new Date();
+
+        const worksheet = workbook.addWorksheet('Inventario', {
+            views: [{ state: 'frozen', ySplit: 4 }]
+        });
+
+        // ===== Calcular anchos de columna dinámicamente =====
+        // Para cada columna, buscamos el texto más largo (encabezado y datos)
+        const anchos = headers.map((h, colIdx) => {
+            let maxLen = h.length;
+            filas.forEach(fila => {
+                const cell = fila[colIdx];
+                if (!cell) return;
+                let texto = '';
+                if (cell.tipo === 'numero') {
+                    // Formato aproximado: $10,000,000
+                    texto = '$' + cell.valor.toLocaleString('en-US');
+                } else {
+                    texto = String(cell.valor || '');
+                }
+                if (texto.length > maxLen) maxLen = texto.length;
+            });
+            // Ancho = largo máximo + padding, con límites min/max
+            let ancho = maxLen + 4;
+            if (ancho < 12) ancho = 12;   // mínimo
+            if (ancho > 55) ancho = 55;   // máximo
+            return ancho;
+        });
+
+        // Aplicar anchos
+        worksheet.columns = anchos.map(w => ({ width: w }));
+
+        // ===== Encabezado con logo y título (filas 1-3) =====
+        try {
+            const logoUrl = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/') + 'css/Logo1_veraterra.png';
+            const resp = await fetch(logoUrl);
+            if (resp.ok) {
+                const blob = await resp.blob();
+                const arrayBuffer = await blob.arrayBuffer();
+                const imageId = workbook.addImage({
+                    buffer: arrayBuffer,
+                    extension: 'png'
+                });
+                worksheet.addImage(imageId, {
+                    tl: { col: 0, row: 0 },
+                    ext: { width: 110, height: 60 }
+                });
+            }
+        } catch (e) {
+            console.warn('No se pudo cargar el logo:', e);
+        }
+
+        const totalCols = headers.length;
+        const ultimaColLetra = String.fromCharCode(64 + totalCols); // A=1, B=2...
+
+        // Título corporativo
+        worksheet.mergeCells(`B1:${ultimaColLetra}1`);
+        const tituloCell = worksheet.getCell('B1');
+        tituloCell.value = 'Vera Terra Inmobiliaria';
+        tituloCell.font = { name: 'Calibri', size: 18, bold: true, color: { argb: 'FF1D4ED8' } };
+        tituloCell.alignment = { vertical: 'middle', horizontal: 'left' };
+
+        worksheet.mergeCells(`B2:${ultimaColLetra}2`);
+        const subtituloCell = worksheet.getCell('B2');
+        subtituloCell.value = 'Inventario Maestro de Propiedades';
+        subtituloCell.font = { name: 'Calibri', size: 12, color: { argb: 'FF475569' } };
+        subtituloCell.alignment = { vertical: 'middle', horizontal: 'left' };
+
+        worksheet.mergeCells(`B3:${ultimaColLetra}3`);
+        const fechaCell = worksheet.getCell('B3');
+        const fecha = new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+        fechaCell.value = `Generado el ${fecha}`;
+        fechaCell.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF64748B' } };
+        fechaCell.alignment = { vertical: 'middle', horizontal: 'left' };
+
+        worksheet.getRow(1).height = 24;
+        worksheet.getRow(2).height = 20;
+        worksheet.getRow(3).height = 16;
+        worksheet.getRow(4).height = 22;
+
+        // ===== Fila 4: encabezados de la tabla =====
+        const headerRow = worksheet.getRow(4);
+        headers.forEach((h, i) => {
+            const cell = headerRow.getCell(i + 1);
+            cell.value = h;
+            cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+            cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FF1D4ED8' }
+            };
+            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+            cell.border = {
+                top:    { style: 'thin', color: { argb: 'FF1E40AF' } },
+                left:   { style: 'thin', color: { argb: 'FF1E40AF' } },
+                bottom: { style: 'thin', color: { argb: 'FF1E40AF' } },
+                right:  { style: 'thin', color: { argb: 'FF1E40AF' } }
+            };
+        });
+
+        // ===== Filas de datos =====
+        filas.forEach((fila, rowIdx) => {
+            const row = worksheet.getRow(5 + rowIdx);
+            const esPar = rowIdx % 2 === 0;
+
+            fila.forEach((celda, colIdx) => {
+                const cell = row.getCell(colIdx + 1);
+
+                if (celda.tipo === 'numero') {
+                    // Precio como número real → formato moneda
+                    cell.value = celda.valor;
+                    cell.numFmt = '"$"#,##0';
+                    cell.alignment = { vertical: 'middle', horizontal: 'right' };
+                    cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+                } else {
+                    cell.value = celda.valor || '';
+                    // Si es "Sin precio", estilo gris cursiva
+                    if (String(celda.valor).toLowerCase().includes('sin precio')) {
+                        cell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FF94A3B8' } };
+                        cell.alignment = { vertical: 'middle', horizontal: 'right' };
+                    } else {
+                        cell.font = { name: 'Calibri', size: 10, color: { argb: 'FF0F172A' } };
+                        cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: false };
+                    }
+                }
+
+                // Fondo alterno
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: esPar ? 'FFF8FAFC' : 'FFFFFFFF' }
+                };
+
+                // Bordes
+                cell.border = {
+                    top:    { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                    left:   { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                    bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                    right:  { style: 'thin', color: { argb: 'FFE2E8F0' } }
+                };
+            });
+
+            row.height = 20;
+        });
+
+        // ===== Autofiltro =====
+        worksheet.autoFilter = {
+            from: { row: 4, column: 1 },
+            to:   { row: 4, column: headers.length }
+        };
+
+        // ===== Generar y descargar =====
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+        const nombreArchivo = `Inventario_Propiedades_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        saveAs(blob, nombreArchivo);
+
+    } catch (error) {
+        console.error('Error al exportar:', error);
+        alert('Ocurrió un error al generar el archivo Excel. Revisa la consola para más detalles.');
+    } finally {
+        if (overlay) overlay.classList.remove('show');
+        if (btnExportar) btnExportar.disabled = false;
+    }
+};
 </script>
 
 </body>

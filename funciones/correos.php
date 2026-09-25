@@ -10,9 +10,6 @@ require_once __DIR__ . '/../config/config.php';
 
 // ===== FUNCIÓN EXISTENTE PARA ENVIAR CORREO =====
 function enviarCorreo($email, $nombre, $asunto, $mensaje_html) {
-    // 🔥 LOG DE INICIO
-    error_log("📧 INTENTANDO ENVIAR CORREO a: " . $email);
-    error_log("📧 Asunto: " . $asunto);
     
     try {
         $mail = new PHPMailer(true);
@@ -29,9 +26,9 @@ function enviarCorreo($email, $nombre, $asunto, $mensaje_html) {
         $mail->Timeout    = 30;
         
         // 🔥 DEBUG ACTIVADO (esto escribirá en el log de PHP)
-        $mail->SMTPDebug = 2;
-        $mail->Debugoutput = function($str, $level) {
-            error_log("PHPMailer DEBUG: " . trim($str));
+        //$mail->SMTPDebug = 2;
+        //$mail->Debugoutput = function($str, $level) {
+            //error_log("PHPMailer DEBUG: " . trim($str));
         };
         
         // Opciones SSL
@@ -54,24 +51,13 @@ function enviarCorreo($email, $nombre, $asunto, $mensaje_html) {
         $mail->Body    = $mensaje_html;
         $mail->AltBody = strip_tags($mensaje_html);
         
-        // 🔥 LOG ANTES DE ENVIAR
-        error_log("📧 Enviando correo...");
         
         $mail->send();
         
-        // 🔥 LOG DE ÉXITO
-        error_log("✅ CORREO ENVIADO EXITOSAMENTE a: " . $email);
         return true;
         
     } catch (Exception $e) {
-        // 🔥 CAPTURAR EL ERROR EXACTO
-        $error_detalle = $mail->ErrorInfo ?? $e->getMessage();
         
-        // 🔥 LOG DEL ERROR
-        error_log("❌ ERROR PHPMailer: " . $error_detalle);
-        error_log("❌ Destinatario: " . $email);
-        error_log("❌ Asunto: " . $asunto);
-        error_log("❌ Trace: " . $e->getTraceAsString());
         
         // 🔥 GUARDAR EN ARCHIVO DE LOG
         $log_file = __DIR__ . '/../errores_phpmailer.log';
@@ -125,9 +111,6 @@ function generarICS($evento) {
  * Envía un correo con los detalles del evento y el ICS adjunto
  */
 function enviarCorreoEvento($destinatario, $nombre, $evento, $asunto = 'Recordatorio de evento', $cuerpo = null) {
-    // 🔥 LOG
-    error_log("📧 Enviando correo de evento a: " . $destinatario);
-    error_log("📧 Evento: " . $evento['title']);
     
     try {
         $mail = new PHPMailer(true);
@@ -233,14 +216,10 @@ function enviarCorreoEvento($destinatario, $nombre, $evento, $asunto = 'Recordat
         // Enviar
         $mail->send();
         
-        error_log("✅ Correo de evento enviado a: " . $destinatario);
         return true;
         
     } catch (Exception $e) {
         $error_detalle = $mail->ErrorInfo ?? $e->getMessage();
-        error_log("❌ ERROR al enviar correo de evento: " . $error_detalle);
-        error_log("❌ Destinatario: " . $destinatario);
-        error_log("❌ Evento: " . $evento['title']);
         
         // Guardar en log
         $log_file = __DIR__ . '/../errores_eventos.log';

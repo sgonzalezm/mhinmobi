@@ -2,10 +2,7 @@
 // ============================================
 // propiedad_detalle_vendedor.php
 // ============================================
-
 session_start();
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
 
 require_once 'includes/conexion.php';
 require_once 'includes/auth.php';
@@ -43,8 +40,10 @@ try {
             p.owner_id,
             p.title,
             p.operation_type,
-            p.address_city,
-            p.address_municipality,
+            p.estado,
+            p.municipio,
+            p.colonia,
+            p.domicilio,
             p.address_lat,
             p.address_lng,
             p.status,
@@ -604,12 +603,20 @@ function formatFileSize($bytes) {
                         <span class="value"><?php echo ucfirst($propiedad['operation_type'] ?? 'No especificado'); ?></span>
                     </div>
                     <div class="info-row">
-                        <span class="label">Municipio</span>
-                        <span class="value"><?php echo htmlspecialchars($propiedad['address_municipality'] ?? 'No especificado'); ?></span>
+                        <span class="label">Estado</span>
+                        <span class="value"><?php echo htmlspecialchars($propiedad['estado'] ?? 'No especificado'); ?></span>
                     </div>
                     <div class="info-row">
-                        <span class="label">Ciudad</span>
-                        <span class="value"><?php echo htmlspecialchars($propiedad['address_city'] ?? 'No especificado'); ?></span>
+                        <span class="label">Municipio</span>
+                        <span class="value"><?php echo htmlspecialchars($propiedad['municipio'] ?? 'No especificado'); ?></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Colonia</span>
+                        <span class="value"><?php echo htmlspecialchars($propiedad['colonia'] ?? 'No especificado'); ?></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Domicilio</span>
+                        <span class="value"><?php echo htmlspecialchars($propiedad['domicilio'] ?? 'No especificado'); ?></span>
                     </div>
                     <?php if (!empty($propiedad['address_lat']) && !empty($propiedad['address_lng'])): ?>
                     <div class="info-row">
@@ -648,14 +655,6 @@ function formatFileSize($bytes) {
                                 (<?php echo number_format($propiedad['potential_profit_margin'], 1); ?>%)
                             <?php endif; ?>
                         </span>
-                    </div>
-                    <div class="info-row">
-                        <span class="label">Comisión (%)</span>
-                        <span class="value"><?php echo number_format($propiedad['commission_percentage'] ?? 0, 1); ?>%</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="label">Comisión estimada</span>
-                        <span class="value highlight"><?php echo formatearPrecio($propiedad['commission_amount'] ?? 0); ?></span>
                     </div>
                 </div>
 

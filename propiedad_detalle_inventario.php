@@ -2,10 +2,7 @@
 // ============================================
 // propiedad_detalle_inventario.php
 // ============================================
-
 session_start();
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
 
 require_once 'includes/conexion.php';
 require_once 'includes/auth.php';
@@ -460,8 +457,9 @@ function recargarPropiedad($conn, $property_id) {
                 p.owner_id,
                 p.title,
                 p.operation_type,
-                p.address_city,
-                p.address_municipality,
+                p.municipio,
+                p.colonia,
+                p.domicilio,
                 p.status,
                 p.created_at,
                 p.updated_at,
@@ -2268,14 +2266,18 @@ $base_url = getBaseUrl();
                             </div>
                             <div class="info-row">
                                 <span class="label">Municipio</span>
-                                <span class="value"><?php echo htmlspecialchars($propiedad['address_municipality'] ?? 'No especificado'); ?></span>
+                                <span class="value"><?php echo htmlspecialchars($propiedad['municipio'] ?? 'No especificado'); ?></span>
                             </div>
                             <div class="info-row">
-                                <span class="label">Ciudad</span>
-                                <span class="value"><?php echo htmlspecialchars($propiedad['address_city'] ?? 'No especificado'); ?></span>
+                                <span class="label">Colonia</span>
+                                <span class="value"><?php echo htmlspecialchars($propiedad['colonia'] ?? 'No especificado'); ?></span>
                             </div>
                             <div class="info-row">
-                                <span class="label">Estado</span>
+                                <span class="label">Domicilio</span>
+                                <span class="value"><?php echo htmlspecialchars($propiedad['domicilio'] ?? 'No especificado'); ?></span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">Status</span>
                                 <span class="value">
                                     <span class="status-badge <?php echo getStatusBadge($propiedad['status']); ?>">
                                         <?php echo ucfirst($propiedad['status'] ?? 'Sin estado'); ?>

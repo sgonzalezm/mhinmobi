@@ -3,56 +3,37 @@
 // descargar_expediente.php - VERSIÓN CORREGIDA
 // ============================================
 
-// 🔥 ACTIVAR ERRORES PARA DEPURACIÓN
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-
-// 🔥 LOG DE ERRORES EN ARCHIVO
-ini_set('log_errors', 1);
-ini_set('error_log', __DIR__ . '/error_log_expediente.log');
-
 session_start();
 require_once 'includes/conexion.php';
 require_once 'includes/auth.php';
 
-// 🔥 REGISTRAR INICIO DEL PROCESO
-error_log("=== INICIANDO descargar_expediente.php ===");
-
 // Verificar autenticación
 if (!estaLogueado()) {
-    error_log("ERROR: Usuario no autenticado");
     header('Location: login.php');
     exit;
 }
 
 $usuario = obtenerUsuarioActual($conn);
 if (!$usuario) {
-    error_log("ERROR: Usuario no encontrado");
     header('Location: login.php');
     exit;
 }
 
-error_log("Usuario autenticado: " . $usuario['name'] . " (ID: " . $usuario['id'] . ")");
 
 // Obtener ID de la propiedad
 $property_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
-error_log("Property ID: " . $property_id);
 
 if ($property_id <= 0) {
-    error_log("ERROR: ID de propiedad inválido");
     die('ID de propiedad inválido');
 }
 
 // Verificar permisos
 $es_admin = esAdmin();
-error_log("Es admin: " . ($es_admin ? 'SI' : 'NO'));
 
 try {
     // ============================================================
     // 1. OBTENER DATOS DE LA PROPIEDAD
     // ============================================================
-    error_log("Obteniendo datos de propiedad...");
     
     $stmt = $conn->prepare("
         SELECT 
@@ -81,11 +62,9 @@ try {
     $propiedad = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$propiedad) {
-        error_log("ERROR: Propiedad no encontrada - ID: " . $property_id);
         die('Propiedad no encontrada');
     }
     
-    error_log("Propiedad encontrada: " . $propiedad['title']);
     
     // Verificar que el usuario tenga acceso
     if (!$es_admin) {
@@ -93,7 +72,6 @@ try {
         $stmt->execute([$property_id]);
         $owner = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$owner || $owner['owner_id'] != $_SESSION['usuario_id']) {
-            error_log("ERROR: Usuario no tiene permiso para esta propiedad");
             die('No tienes permisos para descargar este expediente');
         }
     }
@@ -101,7 +79,6 @@ try {
     // ============================================================
     // 2. OBTENER ARCHIVOS (CORREGIDO - SIN client_name/client_email)
     // ============================================================
-    error_log("Obteniendo imágenes...");
     
     $stmt = $conn->prepare("
         SELECT file_path, file_name, is_primary, sort_order
@@ -111,9 +88,9 @@ try {
     ");
     $stmt->execute([$property_id]);
     $imagenes = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    error_log("Imágenes encontradas: " . count($imagenes));
+    // error_log("Imágenes encontradas: " . count($imagenes));
     
-    error_log("Obteniendo documentos generales...");
+    // error_log("Obteniendo documentos generales...");
     $stmt = $conn->prepare("
         SELECT file_path, file_name, document_type, uploaded_at
         FROM property_documents
@@ -122,10 +99,10 @@ try {
     ");
     $stmt->execute([$property_id]);
     $documentos_generales = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    error_log("Documentos generales encontrados: " . count($documentos_generales));
+    // error_log("Documentos generales encontrados: " . count($documentos_generales));
     
     // 🔥 CORRECCIÓN AQUÍ: Eliminar client_name y client_email
-    error_log("Obteniendo documentos de clientes...");
+    // error_log("Obteniendo documentos de clientes...");
     $stmt = $conn->prepare("
         SELECT file_path, file_name, document_type, uploaded_at, 
                status, property_id, token_id
@@ -135,7 +112,7 @@ try {
     ");
     $stmt->execute([$property_id]);
     $documentos_clientes = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    error_log("Documentos de clientes encontrados: " . count($documentos_clientes));
+    // error_log("Documentos de clientes encontrados: " . count($documentos_clientes));
     
     // 🔥 Si necesitas el nombre del cliente, puedes obtenerlo desde otra tabla
     // Por ejemplo, desde la tabla de tokens o desde la propiedad
@@ -163,7 +140,7 @@ try {
     }
     unset($doc);
     
-    error_log("Obteniendo datos biométricos...");
+    // error_log("Obteniendo datos biométricos...");
     $stmt = $conn->prepare("
         SELECT file_path, tipo_biometrico, dedo, created_at, created_by
         FROM client_biometric_data
@@ -172,7 +149,7 @@ try {
     ");
     $stmt->execute([$property_id]);
     $biometricos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    error_log("Datos biométricos encontrados: " . count($biometricos));
+    // error_log("Datos biométricos encontrados: " . count($biometricos));
     
     // ============================================================
     // 3. VERIFICAR QUE HAY ARCHIVOS PARA DESCARGAR
@@ -181,7 +158,6 @@ try {
                       count($documentos_clientes) + count($biometricos);
     
     if ($total_archivos == 0) {
-        error_log("ADVERTENCIA: No hay archivos para descargar");
         echo "
         <!DOCTYPE html>
         <html>
@@ -205,19 +181,16 @@ try {
     // ============================================================
     // 4. CREAR DIRECTORIO TEMPORAL
     // ============================================================
-    error_log("Creando directorio temporal...");
+    // error_log("Creando directorio temporal...");
     
     $temp_dir = sys_get_temp_dir() . '/expediente_' . $property_id . '_' . time();
     if (!mkdir($temp_dir, 0777, true)) {
-        error_log("ERROR: No se pudo crear directorio temporal: " . $temp_dir);
         die('Error al crear directorio temporal');
     }
-    error_log("Directorio temporal creado: " . $temp_dir);
     
     // ============================================================
     // 5. CREAR METADATOS
     // ============================================================
-    error_log("Generando metadatos...");
     
     $metadata = "========================================\n";
     $metadata .= "EXPEDIENTE DE PROPIEDAD\n";
@@ -290,7 +263,6 @@ try {
     if (!empty($imagenes)) {
         $img_dir = $temp_dir . '/01_IMAGENES';
         mkdir($img_dir, 0777, true);
-        error_log("Directorio de imágenes creado: " . $img_dir);
         
         foreach ($imagenes as $index => $img) {
             if (empty($img['file_path'])) continue;
@@ -310,7 +282,6 @@ try {
     if (!empty($documentos_generales)) {
         $docs_dir = $temp_dir . '/02_DOCUMENTOS_GENERALES';
         mkdir($docs_dir, 0777, true);
-        error_log("Directorio de documentos generales creado: " . $docs_dir);
         
         foreach ($documentos_generales as $doc) {
             if (empty($doc['file_path'])) continue;
@@ -329,7 +300,6 @@ try {
     if (!empty($documentos_clientes)) {
         $docs_cli_dir = $temp_dir . '/03_DOCUMENTOS_CLIENTES';
         mkdir($docs_cli_dir, 0777, true);
-        error_log("Directorio de documentos de clientes creado: " . $docs_cli_dir);
         
         foreach ($documentos_clientes as $doc) {
             if (empty($doc['file_path'])) continue;
@@ -351,7 +321,6 @@ try {
     if (!empty($biometricos)) {
         $bio_dir = $temp_dir . '/04_BIOMETRICOS';
         mkdir($bio_dir, 0777, true);
-        error_log("Directorio de biométricos creado: " . $bio_dir);
         
         foreach ($biometricos as $bio) {
             if (empty($bio['file_path'])) continue;
@@ -368,10 +337,8 @@ try {
         }
     }
     
-    error_log("Total de archivos copiados: " . $archivos_copiados);
     
     if ($archivos_copiados == 0) {
-        error_log("ERROR: No se pudo copiar ningún archivo");
         deleteDirectory($temp_dir);
         die('No se pudieron copiar los archivos. Verifica que las rutas sean correctas.');
     }
@@ -379,7 +346,6 @@ try {
     // ============================================================
     // 8. GENERAR HTML DE RESUMEN
     // ============================================================
-    error_log("Generando HTML de resumen...");
     
     $html_resumen = "
     <!DOCTYPE html>
@@ -452,21 +418,18 @@ try {
     // ============================================================
     // 9. CREAR EL ZIP
     // ============================================================
-    error_log("Creando archivo ZIP...");
     
     $zip_filename = 'expediente_' . $property_id . '_' . date('Ymd_His') . '.zip';
     $zip_path = sys_get_temp_dir() . '/' . $zip_filename;
     
     // Verificar que la extensión ZipArchive está disponible
     if (!class_exists('ZipArchive')) {
-        error_log("ERROR: ZipArchive no está disponible");
         deleteDirectory($temp_dir);
         die('La extensión ZIP no está disponible en el servidor. Contacta al administrador.');
     }
     
     $zip = new ZipArchive();
     if ($zip->open($zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-        error_log("ERROR: No se pudo crear el archivo ZIP");
         deleteDirectory($temp_dir);
         die('Error al crear el archivo ZIP');
     }
@@ -484,12 +447,10 @@ try {
             $relativePath = substr($filePath, strlen($temp_dir) + 1);
             $zip->addFile($filePath, $relativePath);
             $archivos_zip++;
-            error_log("Agregado al ZIP: " . $relativePath);
         }
     }
     
     $zip->close();
-    error_log("ZIP creado con " . $archivos_zip . " archivos");
     
     // ============================================================
     // 10. LIMPIAR DIRECTORIO TEMPORAL
@@ -505,18 +466,15 @@ try {
     }
     
     deleteDirectory($temp_dir);
-    error_log("Directorio temporal eliminado");
     
     // ============================================================
     // 11. DESCARGAR EL ZIP
     // ============================================================
     if (!file_exists($zip_path)) {
-        error_log("ERROR: El archivo ZIP no existe: " . $zip_path);
         die('Error al generar el expediente. Intenta nuevamente.');
     }
     
     $zip_size = filesize($zip_path);
-    error_log("Tamaño del ZIP: " . $zip_size . " bytes");
     
     // Configurar headers para descarga
     header('Content-Type: application/zip');
@@ -530,13 +488,10 @@ try {
     
     // Eliminar ZIP temporal
     unlink($zip_path);
-    error_log("=== PROCESO COMPLETADO EXITOSAMENTE ===");
     
     exit;
     
 } catch (Exception $e) {
-    error_log("EXCEPCIÓN CAPTURADA: " . $e->getMessage());
-    error_log("Trace: " . $e->getTraceAsString());
     die('Error: ' . $e->getMessage());
 }
 ?>

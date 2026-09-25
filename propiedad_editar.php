@@ -32,6 +32,8 @@ if ($property_id == 0) {
 
 $accesorios_disponibles = obtenerAccesorios();
 $bancos_disponibles = obtenerBancos();
+$estados_disponibles = obtenerEstados();
+$municipios_disponibles = obtenerMunicipios();
 
 $error_msg = '';
 $debug_info = '';
@@ -49,19 +51,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $conn->beginTransaction();
 
         // 1. properties
-        $ubicacion = trim($_POST['ubicacion'] ?? '');
-        $partes = explode(',', $ubicacion);
-        $ciudad = trim($partes[0] ?? '');
-        $municipio = trim($partes[1] ?? $ciudad);
+        $estado = trim($_POST['estado'] ?? '');
+        $municipio = trim($_POST['municipio'] ?? '');
+        $colonia = trim($_POST['colonia'] ?? '');
+        $domicilio = trim($_POST['domicilio'] ?? '');
 
-        // NUEVO: Capturar coordenadas GPS
+        // Coordenadas GPS
         $address_lat = !empty($_POST['address_lat']) ? (float)$_POST['address_lat'] : null;
         $address_lng = !empty($_POST['address_lng']) ? (float)$_POST['address_lng'] : null;
 
         $stmt = $conn->prepare("
             UPDATE properties SET
                 title = ?, operation_type = ?, property_type = ?,
-                address_city = ?, address_municipality = ?,
+                estado = ?, municipio = ?, colonia = ?, domicilio = ?,
                 address_lat = ?, address_lng = ?,
                 updated_at = NOW()
             WHERE id = ?
@@ -70,8 +72,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_POST['titulo'] ?? '',
             $_POST['tipo_operacion'] ?? '',
             $_POST['tipo_vivienda'] ?? '',
-            $ciudad,
+            $estado,
             $municipio,
+            $colonia,
+            $domicilio,
             $address_lat,
             $address_lng,
             $property_id
@@ -208,14 +212,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([$property_id]);
         $imagenes_actuales = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-        // Eliminar las quitadas
         foreach (array_diff($imagenes_actuales, $imagenes_nuevas) as $img) {
             $stmt = $conn->prepare("DELETE FROM property_media WHERE property_id = ? AND file_path = ?");
             $stmt->execute([$property_id, $img]);
             if (file_exists($img)) @unlink($img);
         }
 
-        // Actualizar / insertar
         $stmt_check = $conn->prepare("SELECT id FROM property_media WHERE property_id = ? AND file_path = ?");
         foreach ($imagenes_nuevas as $index => $img_path) {
             $is_primary = ($index === 0) ? 1 : 0;
@@ -230,7 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($DEBUG) $debug_info .= "<p>✅ imágenes actualizadas</p>";
 
-        // 8. historial (por si falla, no romper la transacción)
+        // 8. historial
         try {
             $stmt = $conn->prepare("INSERT INTO property_history (property_id, user_id, action, details, created_at) VALUES (?, ?, 'edicion', ?, NOW())");
             $stmt->execute([
@@ -246,7 +248,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($DEBUG) {
             $debug_info .= "<p style='color:green;font-size:20px'>✅ TODO GUARDADO - Commit exitoso</p>";
-            // No redirigir en modo debug
         } else {
             $_SESSION['mensaje_exito'] = '¡Propiedad actualizada correctamente!';
             header("Location: propiedad_detalle_inventario.php?id=" . $property_id);
@@ -519,13 +520,47 @@ try {
                         <label for="estacionamiento">Estacionamientos</label>
                         <input type="number" id="estacionamiento" name="estacionamiento" value="<?php echo htmlspecialchars($det['parking_spots'] ?? ''); ?>" min="0" max="10">
                     </div>
+                </div>
+
+                <!-- UBICACIÓN CON ESTADOS Y MUNICIPIOS DESDE BD -->
+                <div class="form-row">
                     <div class="form-group">
-                        <label for="ubicacion">Ubicación</label>
-                        <input type="text" id="ubicacion" name="ubicacion" value="<?php echo htmlspecialchars(trim(($prop['address_city'] ?? '') . ', ' . ($prop['address_municipality'] ?? ''), ', ')); ?>">
+                        <label for="estado">Estado <span class="required">*</span></label>
+                        <select id="estado" name="estado" required>
+                            <option value="">Seleccionar Estado</option>
+                            <?php foreach ($estados_disponibles as $estado_item): ?>
+                                <option value="<?php echo htmlspecialchars($estado_item['nombre']); ?>"
+                                    <?php echo (isset($prop['estado']) && $prop['estado'] == $estado_item['nombre']) ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($estado_item['nombre']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="municipio">Municipio <span class="required">*</span></label>
+                        <select id="municipio" name="municipio" required>
+                            <option value="">Seleccionar Municipio</option>
+                            <?php foreach ($municipios_disponibles as $municipio_item): ?>
+                                <option value="<?php echo htmlspecialchars($municipio_item['nombre_municipio']); ?>"
+                                    <?php echo (isset($prop['municipio']) && $prop['municipio'] == $municipio_item['nombre_municipio']) ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($municipio_item['nombre_municipio']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
                 </div>
 
-                <!-- NUEVO: Geolocalización GPS -->
+                <div class="form-group">
+                    <label for="colonia">Colonia <span class="required">*</span></label>
+                    <input type="text" id="colonia" name="colonia" value="<?php echo htmlspecialchars($prop['colonia'] ?? ''); ?>" placeholder="Ej: Colonia Centro" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="domicilio">Domicilio (Calle y número) <span class="required">*</span></label>
+                    <input type="text" id="domicilio" name="domicilio" value="<?php echo htmlspecialchars($prop['domicilio'] ?? ''); ?>" placeholder="Ej: Av. Juárez #123" required>
+                </div>
+
+                <!-- Geolocalización GPS -->
                 <div class="form-group">
                     <label>
                         <i class="fas fa-map-marker-alt" style="color:#c9a84c;"></i> 
@@ -999,7 +1034,6 @@ document.addEventListener('DOMContentLoaded', function() {
         geoMapContainer.style.display = 'block';
     }
 
-    // Mostrar mapa si ya hay coordenadas guardadas
     if (inputLat.value && inputLng.value) {
         mostrarMapa(inputLat.value, inputLng.value);
         btnGeoClear.style.display = 'inline-flex';
