@@ -511,7 +511,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1' && $_SERVER['REQUEST_METHOD'] 
         }
 
         if ($usar_token_real) {
-            $nuevo = $token_data['upload_count'] + count($guardados);
+            // Cuenta por envío, no por archivo (subir 30 fotos = 1 envío)
+            $nuevo = $token_data['upload_count'] + 1;
             $stmt = $conn->prepare("
                 UPDATE document_upload_tokens 
                 SET upload_count = ?, 
@@ -977,7 +978,7 @@ body {
     <div class="footer">
         <p>
             <i class="fas fa-lock"></i>
-            Enlace seguro de la plataforma Inmobiliaria MH.
+            Enlace seguro de la plataforma Vera Terra.
             <br>
             ¿Problemas? Contacta a tu agente inmobiliario.
         </p>

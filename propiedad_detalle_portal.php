@@ -50,7 +50,7 @@ function getCategoriaIcon($property_type) {
 
 function getUbicacionCompleta($propiedad) {
     $parts = [];
-    if (!empty($propiedad['address_municipality'])) $parts[] = $propiedad['address_municipality'];
+    if (!empty($propiedad['domicilio'])) $parts[] = $propiedad['domicilio'];
     if (!empty($propiedad['address_city'])) $parts[] = $propiedad['address_city'];
     return !empty($parts) ? implode(', ', $parts) : 'Ubicación no especificada';
 }
@@ -61,7 +61,7 @@ try {
     $stmt = $conn->prepare("
         SELECT 
             p.id, p.title, p.operation_type, p.property_type, p.status,
-            p.address_city, p.address_municipality, p.created_at,
+            p.address_city, p.domicilio, p.created_at,
             pd.square_meters, pd.bedrooms, pd.bathrooms, pd.parking_spots,
             pd.description,
             pf.asking_price as price
@@ -111,7 +111,7 @@ $relacionadas = [];
 try {
     $stmt = $conn->prepare("
         SELECT 
-            p.id, p.title, p.operation_type, p.address_city, p.address_municipality,
+            p.id, p.title, p.operation_type, p.address_city, p.domicilio,
             p.property_type,
             pd.square_meters, pd.bedrooms, pd.bathrooms, pd.parking_spots,
             pf.asking_price as price,

@@ -1341,7 +1341,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function processFiles(files) {
-        const maxFiles = 10;
+        const maxFiles = 50;
         const maxSize = 5 * 1024 * 1024;
         const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
         

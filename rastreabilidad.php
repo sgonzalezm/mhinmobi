@@ -31,8 +31,8 @@ try {
             pt.*,
             p.title as property_title,
             p.operation_type,
-            p.address_municipality as municipality,
-            p.address_state as state,
+            p.domicilio,
+            p.estado,
             f.asking_price as price,
             m.file_path as image_url,
             u.name as initiated_by_name,
@@ -363,7 +363,7 @@ function getStageIcon($stage) {
                             </div>
                             <div class="tracking-card-property">
                                 <i class="fas fa-map-marker-alt"></i> 
-                                <?php echo htmlspecialchars($proceso['municipality'] . ', ' . $proceso['state']); ?>
+                                <?php echo htmlspecialchars($proceso['domicilio'] . ', ' . $proceso['state']); ?>
                             </div>
                             <div class="progress-bar-container">
                                 <div class="progress-bar" style="width: <?php echo $progress; ?>%"></div>

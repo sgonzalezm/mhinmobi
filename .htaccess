@@ -1,0 +1,10 @@
+# Bloquear acceso público a archivos sensibles
+<Files "token.txt">
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+<Files "webhook_leads.log">
+    Order Allow,Deny
+    Deny from all
+</Files>

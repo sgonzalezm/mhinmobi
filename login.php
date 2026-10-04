@@ -70,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #3794e0;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -231,7 +231,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .btn-login {
             width: 100%;
             padding: 14px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #3c8fee;
             color: white;
             border: none;
             border-radius: 10px;
@@ -298,7 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font-size: 0.95rem;
         }
         .login-footer a {
-            color: #667eea;
+            color: #bcbec9;
             text-decoration: none;
             font-weight: 500;
         }
@@ -337,7 +337,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="login-header">
             <a href="index.php" class="login-logo">
                 <i class="fas fa-building"></i>
-                <span>INMOBILIARIA MH</span>
+                <span>Vera Terra</span>
             </a>
             <p class="login-subtitle">Acceso exclusivo para colaboradores</p>
             <span class="status-badge">

@@ -47,7 +47,7 @@ if ($filtro_categoria !== 'all') {
 
 // Búsqueda por ubicación o título
 if (!empty($filtro_busqueda)) {
-    $where_conditions[] = "(p.title LIKE ? OR p.address_city LIKE ? OR p.address_municipality LIKE ?)";
+    $where_conditions[] = "(p.title LIKE ? OR p.address_city LIKE ? OR p.domicilio LIKE ?)";
     $search_param = '%' . $filtro_busqueda . '%';
     $params[] = $search_param;
     $params[] = $search_param;
@@ -84,7 +84,7 @@ try {
             p.title,
             p.operation_type,
             p.address_city,
-            p.address_municipality,
+            p.domicilio,
             p.status,
             p.property_type,
             p.created_at,
@@ -174,8 +174,8 @@ function getImagenUrl($imagen) {
 
 function getUbicacionCompleta($propiedad) {
     $parts = [];
-    if (!empty($propiedad['address_municipality'])) {
-        $parts[] = $propiedad['address_municipality'];
+    if (!empty($propiedad['domicilio'])) {
+        $parts[] = $propiedad['domicilio'];
     }
     if (!empty($propiedad['address_city'])) {
         $parts[] = $propiedad['address_city'];
@@ -1095,7 +1095,7 @@ try {
                             <i class="fa-solid fa-chevron-left"></i>
                         </a>
                     <?php else: ?>
-                        <span class="disabled"><i class="fa-regular fa-chevron-left"></i></span>
+                        <span class="disabled"><i class="fa-solid fa-chevron-left"></i></span>
                     <?php endif; ?>
 
                     <?php
@@ -1128,10 +1128,10 @@ try {
 
                     <?php if ($pagina_actual < $total_paginas): ?>
                         <a href="?page=<?php echo $pagina_actual + 1; ?>&tipo=<?php echo urlencode($filtro_tipo); ?>&categoria=<?php echo urlencode($filtro_categoria); ?>&busqueda=<?php echo urlencode($filtro_busqueda); ?>">
-                            <i class="fa-regular fa-chevron-right"></i>
+                            <i class="fa-solid fa-chevron-right"></i>
                         </a>
                     <?php else: ?>
-                        <span class="disabled"><i class="fa-regular fa-chevron-right"></i></span>
+                        <span class="disabled"><i class="fa-solid fa-chevron-right"></i></span>
                     <?php endif; ?>
                 </div>
             <?php endif; ?>

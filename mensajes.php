@@ -246,6 +246,12 @@ if (esAdmin()) {
                         <span class="badge-contacts"><?php echo $contactos_nuevos; ?></span>
                     <?php endif; ?>
                 </a>
+                <a href="gestion_leads.php" class="btn-header secondary" style="position:relative; background: #6f42c1; color: #fff;">
+                    <i class="fas fa-address-book"></i> Leads
+                    <?php if ($leads_nuevos > 0): ?>
+                        <span class="badge-contacts"><?php echo $leads_nuevos; ?></span>
+                    <?php endif; ?>
+                </a>
             <?php endif; ?>
             <button class="btn-header primary" onclick="nuevoMensaje()">
                 <i class="fas fa-plus-circle"></i> Nuevo Mensaje

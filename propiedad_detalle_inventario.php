@@ -4,8 +4,18 @@
 // ============================================
 session_start();
 
+date_default_timezone_set('America/Mexico_City');
+
+
 require_once 'includes/conexion.php';
 require_once 'includes/auth.php';
+
+// Alinear MySQL con la zona horaria de PHP
+try {
+    $conn->exec("SET time_zone = '-06:00'");
+} catch (PDOException $e) {
+    error_log("No se pudo setear time_zone de MySQL: " . $e->getMessage());
+}
 
 // Verificar autenticación
 if (!estaLogueado()) {
@@ -202,7 +212,7 @@ function obtenerNombreDedo($dedo) {
 // ============================================
 
 // ===== FUNCIÓN PARA GENERAR TOKEN BIOMÉTRICO =====
-function generarTokenBiometrico($conn, $property_id, $email, $nombre, $dias_validez = 7) {
+function generarTokenBiometrico($conn, $property_id, $email, $nombre, $dias_validez = 30) {
     $token = bin2hex(random_bytes(32));
     $expires_at = date('Y-m-d H:i:s', strtotime("+{$dias_validez} days"));
     
@@ -492,11 +502,19 @@ function recargarPropiedad($conn, $property_id) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'generar_enlace') {
     $email = trim($_POST['email'] ?? '');
     $nombre = trim($_POST['nombre'] ?? '');
-    $dias_validez = (int)($_POST['dias_validez'] ?? 7);
-    $max_uploads = (int)($_POST['max_uploads'] ?? 10);
+    $dias_validez = (int)($_POST['dias_validez'] ?? 30);
+
+    // Sanity checks
+    if ($dias_validez < 1) $dias_validez = 30;
+    if ($dias_validez > 365) $dias_validez = 365;
+    if ($max_uploads < 1) $max_uploads = 100;
+
+    $max_uploads = (int)($_POST['max_uploads'] ?? 100);
     $token_type = $_POST['token_type'] ?? 'owner';
     $enviar_whatsapp = isset($_POST['enviar_whatsapp']) ? 1 : 0;
     $telefono = trim($_POST['telefono'] ?? '');
+
+    
     
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error_msg = "❌ Email inválido. Por favor, ingresa un email válido.";
@@ -603,7 +621,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'generar_enlace_biometrico') {
     $email = trim($_POST['email_biometrico'] ?? '');
     $nombre = trim($_POST['nombre_biometrico'] ?? '');
-    $dias_validez = (int)($_POST['dias_validez_biometrico'] ?? 7);
+    $dias_validez = (int)($_POST['dias_validez_biometrico'] ?? 30);
+
+    if ($dias_validez < 1) $dias_validez = 30;
+    if ($dias_validez > 365) $dias_validez = 365;
+
     $enviar_whatsapp = isset($_POST['enviar_whatsapp_biometrico']) ? 1 : 0;
     $telefono = trim($_POST['telefono_biometrico'] ?? '');
     
@@ -2789,21 +2811,23 @@ $base_url = getBaseUrl();
                     <div class="form-group">
                         <label>Días de Validez</label>
                         <select name="dias_validez">
-                            <option value="1">1 día</option>
-                            <option value="3">3 días</option>
-                            <option value="7" selected>7 días</option>
+                            <option value="7">7 días</option>
                             <option value="15">15 días</option>
-                            <option value="30">30 días</option>
+                            <option value="30" selected>30 días</option>
+                            <option value="60">60 días</option>
+                            <option value="90">90 días</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Máximo de Archivos</label>
+                        <label>Máximo de Envíos</label>
                         <select name="max_uploads">
-                            <option value="5">5 archivos</option>
-                            <option value="10" selected>10 archivos</option>
-                            <option value="20">20 archivos</option>
-                            <option value="50">50 archivos</option>
+                            <option value="20">20 envíos</option>
+                            <option value="50">50 envíos</option>
+                            <option value="100" selected>100 envíos</option>
+                            <option value="200">200 envíos</option>
+                            <option value="500">500 envíos</option>
                         </select>
+                        <div class="help-text">Cada envío puede incluir varios archivos.</div>
                     </div>
                 </div>
 
@@ -2870,11 +2894,11 @@ $base_url = getBaseUrl();
                 <div class="form-group">
                     <label>Días de Validez</label>
                     <select name="dias_validez_biometrico">
-                        <option value="1">1 día</option>
-                        <option value="3">3 días</option>
-                        <option value="7" selected>7 días</option>
+                        <option value="7">7 días</option>
                         <option value="15">15 días</option>
-                        <option value="30">30 días</option>
+                        <option value="30" selected>30 días</option>
+                        <option value="60">60 días</option>
+                        <option value="90">90 días</option>
                     </select>
                 </div>
 

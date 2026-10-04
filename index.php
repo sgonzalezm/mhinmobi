@@ -27,8 +27,8 @@ function getImagenUrl($imagen) {
 
 function getUbicacionCompleta($propiedad) {
     $parts = [];
-    if (!empty($propiedad['address_municipality'])) {
-        $parts[] = $propiedad['address_municipality'];
+    if (!empty($propiedad['domicilio'])) {
+        $parts[] = $propiedad['domicilio'];
     }
     if (!empty($propiedad['address_city'])) {
         $parts[] = $propiedad['address_city'];
@@ -51,7 +51,7 @@ if ($conn) {
                 p.title,
                 p.operation_type,
                 p.address_city,
-                p.address_municipality,
+                p.domicilio,
                 p.status,
                 p.property_type,
                 p.created_at,
@@ -948,7 +948,6 @@ if ($conn) {
                     <span class="interest-label">Contáctanos por WhatsApp</span>
                     <span class="interest-sub">Atención inmediata y personalizada</span>
                 </a>
-
             </div>
         </div>
     </section>
@@ -960,18 +959,19 @@ if ($conn) {
             <p class="section-subtitle">Selección exclusiva de inmuebles con alto potencial de inversión y plusvalía.</p>
             <div class="properties-grid">
 
-                <?php if (!empty($propiedades_destacadas)): ?>
-                    <?php foreach ($propiedades_destacadas as $prop): 
-                        $tiene_featuring = tieneFeaturing($prop);
-                        $ubicacion       = getUbicacionCompleta($prop);
-                        $precio          = formatearPrecio($prop['price']);
-                        $imagen          = getImagenUrl($prop['imagen_principal']);
-                    ?>
+            <?php if (!empty($propiedades_destacadas)): ?>
+                <?php foreach ($propiedades_destacadas as $prop): 
+                    $tiene_featuring = tieneFeaturing($prop);
+                    $ubicacion       = getUbicacionCompleta($prop);
+                    $precio          = formatearPrecio($prop['price']);
+                    $imagen          = getImagenUrl($prop['imagen_principal']);
+                ?>
+                    <a href="propiedad_detalle_portal.php?id=<?php echo urlencode($prop['id']); ?>" class="property-card-link">
                         <div class="property-card">
                             <div class="property-img-container">
                                 <img src="<?php echo $imagen; ?>" 
-                                     alt="<?php echo htmlspecialchars($prop['title']); ?>" 
-                                     loading="lazy" />
+                                    alt="<?php echo htmlspecialchars($prop['title']); ?>" 
+                                    loading="lazy" />
                                 <div class="property-badge">
                                     <i class="fas fa-gem"></i>
                                 </div>
@@ -996,14 +996,15 @@ if ($conn) {
                                 </div>
                             </div>
                         </div>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <p style="grid-column: 1/-1; text-align:center; color: var(--text-muted);">
-                        No hay propiedades destacadas por el momento.
-                    </p>
-                <?php endif; ?>
+                    </a>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <p style="grid-column: 1/-1; text-align:center; color: var(--text-muted);">
+                    No hay propiedades destacadas por el momento.
+                </p>
+            <?php endif; ?>
 
-            </div>
+        </div>
             <div style="margin-top: 35px;">
                 <a href="propiedades.php" class="btn-outline-gold">Ver todas las propiedades <i class="fas fa-arrow-right"></i></a>
             </div>

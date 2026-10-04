@@ -3,12 +3,6 @@
 // guardar_propiedad.php - VERSIÓN CON DEBUG
 // ========================================
 
-// ========================================
-// CONFIGURACIÓN DE DEBUG
-// ========================================
-define('DEBUG_MODE', false);
-define('LOG_FILE', __DIR__ . '/debug_propiedad.log');
-
 require_once 'includes/conexion.php';
 
 // ========================================

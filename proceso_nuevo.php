@@ -27,7 +27,7 @@ $error_msg = '';
 
 try {
     $stmt = $conn->prepare("
-        SELECT p.id, p.title, p.address_municipality, p.address_state
+        SELECT p.id, p.title, p.domicilio, p.estado
         FROM properties p
         WHERE p.status = 'activo'
         AND p.id NOT IN (
@@ -255,7 +255,7 @@ $etapas_proceso = [
                         <?php foreach ($propiedades as $propiedad): ?>
                             <option value="<?php echo $propiedad['id']; ?>">
                                 <?php echo htmlspecialchars($propiedad['title']); ?> - 
-                                <?php echo htmlspecialchars($propiedad['address_municipality'] . ', ' . $propiedad['address_state']); ?>
+                                <?php echo htmlspecialchars($propiedad['domicilio'] . ', ' . $propiedad['estado']); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
