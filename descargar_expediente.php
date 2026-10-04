@@ -40,7 +40,7 @@ try {
             p.id,
             p.title,
             p.address_city,
-            p.address_municipality,
+            p.domicilio,
             p.operation_type,
             p.status,
             p.created_at,

@@ -21,8 +21,8 @@ $filtro_busqueda = isset($_GET['busqueda']) ? trim($_GET['busqueda']) : '';
 $where_conditions = [];
 $params = [];
 
-// Solo propiedades activas
-$where_conditions[] = "p.status = 'activo'";
+// Mostrar propiedades activas Y vendidas
+$where_conditions[] = "p.status IN ('activo', 'vendido', 'apartado')";
 
 // Filtro por tipo de operación
 if ($filtro_tipo !== 'all' && in_array($filtro_tipo, ['venta', 'renta'])) {
@@ -47,9 +47,8 @@ if ($filtro_categoria !== 'all') {
 
 // Búsqueda por ubicación o título
 if (!empty($filtro_busqueda)) {
-    $where_conditions[] = "(p.title LIKE ? OR p.address_city LIKE ? OR p.domicilio LIKE ?)";
+    $where_conditions[] = "(p.title LIKE ? OR p.colonia LIKE ?)";
     $search_param = '%' . $filtro_busqueda . '%';
-    $params[] = $search_param;
     $params[] = $search_param;
     $params[] = $search_param;
 }
@@ -83,11 +82,13 @@ try {
             p.id,
             p.title,
             p.operation_type,
-            p.address_city,
+            p.colonia,
             p.domicilio,
             p.status,
             p.property_type,
             p.created_at,
+            p.sold_at,
+            p.signed_at,
             pd.square_meters,
             pd.bedrooms,
             pd.bathrooms,
@@ -106,7 +107,13 @@ try {
              WHERE property_id = p.id AND is_primary = 1 
              ORDER BY sort_order ASC LIMIT 1) as imagen_principal,
             -- Conteo de imágenes
-            (SELECT COUNT(*) FROM property_media WHERE property_id = p.id) as total_imagenes
+            (SELECT COUNT(*) FROM property_media WHERE property_id = p.id) as total_imagenes,
+            -- Días para vender (solo si está vendida y tiene sold_at)
+            CASE 
+                WHEN p.status = 'vendido' AND p.sold_at IS NOT NULL AND p.created_at IS NOT NULL 
+                THEN DATEDIFF(p.sold_at, p.created_at)
+                ELSE NULL
+            END as dias_para_vender
         FROM properties p
         LEFT JOIN property_details pd ON p.id = pd.property_id
         LEFT JOIN property_financials pf ON p.id = pf.property_id
@@ -114,9 +121,15 @@ try {
         $where_clause
         GROUP BY p.id
         ORDER BY 
-            -- Primero las que tienen featuring activo
-            CASE WHEN f.status = 'active' THEN 0 ELSE 1 END,
-            -- Luego por fecha de creación (más recientes primero)
+            -- Primero las activas con featuring
+            CASE 
+                WHEN p.status = 'activo' AND f.status = 'active' THEN 0
+                WHEN p.status = 'activo' THEN 1
+                WHEN p.status = 'apartado' THEN 2
+                WHEN p.status = 'vendido' THEN 3
+                ELSE 3
+            END,
+            -- Dentro de cada grupo, más recientes primero
             p.created_at DESC
         LIMIT ? OFFSET ?
     ";
@@ -165,7 +178,6 @@ function getImagenUrl($imagen) {
     if (empty($imagen)) {
         return 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=600&q=80';
     }
-    // Si ya tiene la ruta completa
     if (strpos($imagen, 'uploads/') === 0) {
         return htmlspecialchars($imagen);
     }
@@ -174,11 +186,18 @@ function getImagenUrl($imagen) {
 
 function getUbicacionCompleta($propiedad) {
     $parts = [];
-    if (!empty($propiedad['domicilio'])) {
-        $parts[] = $propiedad['domicilio'];
-    }
-    if (!empty($propiedad['address_city'])) {
-        $parts[] = $propiedad['address_city'];
+    // Para vendidas, solo mostrar colonia
+    if (($propiedad['status'] ?? '') === 'vendido') {
+        if (!empty($propiedad['colonia'])) {
+            $parts[] = $propiedad['colonia'];
+        }
+    } else {
+        if (!empty($propiedad['domicilio'])) {
+            $parts[] = $propiedad['domicilio'];
+        }
+        if (!empty($propiedad['colonia'])) {
+            $parts[] = $propiedad['colonia'];
+        }
     }
     return !empty($parts) ? implode(', ', $parts) : 'Ubicación no especificada';
 }
@@ -194,13 +213,22 @@ function getDiasRestantesFeaturing($propiedad) {
     return max(0, ceil(($end - $now) / 86400));
 }
 
+function esVendida($propiedad) {
+    return ($propiedad['status'] ?? '') === 'vendido';
+}
+
+function esApartada($propiedad) {
+    return ($propiedad['status'] ?? '') === 'apartado';
+}
+
+
 // ===== OBTENER CATEGORÍAS DISPONIBLES PARA FILTROS =====
 $categorias_disponibles = [];
 try {
     $stmt = $conn->prepare("
         SELECT DISTINCT property_type 
         FROM properties 
-        WHERE status = 'activo' AND property_type IS NOT NULL AND property_type != ''
+        WHERE status IN ('activo', 'vendido' , 'apartado') AND property_type IS NOT NULL AND property_type != ''
     ");
     $stmt->execute();
     $tipos = $stmt->fetchAll(PDO::FETCH_COLUMN);
@@ -215,7 +243,6 @@ try {
         }
     }
 } catch (PDOException $e) {
-    // Si hay error, usar categorías por defecto
     $categorias_disponibles = [
         'residencial' => ['Casa', 'Departamento', 'Terreno'],
         'corporativo' => ['Local comercial', 'Oficina', 'Nave industrial'],
@@ -229,9 +256,7 @@ try {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Propiedades - Vera Terra Inmobiliaria</title>
-    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
-    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
     <style>
         /* ===== RESET & ROOT ===== */
@@ -596,6 +621,125 @@ try {
 
         .property-card:hover .property-img-container img {
             transform: scale(1.05);
+        }
+
+        /* ===== VENDIDA: DIFUMINADO SUTIL ===== */
+        .property-card.vendida .property-img-container img {
+            filter: blur(2px) brightness(0.85);
+        }
+
+        .property-card.vendida:hover .property-img-container img {
+            filter: blur(0px) brightness(0.95);
+            transform: scale(1.05);
+        }
+
+        /* ===== BADGE VENDIDA ===== */
+        .property-status.vendida {
+            background: #8b1a1a;
+            color: #fff;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+        }
+
+        .vendida-ribbon {
+            position: absolute;
+            top: 14px;
+            left: -30px;
+            background: #8b1a1a;
+            color: #fff;
+            padding: 5px 40px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            transform: rotate(-45deg);
+            z-index: 15;
+            box-shadow: 0 2px 10px rgba(139, 26, 26, 0.4);
+            text-transform: uppercase;
+        }
+
+        /* ===== DÍAS PARA VENDER ===== */
+        .dias-vender-badge {
+            position: absolute;
+            bottom: 14px;
+            right: 14px;
+            background: rgba(11, 31, 58, 0.9);
+            color: #fff;
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            border: 1px solid var(--gold);
+            z-index: 5;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .dias-vender-badge i {
+            color: var(--gold);
+        }
+
+        .dias-vender-badge .numero {
+            color: var(--gold);
+            font-weight: 700;
+            font-size: 0.75rem;
+        }
+
+        /* ===== APARTADA: SIN BLUR, PERO CON TINTE ===== */
+        .property-card.apartada .property-img-container img {
+            filter: brightness(0.92) saturate(0.9);
+        }
+
+        .property-card.apartada:hover .property-img-container img {
+            filter: brightness(1) saturate(1);
+            transform: scale(1.05);
+        }
+
+        /* ===== RIBBON APARTADA ===== */
+        .apartada-ribbon {
+            position: absolute;
+            top: 14px;
+            left: -30px;
+            background: #d97706; /* ámbar */
+            color: #fff;
+            padding: 5px 40px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            transform: rotate(-45deg);
+            z-index: 15;
+            box-shadow: 0 2px 10px rgba(217, 119, 6, 0.4);
+            text-transform: uppercase;
+        }
+
+        /* ===== BADGE DE DÍAS APARTADA (opcional) ===== */
+        .dias-apartada-badge {
+            position: absolute;
+            bottom: 14px;
+            right: 14px;
+            background: rgba(11, 31, 58, 0.9);
+            color: #fff;
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            border: 1px solid #d97706;
+            z-index: 5;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .dias-apartada-badge i {
+            color: #d97706;
+        }
+
+        .dias-apartada-badge .numero {
+            color: #d97706;
+            font-weight: 700;
+            font-size: 0.75rem;
         }
 
         .property-badge {
@@ -1026,7 +1170,9 @@ try {
                     </div>
                 <?php else: ?>
                     <?php foreach ($propiedades as $prop): 
-                        $tiene_featuring = tieneFeaturing($prop);
+                        $es_vendida  = esVendida($prop);
+                        $es_apartada = esApartada($prop);
+                        $tiene_featuring = !$es_vendida && !$es_apartada && tieneFeaturing($prop);
                         $dias_featuring = getDiasRestantesFeaturing($prop);
                         $tipo_clase = getTipoClase($prop['operation_type'] ?? 'venta');
                         $tipo_label = getTipoLabel($prop['operation_type'] ?? 'venta');
@@ -1034,16 +1180,41 @@ try {
                         $ubicacion = getUbicacionCompleta($prop);
                         $precio = formatearPrecio($prop['price']);
                         $imagen = getImagenUrl($prop['imagen_principal']);
-                        $card_class = $tiene_featuring ? 'property-card featured' : 'property-card';
+                        
+                        // Clases de la tarjeta
+                        $card_class = 'property-card';
+                        if ($es_vendida) {
+                            $card_class .= ' vendida';
+                        } elseif ($es_apartada) {
+                            $card_class .= ' apartada';
+                        } elseif ($tiene_featuring) {
+                            $card_class .= ' featured';
+                        }
                     ?>
                         <div class="<?php echo $card_class; ?>">
                             <div class="property-img-container">
                                 <img src="<?php echo $imagen; ?>" alt="<?php echo htmlspecialchars($prop['title']); ?>" loading="lazy" />
-                                <div class="property-badge"><i class="<?php echo $icono_categoria; ?>"></i></div>
-                                <div class="property-status <?php echo $tipo_clase; ?>"><?php echo $tipo_label; ?></div>
-                                <?php if ($tiene_featuring && $dias_featuring > 0): ?>
-                                    <div class="featuring-countdown">
-                                        <i class="fa-solid fa-star"></i> <?php echo $dias_featuring; ?> días destacada
+                                
+                                <?php if ($es_vendida): ?>
+                                    <!-- Cinta de VENDIDA -->
+                                    <div class="vendida-ribbon">Vendida</div>
+                                <?php elseif ($es_apartada): ?>
+                                    <!-- Cinta de APARTADA -->
+                                    <div class="apartada-ribbon">Apartada</div>
+                                <?php else: ?>
+                                    <div class="property-badge"><i class="<?php echo $icono_categoria; ?>"></i></div>
+                                    <div class="property-status <?php echo $tipo_clase; ?>"><?php echo $tipo_label; ?></div>
+                                    <?php if ($tiene_featuring && $dias_featuring > 0): ?>
+                                        <div class="featuring-countdown">
+                                            <i class="fa-solid fa-star"></i> <?php echo $dias_featuring; ?> días destacada
+                                        </div>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+
+                                <?php if ($es_vendida && !empty($prop['dias_para_vender'])): ?>
+                                    <div class="dias-vender-badge">
+                                        <i class="fa-solid fa-clock"></i>
+                                        Vendida en <span class="numero"><?php echo $prop['dias_para_vender']; ?></span> días
                                     </div>
                                 <?php endif; ?>
                             </div>
@@ -1051,35 +1222,69 @@ try {
                                 <h3><?php echo htmlspecialchars($prop['title']); ?></h3>
                                 <div class="location"><i class="fa-solid fa-location-dot"></i> <?php echo htmlspecialchars($ubicacion); ?></div>
                                 <div class="price"><?php echo $precio; ?></div>
-                                <div class="features">
-                                    <?php if (!empty($prop['bedrooms']) && $prop['bedrooms'] > 0): ?>
-                                        <span><i class="fa-solid fa-bed"></i> <?php echo $prop['bedrooms']; ?></span>
-                                    <?php endif; ?>
-                                    <?php if (!empty($prop['bathrooms']) && $prop['bathrooms'] > 0): ?>
-                                        <span><i class="fa-solid fa-bath"></i> <?php echo $prop['bathrooms']; ?></span>
-                                    <?php endif; ?>
-                                    <?php if (!empty($prop['square_meters']) && $prop['square_meters'] > 0): ?>
-                                        <span><i class="fa-solid fa-vector-square"></i> <?php echo number_format($prop['square_meters'], 0, ',', '.'); ?> m²</span>
-                                    <?php endif; ?>
-                                    <?php if (!empty($prop['parking_spots']) && $prop['parking_spots'] > 0): ?>
-                                        <span><i class="fa-solid fa-car"></i> <?php echo $prop['parking_spots']; ?></span>
-                                    <?php endif; ?>
-                                    <?php if (empty($prop['bedrooms']) && empty($prop['bathrooms']) && empty($prop['square_meters'])): ?>
-                                        <span style="color: #999; font-style: italic;">Características no especificadas</span>
-                                    <?php endif; ?>
-                                </div>
-                                <?php if ($tiene_featuring): ?>
-                                    <div style="margin-top:6px; font-size:0.7rem; color:var(--gold);">
-                                        <i class="fa-regular fa-star" style="color:var(--gold);"></i> Propiedad destacada
+                                
+                                <?php if ($es_vendida): ?>
+                                    <!-- Para vendidas -->
+                                    <div class="features" style="border-top:1px solid #eee; padding-top:12px;">
+                                        <span style="color:#8b1a1a; font-style:italic; font-size:0.75rem;">
+                                            <i class="fa-solid fa-check-circle" style="color:#8b1a1a;"></i> 
+                                            Esta propiedad ya fue vendida
+                                        </span>
                                     </div>
+                                <?php elseif ($es_apartada): ?>
+                                    <!-- Para apartadas -->
+                                    <div class="features" style="border-top:1px solid #eee; padding-top:12px;">
+                                        <span style="color:#d97706; font-style:italic; font-size:0.75rem;">
+                                            <i class="fa-solid fa-handshake" style="color:#d97706;"></i> 
+                                            Esta propiedad está apartada
+                                        </span>
+                                    </div>
+                                <?php else: ?>
+                                    <!-- Detalles para activas -->
+                                    <div class="features">
+                                        <?php if (!empty($prop['bedrooms']) && $prop['bedrooms'] > 0): ?>
+                                            <span><i class="fa-solid fa-bed"></i> <?php echo $prop['bedrooms']; ?></span>
+                                        <?php endif; ?>
+                                        <?php if (!empty($prop['bathrooms']) && $prop['bathrooms'] > 0): ?>
+                                            <span><i class="fa-solid fa-bath"></i> <?php echo $prop['bathrooms']; ?></span>
+                                        <?php endif; ?>
+                                        <?php if (!empty($prop['square_meters']) && $prop['square_meters'] > 0): ?>
+                                            <span><i class="fa-solid fa-vector-square"></i> <?php echo number_format($prop['square_meters'], 0, ',', '.'); ?> m²</span>
+                                        <?php endif; ?>
+                                        <?php if (!empty($prop['parking_spots']) && $prop['parking_spots'] > 0): ?>
+                                            <span><i class="fa-solid fa-car"></i> <?php echo $prop['parking_spots']; ?></span>
+                                        <?php endif; ?>
+                                        <?php if (empty($prop['bedrooms']) && empty($prop['bathrooms']) && empty($prop['square_meters'])): ?>
+                                            <span style="color: #999; font-style: italic;">Características no especificadas</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php if ($tiene_featuring): ?>
+                                        <div style="margin-top:6px; font-size:0.7rem; color:var(--gold);">
+                                            <i class="fa-regular fa-star" style="color:var(--gold);"></i> Propiedad destacada
+                                        </div>
+                                    <?php endif; ?>
                                 <?php endif; ?>
+
                                 <div class="property-actions">
-                                    <a href="https://wa.me/5213311586937?text=Hola%2C%20me%20interesa%20la%20propiedad%3A%20<?php echo urlencode($prop['title']); ?>%20en%20<?php echo urlencode($ubicacion); ?>%20con%20precio%20<?php echo urlencode($precio); ?>" 
-                                       target="_blank" 
-                                       class="btn-whatsapp">
-                                        <i class="fa-brands fa-whatsapp"></i> Consultar
-                                    </a>
-                                    <a href="propiedad_detalle_portal.php?id=<?php echo $prop['id']; ?>" class="btn-outline-gold">Ver más</a>
+                                    <?php if ($es_vendida): ?>
+                                        <a href="propiedad_detalle_portal.php?id=<?php echo $prop['id']; ?>" class="btn-outline-gold" style="flex:1;">
+                                            Ver ficha histórica
+                                        </a>
+                                    <?php elseif ($es_apartada): ?>
+                                        <a href="https://wa.me/5213311586937?text=Hola%2C%20quiero%20informaci%C3%B3n%20sobre%20la%20propiedad%20apartada%3A%20<?php echo urlencode($prop['title']); ?>" 
+                                        target="_blank" 
+                                        class="btn-whatsapp">
+                                            <i class="fa-brands fa-whatsapp"></i> Preguntar
+                                        </a>
+                                        <a href="propiedad_detalle_portal.php?id=<?php echo $prop['id']; ?>" class="btn-outline-gold">Ver más</a>
+                                    <?php else: ?>
+                                        <a href="https://wa.me/5213311586937?text=Hola%2C%20me%20interesa%20la%20propiedad%3A%20<?php echo urlencode($prop['title']); ?>%20en%20<?php echo urlencode($ubicacion); ?>%20con%20precio%20<?php echo urlencode($precio); ?>" 
+                                        target="_blank" 
+                                        class="btn-whatsapp">
+                                            <i class="fa-brands fa-whatsapp"></i> Consultar
+                                        </a>
+                                        <a href="propiedad_detalle_portal.php?id=<?php echo $prop['id']; ?>" class="btn-outline-gold">Ver más</a>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </div>

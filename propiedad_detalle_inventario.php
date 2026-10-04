@@ -30,6 +30,9 @@ if (!$usuario) {
     exit;
 }
 
+// 🔒 CAMBIO: Definir si el usuario actual es admin (una sola vez)
+$es_admin = esAdmin();
+
 // Obtener ID de la propiedad
 $property_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if ($property_id == 0) {
@@ -282,177 +285,182 @@ function getPropertyBiometricData($conn, $property_id) {
 // NUEVAS FUNCIONES PARA GESTIÓN DE PROPIEDAD
 // ============================================
 
-// Procesar acciones de gestión (activar/desactivar, apartar, borrar, featuring)
+// 🔒 CAMBIO: Bloque completo de gestión envuelto en validación de admin
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_gestion'])) {
-    $accion = $_POST['action_gestion'];
-    $propiedad_id = intval($_POST['property_id'] ?? 0);
     
-    if ($propiedad_id != $property_id) {
-        $error_msg = "❌ Error: ID de propiedad no coincide.";
+    if (!$es_admin) {
+        $error_msg = "⛔ No tienes permisos para gestionar propiedades. Solo administradores.";
     } else {
-        try {
-            switch ($accion) {
-                case 'cambiar_estado':
-                    $nuevo_estado = $_POST['nuevo_estado'] ?? '';
-                    $estados_validos = ['activo', 'pendiente', 'vendido', 'suspendido'];
-                    if (in_array($nuevo_estado, $estados_validos)) {
-                        $stmt = $conn->prepare("UPDATE properties SET status = ?, updated_at = NOW() WHERE id = ?");
-                        $stmt->execute([$nuevo_estado, $propiedad_id]);
-                        $mensaje_exito = "✅ Estado actualizado a: " . ucfirst($nuevo_estado);
-                    } else {
-                        $error_msg = "❌ Estado no válido.";
-                    }
-                    break;
-                    
-                case 'apartar':
-                    $motivo = trim($_POST['motivo_apartado'] ?? '');
-                    $fecha_apartado = date('Y-m-d H:i:s');
-                    
-                    // Verificar si ya está apartada
-                    $stmt = $conn->prepare("SELECT id FROM property_reservations WHERE property_id = ? AND status = 'active'");
-                    $stmt->execute([$propiedad_id]);
-                    if ($stmt->rowCount() > 0) {
-                        $error_msg = "⚠️ Esta propiedad ya está apartada por otro vendedor.";
-                    } else {
-                        // Insertar reserva
-                        $stmt = $conn->prepare("
-                            INSERT INTO property_reservations 
-                            (property_id, reserved_by, reserved_at, motivo, status) 
-                            VALUES (?, ?, ?, ?, 'active')
-                        ");
-                        $stmt->execute([
-                            $propiedad_id,
-                            $_SESSION['usuario_id'],
-                            $fecha_apartado,
-                            $motivo
-                        ]);
+        $accion = $_POST['action_gestion'];
+        $propiedad_id = intval($_POST['property_id'] ?? 0);
+        
+        if ($propiedad_id != $property_id) {
+            $error_msg = "❌ Error: ID de propiedad no coincide.";
+        } else {
+            try {
+                switch ($accion) {
+                    case 'cambiar_estado':
+                        $nuevo_estado = $_POST['nuevo_estado'] ?? '';
+                        $estados_validos = ['activo', 'pendiente', 'vendido', 'suspendido', 'apartado'];
+                        if (in_array($nuevo_estado, $estados_validos)) {
+                            $stmt = $conn->prepare("UPDATE properties SET status = ?, updated_at = NOW() WHERE id = ?");
+                            $stmt->execute([$nuevo_estado, $propiedad_id]);
+                            $mensaje_exito = "✅ Estado actualizado a: " . ucfirst($nuevo_estado);
+                        } else {
+                            $error_msg = "❌ Estado no válido.";
+                        }
+                        break;
                         
-                        // Cambiar estado a 'apartada' (opcional)
-                        $stmt = $conn->prepare("UPDATE properties SET status = 'suspendido', updated_at = NOW() WHERE id = ?");
+                    case 'apartar':
+                        $motivo = trim($_POST['motivo_apartado'] ?? '');
+                        $fecha_apartado = date('Y-m-d H:i:s');
+                        
+                        // Verificar si ya está apartada
+                        $stmt = $conn->prepare("SELECT id FROM property_reservations WHERE property_id = ? AND status = 'active'");
                         $stmt->execute([$propiedad_id]);
-                        
-                        $mensaje_exito = "✅ Propiedad apartada exitosamente. Otros vendedores no podrán gestionarla.";
-                    }
-                    break;
-                    
-                case 'liberar_apartado':
-                    $stmt = $conn->prepare("
-                        UPDATE property_reservations 
-                        SET status = 'released', released_at = NOW(), released_by = ? 
-                        WHERE property_id = ? AND status = 'active'
-                    ");
-                    $stmt->execute([$_SESSION['usuario_id'], $propiedad_id]);
-                    
-                    // Restaurar estado anterior (si estaba activa)
-                    $stmt = $conn->prepare("UPDATE properties SET status = 'activo', updated_at = NOW() WHERE id = ?");
-                    $stmt->execute([$propiedad_id]);
-                    
-                    $mensaje_exito = "✅ Propiedad liberada. Ya está disponible para otros vendedores.";
-                    break;
-                    
-                case 'borrar':
-                    $confirmacion = $_POST['confirmacion_borrar'] ?? '';
-                    if ($confirmacion === 'ELIMINAR') {
-                        // Verificar si tiene dependencias
-                        $stmt = $conn->prepare("
-                            SELECT COUNT(*) as total FROM property_media WHERE property_id = ?
-                        ");
-                        $stmt->execute([$propiedad_id]);
-                        $media_count = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
-                        
-                        // Eliminar archivos físicos (opcional)
-                        if ($media_count > 0) {
-                            $stmt = $conn->prepare("SELECT file_path FROM property_media WHERE property_id = ?");
+                        if ($stmt->rowCount() > 0) {
+                            $error_msg = "⚠️ Esta propiedad ya está apartada por otro vendedor.";
+                        } else {
+                            // Insertar reserva
+                            $stmt = $conn->prepare("
+                                INSERT INTO property_reservations 
+                                (property_id, reserved_by, reserved_at, motivo, status) 
+                                VALUES (?, ?, ?, ?, 'active')
+                            ");
+                            $stmt->execute([
+                                $propiedad_id,
+                                $_SESSION['usuario_id'],
+                                $fecha_apartado,
+                                $motivo
+                            ]);
+                            
+                            // Cambiar estado a 'apartada' (opcional)
+                            $stmt = $conn->prepare("UPDATE properties SET status = 'suspendido', updated_at = NOW() WHERE id = ?");
                             $stmt->execute([$propiedad_id]);
-                            $archivos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                            foreach ($archivos as $archivo) {
-                                $ruta = $archivo['file_path'];
-                                if (file_exists($ruta)) {
-                                    unlink($ruta);
+                            
+                            $mensaje_exito = "✅ Propiedad apartada exitosamente. Otros vendedores no podrán gestionarla.";
+                        }
+                        break;
+                        
+                    case 'liberar_apartado':
+                        $stmt = $conn->prepare("
+                            UPDATE property_reservations 
+                            SET status = 'released', released_at = NOW(), released_by = ? 
+                            WHERE property_id = ? AND status = 'active'
+                        ");
+                        $stmt->execute([$_SESSION['usuario_id'], $propiedad_id]);
+                        
+                        // Restaurar estado anterior (si estaba activa)
+                        $stmt = $conn->prepare("UPDATE properties SET status = 'activo', updated_at = NOW() WHERE id = ?");
+                        $stmt->execute([$propiedad_id]);
+                        
+                        $mensaje_exito = "✅ Propiedad liberada. Ya está disponible para otros vendedores.";
+                        break;
+                        
+                    case 'borrar':
+                        $confirmacion = $_POST['confirmacion_borrar'] ?? '';
+                        if ($confirmacion === 'ELIMINAR') {
+                            // Verificar si tiene dependencias
+                            $stmt = $conn->prepare("
+                                SELECT COUNT(*) as total FROM property_media WHERE property_id = ?
+                            ");
+                            $stmt->execute([$propiedad_id]);
+                            $media_count = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
+                            
+                            // Eliminar archivos físicos (opcional)
+                            if ($media_count > 0) {
+                                $stmt = $conn->prepare("SELECT file_path FROM property_media WHERE property_id = ?");
+                                $stmt->execute([$propiedad_id]);
+                                $archivos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                                foreach ($archivos as $archivo) {
+                                    $ruta = $archivo['file_path'];
+                                    if (file_exists($ruta)) {
+                                        unlink($ruta);
+                                    }
                                 }
                             }
+                            
+                            // Eliminar registros
+                            $conn->beginTransaction();
+                            try {
+                                $stmt = $conn->prepare("DELETE FROM property_media WHERE property_id = ?");
+                                $stmt->execute([$propiedad_id]);
+                                
+                                $stmt = $conn->prepare("DELETE FROM property_details WHERE property_id = ?");
+                                $stmt->execute([$propiedad_id]);
+                                
+                                $stmt = $conn->prepare("DELETE FROM property_financials WHERE property_id = ?");
+                                $stmt->execute([$propiedad_id]);
+                                
+                                $stmt = $conn->prepare("DELETE FROM properties WHERE id = ?");
+                                $stmt->execute([$propiedad_id]);
+                                
+                                $conn->commit();
+                                
+                                // Redirigir al inventario
+                                $_SESSION['mensaje_exito'] = "✅ Propiedad eliminada correctamente.";
+                                header('Location: inventario_maestro.php');
+                                exit;
+                                
+                            } catch (Exception $e) {
+                                $conn->rollBack();
+                                $error_msg = "❌ Error al eliminar: " . $e->getMessage();
+                            }
+                        } else {
+                            $error_msg = "❌ Debes escribir 'ELIMINAR' para confirmar el borrado.";
                         }
+                        break;
                         
-                        // Eliminar registros
-                        $conn->beginTransaction();
-                        try {
-                            $stmt = $conn->prepare("DELETE FROM property_media WHERE property_id = ?");
-                            $stmt->execute([$propiedad_id]);
+                    case 'featuring':
+                        $dias_featuring = intval($_POST['dias_featuring'] ?? 7);
+                        $precio_featuring = floatval($_POST['precio_featuring'] ?? 0);
+                        $fecha_inicio = date('Y-m-d H:i:s');
+                        $fecha_fin = date('Y-m-d H:i:s', strtotime("+{$dias_featuring} days"));
+                        
+                        // Verificar si ya tiene featuring activo
+                        $stmt = $conn->prepare("SELECT id FROM property_featuring WHERE property_id = ? AND status = 'active'");
+                        $stmt->execute([$propiedad_id]);
+                        if ($stmt->rowCount() > 0) {
+                            $error_msg = "⚠️ Esta propiedad ya tiene un featuring activo.";
+                        } else {
+                            $stmt = $conn->prepare("
+                                INSERT INTO property_featuring 
+                                (property_id, start_date, end_date, dias, precio, status, created_by) 
+                                VALUES (?, ?, ?, ?, ?, 'active', ?)
+                            ");
+                            $stmt->execute([
+                                $propiedad_id,
+                                $fecha_inicio,
+                                $fecha_fin,
+                                $dias_featuring,
+                                $precio_featuring,
+                                $_SESSION['usuario_id']
+                            ]);
                             
-                            $stmt = $conn->prepare("DELETE FROM property_details WHERE property_id = ?");
-                            $stmt->execute([$propiedad_id]);
-                            
-                            $stmt = $conn->prepare("DELETE FROM property_financials WHERE property_id = ?");
-                            $stmt->execute([$propiedad_id]);
-                            
-                            $stmt = $conn->prepare("DELETE FROM properties WHERE id = ?");
-                            $stmt->execute([$propiedad_id]);
-                            
-                            $conn->commit();
-                            
-                            // Redirigir al inventario
-                            $_SESSION['mensaje_exito'] = "✅ Propiedad eliminada correctamente.";
-                            header('Location: inventario_maestro.php');
-                            exit;
-                            
-                        } catch (Exception $e) {
-                            $conn->rollBack();
-                            $error_msg = "❌ Error al eliminar: " . $e->getMessage();
+                            $mensaje_exito = "⭐ Featuring activado por {$dias_featuring} días. La propiedad será destacada en el portal de clientes.";
                         }
-                    } else {
-                        $error_msg = "❌ Debes escribir 'ELIMINAR' para confirmar el borrado.";
-                    }
-                    break;
-                    
-                case 'featuring':
-                    $dias_featuring = intval($_POST['dias_featuring'] ?? 7);
-                    $precio_featuring = floatval($_POST['precio_featuring'] ?? 0);
-                    $fecha_inicio = date('Y-m-d H:i:s');
-                    $fecha_fin = date('Y-m-d H:i:s', strtotime("+{$dias_featuring} days"));
-                    
-                    // Verificar si ya tiene featuring activo
-                    $stmt = $conn->prepare("SELECT id FROM property_featuring WHERE property_id = ? AND status = 'active'");
-                    $stmt->execute([$propiedad_id]);
-                    if ($stmt->rowCount() > 0) {
-                        $error_msg = "⚠️ Esta propiedad ya tiene un featuring activo.";
-                    } else {
+                        break;
+                        
+                    case 'desactivar_featuring':
                         $stmt = $conn->prepare("
-                            INSERT INTO property_featuring 
-                            (property_id, start_date, end_date, dias, precio, status, created_by) 
-                            VALUES (?, ?, ?, ?, ?, 'active', ?)
+                            UPDATE property_featuring 
+                            SET status = 'inactive', deactivated_at = NOW() 
+                            WHERE property_id = ? AND status = 'active'
                         ");
-                        $stmt->execute([
-                            $propiedad_id,
-                            $fecha_inicio,
-                            $fecha_fin,
-                            $dias_featuring,
-                            $precio_featuring,
-                            $_SESSION['usuario_id']
-                        ]);
+                        $stmt->execute([$propiedad_id]);
+                        $mensaje_exito = "⭐ Featuring desactivado.";
+                        break;
                         
-                        $mensaje_exito = "⭐ Featuring activado por {$dias_featuring} días. La propiedad será destacada en el portal de clientes.";
-                    }
-                    break;
-                    
-                case 'desactivar_featuring':
-                    $stmt = $conn->prepare("
-                        UPDATE property_featuring 
-                        SET status = 'inactive', deactivated_at = NOW() 
-                        WHERE property_id = ? AND status = 'active'
-                    ");
-                    $stmt->execute([$propiedad_id]);
-                    $mensaje_exito = "⭐ Featuring desactivado.";
-                    break;
-                    
-                default:
-                    $error_msg = "❌ Acción no reconocida.";
+                    default:
+                        $error_msg = "❌ Acción no reconocida.";
+                }
+                
+                // Recargar la propiedad para actualizar datos
+                recargarPropiedad($conn, $property_id);
+                
+            } catch (PDOException $e) {
+                $error_msg = "❌ Error al procesar la acción: " . $e->getMessage();
             }
-            
-            // Recargar la propiedad para actualizar datos
-            recargarPropiedad($conn, $property_id);
-            
-        } catch (PDOException $e) {
-            $error_msg = "❌ Error al procesar la acción: " . $e->getMessage();
         }
     }
 }
@@ -498,220 +506,229 @@ function recargarPropiedad($conn, $property_id) {
     }
 }
 
-// Procesar generación de enlace desde el modal de documentos
+// 🔒 CAMBIO: Bloque de generación de enlace de documentos envuelto en validación de admin
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'generar_enlace') {
-    $email = trim($_POST['email'] ?? '');
-    $nombre = trim($_POST['nombre'] ?? '');
-    $dias_validez = (int)($_POST['dias_validez'] ?? 30);
-
-    // Sanity checks
-    if ($dias_validez < 1) $dias_validez = 30;
-    if ($dias_validez > 365) $dias_validez = 365;
-    if ($max_uploads < 1) $max_uploads = 100;
-
-    $max_uploads = (int)($_POST['max_uploads'] ?? 100);
-    $token_type = $_POST['token_type'] ?? 'owner';
-    $enviar_whatsapp = isset($_POST['enviar_whatsapp']) ? 1 : 0;
-    $telefono = trim($_POST['telefono'] ?? '');
-
     
-    
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error_msg = "❌ Email inválido. Por favor, ingresa un email válido.";
+    if (!$es_admin) {
+        $error_msg = "⛔ No tienes permisos para generar enlaces de documentos.";
     } else {
-        try {
-            // Generar token único
-            $token = bin2hex(random_bytes(32));
-            $expires_at = date('Y-m-d H:i:s', strtotime("+{$dias_validez} days"));
-            
-            $stmt = $conn->prepare("
-                INSERT INTO document_upload_tokens 
-                (property_id, client_email, client_name, token, token_type, expires_at, max_uploads, created_by) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->execute([
-                $property_id, 
-                $email, 
-                $nombre, 
-                $token, 
-                $token_type, 
-                $expires_at, 
-                $max_uploads, 
-                $_SESSION['usuario_id']
-            ]);
-            
-            $token_id = $conn->lastInsertId();
-            
-            // ===== GENERAR URL CORRECTA =====
-            $base_url = getBaseUrl();
-            $enlace = $base_url . "/upload_documentos.php?token=" . $token;
-            $enlace_generado = $enlace;
-            
-            // Enviar email al cliente
-            $mensaje_email = "
-            <html>
-            <head>
-                <style>
-                    body { font-family: Arial, sans-serif; }
-                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                    .header { background: #2c3e50; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-                    .content { padding: 20px; background: #f8f9fa; border-radius: 0 0 8px 8px; }
-                    .btn { background: #3498db; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; }
-                    .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-                </style>
-            </head>
-            <body>
-                <div class='container'>
-                    <div class='header'>
-                        <h2>📄 Subida de Documentos</h2>
+        $email = trim($_POST['email'] ?? '');
+        $nombre = trim($_POST['nombre'] ?? '');
+        $dias_validez = (int)($_POST['dias_validez'] ?? 30);
+
+        // Sanity checks
+        if ($dias_validez < 1) $dias_validez = 30;
+        if ($dias_validez > 365) $dias_validez = 365;
+
+        $max_uploads = (int)($_POST['max_uploads'] ?? 100);
+        if ($max_uploads < 1) $max_uploads = 100;
+        
+        $token_type = $_POST['token_type'] ?? 'owner';
+        $enviar_whatsapp = isset($_POST['enviar_whatsapp']) ? 1 : 0;
+        $telefono = trim($_POST['telefono'] ?? '');
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $error_msg = "❌ Email inválido. Por favor, ingresa un email válido.";
+        } else {
+            try {
+                // Generar token único
+                $token = bin2hex(random_bytes(32));
+                $expires_at = date('Y-m-d H:i:s', strtotime("+{$dias_validez} days"));
+                
+                $stmt = $conn->prepare("
+                    INSERT INTO document_upload_tokens 
+                    (property_id, client_email, client_name, token, token_type, expires_at, max_uploads, created_by) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([
+                    $property_id, 
+                    $email, 
+                    $nombre, 
+                    $token, 
+                    $token_type, 
+                    $expires_at, 
+                    $max_uploads, 
+                    $_SESSION['usuario_id']
+                ]);
+                
+                $token_id = $conn->lastInsertId();
+                
+                // ===== GENERAR URL CORRECTA =====
+                $base_url = getBaseUrl();
+                $enlace = $base_url . "/upload_documentos.php?token=" . $token;
+                $enlace_generado = $enlace;
+                
+                // Enviar email al cliente
+                $mensaje_email = "
+                <html>
+                <head>
+                    <style>
+                        body { font-family: Arial, sans-serif; }
+                        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                        .header { background: #2c3e50; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+                        .content { padding: 20px; background: #f8f9fa; border-radius: 0 0 8px 8px; }
+                        .btn { background: #3498db; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; }
+                        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+                    </style>
+                </head>
+                <body>
+                    <div class='container'>
+                        <div class='header'>
+                            <h2>📄 Subida de Documentos</h2>
+                        </div>
+                        <div class='content'>
+                            <p>Hola " . htmlspecialchars($nombre ?: 'Cliente') . ",</p>
+                            <p>Has sido invitado a subir los documentos para la propiedad: <strong>" . htmlspecialchars($propiedad['title'] ?? 'Propiedad') . "</strong></p>
+                            <p>Para comenzar, haz clic en el siguiente enlace:</p>
+                            <p style='text-align: center; margin: 30px 0;'>
+                                <a href='" . $enlace . "' class='btn'>📤 Subir Documentos</a>
+                            </p>
+                            <p><strong>⏰ Este enlace expirará en " . $dias_validez . " días.</strong></p>
+                            <p style='font-size: 12px; color: #666;'>
+                                <small>Si el botón no funciona, copia y pega este enlace en tu navegador:</small><br>
+                                <span style='word-break: break-all;'>" . $enlace . "</span>
+                            </p>
+                        </div>
+                        <div class='footer'>
+                            Este es un mensaje automático de Inmobiliaria MH.
+                        </div>
                     </div>
-                    <div class='content'>
-                        <p>Hola " . htmlspecialchars($nombre ?: 'Cliente') . ",</p>
-                        <p>Has sido invitado a subir los documentos para la propiedad: <strong>" . htmlspecialchars($propiedad['title'] ?? 'Propiedad') . "</strong></p>
-                        <p>Para comenzar, haz clic en el siguiente enlace:</p>
-                        <p style='text-align: center; margin: 30px 0;'>
-                            <a href='" . $enlace . "' class='btn'>📤 Subir Documentos</a>
-                        </p>
-                        <p><strong>⏰ Este enlace expirará en " . $dias_validez . " días.</strong></p>
-                        <p style='font-size: 12px; color: #666;'>
-                            <small>Si el botón no funciona, copia y pega este enlace en tu navegador:</small><br>
-                            <span style='word-break: break-all;'>" . $enlace . "</span>
-                        </p>
-                    </div>
-                    <div class='footer'>
-                        Este es un mensaje automático de Inmobiliaria MH.
-                    </div>
-                </div>
-            </body>
-            </html>
-            ";
-            
-            $headers = "MIME-Version: 1.0\r\n";
-            $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
-            $headers .= "From: Inmobiliaria MH <no-reply@inmobiliariamh.com>\r\n";
-            
-            mail($email, "Sube tus documentos - Inmobiliaria MH", $mensaje_email, $headers);
-            
-            // Si se solicitó enviar por WhatsApp
-            if ($enviar_whatsapp && !empty($telefono)) {
-                $telefono_limpio = preg_replace('/[^0-9]/', '', $telefono);
-                if (strlen($telefono_limpio) >= 10) {
-                    // Guardar en sesión para mostrar el enlace de WhatsApp
-                    $_SESSION['whatsapp_link'] = "https://wa.me/" . $telefono_limpio . "?text=" . urlencode(
-                        "Hola, te comparto el enlace para subir los documentos de la propiedad:\n\n" . 
-                        $enlace . "\n\n" .
-                        "Este enlace expira en " . $dias_validez . " días.\n" .
-                        "Saludos, equipo Inmobiliaria MH."
-                    );
+                </body>
+                </html>
+                ";
+                
+                $headers = "MIME-Version: 1.0\r\n";
+                $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+                $headers .= "From: Inmobiliaria MH <no-reply@inmobiliariamh.com>\r\n";
+                
+                mail($email, "Sube tus documentos - Inmobiliaria MH", $mensaje_email, $headers);
+                
+                // Si se solicitó enviar por WhatsApp
+                if ($enviar_whatsapp && !empty($telefono)) {
+                    $telefono_limpio = preg_replace('/[^0-9]/', '', $telefono);
+                    if (strlen($telefono_limpio) >= 10) {
+                        // Guardar en sesión para mostrar el enlace de WhatsApp
+                        $_SESSION['whatsapp_link'] = "https://wa.me/" . $telefono_limpio . "?text=" . urlencode(
+                            "Hola, te comparto el enlace para subir los documentos de la propiedad:\n\n" . 
+                            $enlace . "\n\n" .
+                            "Este enlace expira en " . $dias_validez . " días.\n" .
+                            "Saludos, equipo Inmobiliaria MH."
+                        );
+                    }
                 }
+                
+                $mensaje_exito = "✅ Enlace generado exitosamente y enviado al correo del cliente.";
+                
+                // Recargar la propiedad para actualizar datos
+                recargarPropiedad($conn, $property_id);
+                
+            } catch (PDOException $e) {
+                $error_msg = "❌ Error al generar el enlace: " . $e->getMessage();
             }
-            
-            $mensaje_exito = "✅ Enlace generado exitosamente y enviado al correo del cliente.";
-            
-            // Recargar la propiedad para actualizar datos
-            recargarPropiedad($conn, $property_id);
-            
-        } catch (PDOException $e) {
-            $error_msg = "❌ Error al generar el enlace: " . $e->getMessage();
         }
     }
 }
 
-// ===== PROCESAR GENERACIÓN DE ENLACE BIOMÉTRICO =====
+// 🔒 CAMBIO: Bloque de generación de enlace biométrico envuelto en validación de admin
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'generar_enlace_biometrico') {
-    $email = trim($_POST['email_biometrico'] ?? '');
-    $nombre = trim($_POST['nombre_biometrico'] ?? '');
-    $dias_validez = (int)($_POST['dias_validez_biometrico'] ?? 30);
-
-    if ($dias_validez < 1) $dias_validez = 30;
-    if ($dias_validez > 365) $dias_validez = 365;
-
-    $enviar_whatsapp = isset($_POST['enviar_whatsapp_biometrico']) ? 1 : 0;
-    $telefono = trim($_POST['telefono_biometrico'] ?? '');
     
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error_msg = "❌ Email inválido. Por favor, ingresa un email válido.";
+    if (!$es_admin) {
+        $error_msg = "⛔ No tienes permisos para generar enlaces biométricos.";
     } else {
-        try {
-            // Generar token biométrico
-            $token = generarTokenBiometrico($conn, $property_id, $email, $nombre, $dias_validez);
-            
-            // Generar URL
-            $base_url = getBaseUrl();
-            $enlace = $base_url . "/upload_biometricos.php?token=" . $token;
-            $enlace_generado = $enlace;
-            
-            // Enviar email
-            $mensaje_email = "
-            <html>
-            <head>
-                <style>
-                    body { font-family: Arial, sans-serif; }
-                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                    .header { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-                    .content { padding: 20px; background: #f8f9fa; border-radius: 0 0 8px 8px; }
-                    .btn { background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; }
-                    .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-                    .highlight { color: #667eea; font-weight: 600; }
-                </style>
-            </head>
-            <body>
-                <div class='container'>
-                    <div class='header'>
-                        <h2>🖐️ Captura Biométrica</h2>
+        $email = trim($_POST['email_biometrico'] ?? '');
+        $nombre = trim($_POST['nombre_biometrico'] ?? '');
+        $dias_validez = (int)($_POST['dias_validez_biometrico'] ?? 30);
+
+        if ($dias_validez < 1) $dias_validez = 30;
+        if ($dias_validez > 365) $dias_validez = 365;
+
+        $enviar_whatsapp = isset($_POST['enviar_whatsapp_biometrico']) ? 1 : 0;
+        $telefono = trim($_POST['telefono_biometrico'] ?? '');
+        
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $error_msg = "❌ Email inválido. Por favor, ingresa un email válido.";
+        } else {
+            try {
+                // Generar token biométrico
+                $token = generarTokenBiometrico($conn, $property_id, $email, $nombre, $dias_validez);
+                
+                // Generar URL
+                $base_url = getBaseUrl();
+                $enlace = $base_url . "/upload_biometricos.php?token=" . $token;
+                $enlace_generado = $enlace;
+                
+                // Enviar email
+                $mensaje_email = "
+                <html>
+                <head>
+                    <style>
+                        body { font-family: Arial, sans-serif; }
+                        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                        .header { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+                        .content { padding: 20px; background: #f8f9fa; border-radius: 0 0 8px 8px; }
+                        .btn { background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; }
+                        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+                        .highlight { color: #667eea; font-weight: 600; }
+                    </style>
+                </head>
+                <body>
+                    <div class='container'>
+                        <div class='header'>
+                            <h2>🖐️ Captura Biométrica</h2>
+                        </div>
+                        <div class='content'>
+                            <p>Hola " . htmlspecialchars($nombre ?: 'Cliente') . ",</p>
+                            <p>Has sido invitado a capturar tus datos biométricos para la propiedad: <strong>" . htmlspecialchars($propiedad['title'] ?? 'Propiedad') . "</strong></p>
+                            <p>Esto incluye:</p>
+                            <ul>
+                                <li>✍️ Firma digital</li>
+                                <li>🖐️ Huellas dactilares (10 dedos)</li>
+                            </ul>
+                            <p>Para comenzar, haz clic en el siguiente enlace:</p>
+                            <p style='text-align: center; margin: 30px 0;'>
+                                <a href='" . $enlace . "' class='btn'>🖐️ Capturar Biométricos</a>
+                            </p>
+                            <p><strong>⏰ Este enlace expirará en " . $dias_validez . " días.</strong></p>
+                            <p style='font-size: 12px; color: #666;'>
+                                <small>Si el botón no funciona, copia y pega este enlace en tu navegador:</small><br>
+                                <span style='word-break: break-all;'>" . $enlace . "</span>
+                            </p>
+                        </div>
+                        <div class='footer'>
+                            Este es un mensaje automático de Inmobiliaria MH.
+                        </div>
                     </div>
-                    <div class='content'>
-                        <p>Hola " . htmlspecialchars($nombre ?: 'Cliente') . ",</p>
-                        <p>Has sido invitado a capturar tus datos biométricos para la propiedad: <strong>" . htmlspecialchars($propiedad['title'] ?? 'Propiedad') . "</strong></p>
-                        <p>Esto incluye:</p>
-                        <ul>
-                            <li>✍️ Firma digital</li>
-                            <li>🖐️ Huellas dactilares (10 dedos)</li>
-                        </ul>
-                        <p>Para comenzar, haz clic en el siguiente enlace:</p>
-                        <p style='text-align: center; margin: 30px 0;'>
-                            <a href='" . $enlace . "' class='btn'>🖐️ Capturar Biométricos</a>
-                        </p>
-                        <p><strong>⏰ Este enlace expirará en " . $dias_validez . " días.</strong></p>
-                        <p style='font-size: 12px; color: #666;'>
-                            <small>Si el botón no funciona, copia y pega este enlace en tu navegador:</small><br>
-                            <span style='word-break: break-all;'>" . $enlace . "</span>
-                        </p>
-                    </div>
-                    <div class='footer'>
-                        Este es un mensaje automático de Inmobiliaria MH.
-                    </div>
-                </div>
-            </body>
-            </html>
-            ";
-            
-            $headers = "MIME-Version: 1.0\r\n";
-            $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
-            $headers .= "From: Inmobiliaria MH <no-reply@inmobiliariamh.com>\r\n";
-            
-            mail($email, "Captura Biométrica - Inmobiliaria MH", $mensaje_email, $headers);
-            
-            // Si se solicitó enviar por WhatsApp
-            if ($enviar_whatsapp && !empty($telefono)) {
-                $telefono_limpio = preg_replace('/[^0-9]/', '', $telefono);
-                if (strlen($telefono_limpio) >= 10) {
-                    $_SESSION['whatsapp_link_biometrico'] = "https://wa.me/" . $telefono_limpio . "?text=" . urlencode(
-                        "Hola, te comparto el enlace para capturar tus datos biométricos de la propiedad:\n\n" . 
-                        $enlace . "\n\n" .
-                        "Esto incluye: Firma digital y 10 huellas dactilares.\n" .
-                        "Este enlace expira en " . $dias_validez . " días.\n" .
-                        "Saludos, equipo Inmobiliaria MH."
-                    );
+                </body>
+                </html>
+                ";
+                
+                $headers = "MIME-Version: 1.0\r\n";
+                $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+                $headers .= "From: Inmobiliaria MH <no-reply@inmobiliariamh.com>\r\n";
+                
+                mail($email, "Captura Biométrica - Inmobiliaria MH", $mensaje_email, $headers);
+                
+                // Si se solicitó enviar por WhatsApp
+                if ($enviar_whatsapp && !empty($telefono)) {
+                    $telefono_limpio = preg_replace('/[^0-9]/', '', $telefono);
+                    if (strlen($telefono_limpio) >= 10) {
+                        $_SESSION['whatsapp_link_biometrico'] = "https://wa.me/" . $telefono_limpio . "?text=" . urlencode(
+                            "Hola, te comparto el enlace para capturar tus datos biométricos de la propiedad:\n\n" . 
+                            $enlace . "\n\n" .
+                            "Esto incluye: Firma digital y 10 huellas dactilares.\n" .
+                            "Este enlace expira en " . $dias_validez . " días.\n" .
+                            "Saludos, equipo Inmobiliaria MH."
+                        );
+                    }
                 }
+                
+                $mensaje_exito = "✅ Enlace biométrico generado exitosamente y enviado al correo del cliente.";
+                
+                recargarPropiedad($conn, $property_id);
+                
+            } catch (PDOException $e) {
+                $error_msg = "❌ Error al generar el enlace biométrico: " . $e->getMessage();
             }
-            
-            $mensaje_exito = "✅ Enlace biométrico generado exitosamente y enviado al correo del cliente.";
-            
-            recargarPropiedad($conn, $property_id);
-            
-        } catch (PDOException $e) {
-            $error_msg = "❌ Error al generar el enlace biométrico: " . $e->getMessage();
         }
     }
 }
@@ -1198,7 +1215,6 @@ $base_url = getBaseUrl();
             padding: 0;
         }
 
-        /* Imagen principal: ancho completo, aspect ratio 4:3, fondo claro */
         .galeria-principal {
             position: relative;
             width: 100%;
@@ -1225,7 +1241,6 @@ $base_url = getBaseUrl();
             opacity: 0.3;
         }
 
-        /* Contador */
         .galeria-contador {
             position: absolute;
             top: 12px;
@@ -1244,7 +1259,6 @@ $base_url = getBaseUrl();
             pointer-events: none;
         }
 
-        /* Acciones (descargar) */
         .galeria-acciones {
             position: absolute;
             top: 12px;
@@ -1275,7 +1289,6 @@ $base_url = getBaseUrl();
             transform: scale(1.08);
         }
 
-        /* Flechas */
         .galeria-flecha {
             position: absolute;
             top: 50%;
@@ -1309,7 +1322,6 @@ $base_url = getBaseUrl();
         .galeria-flecha-prev { left: 14px; }
         .galeria-flecha-next { right: 14px; }
 
-        /* Miniaturas en fila horizontal abajo */
         .galeria-miniaturas {
             display: flex;
             gap: 8px;
@@ -1384,7 +1396,6 @@ $base_url = getBaseUrl();
             box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         }
 
-        /* Lightbox */
         .lightbox-overlay {
             display: none;
             position: fixed;
@@ -1682,7 +1693,6 @@ $base_url = getBaseUrl();
             background: #5a67d8;
         }
 
-        /* Enlace generado */
         .link-generated {
             background: #f0fdf4;
             border: 1px solid #86efac;
@@ -1731,7 +1741,6 @@ $base_url = getBaseUrl();
             background: #1da851;
         }
 
-        /* Badge de tokens */
         .token-badge {
             display: inline-block;
             padding: 2px 10px;
@@ -1776,7 +1785,6 @@ $base_url = getBaseUrl();
             font-size: 0.7rem;
         }
 
-        /* ===== ESTILOS PARA DOCUMENTOS ===== */
         .doc-item {
             transition: all 0.2s ease;
         }
@@ -1817,7 +1825,6 @@ $base_url = getBaseUrl();
             border-left: 3px solid;
         }
 
-        /* ===== BADGE DE FEATURING ===== */
         .featuring-badge {
             display: inline-block;
             padding: 2px 10px;
@@ -1839,7 +1846,6 @@ $base_url = getBaseUrl();
             50% { opacity: 0.6; }
         }
 
-        /* ===== BADGE DE APARTADO ===== */
         .apartado-badge {
             display: inline-block;
             padding: 2px 10px;
@@ -1850,7 +1856,6 @@ $base_url = getBaseUrl();
             color: #92400e;
         }
 
-        /* ===== TOAST ===== */
         .toast-container {
             position: fixed;
             bottom: 30px;
@@ -1876,7 +1881,6 @@ $base_url = getBaseUrl();
             opacity: 1;
         }
 
-        /* ===== ESTILOS BIOMÉTRICOS ===== */
         .biometric-dots {
             display: flex;
             gap: 4px;
@@ -1916,7 +1920,6 @@ $base_url = getBaseUrl();
             color: #94a3b8;
         }
 
-        /* ===== MODAL DE DESCARGA PARA MÓVIL ===== */
         .download-modal-list {
             display: flex;
             flex-direction: column;
@@ -2045,7 +2048,6 @@ $base_url = getBaseUrl();
                 line-height: 16px;
             }
 
-            /* Galería responsive: miniaturas abajo en móvil */
             .galeria-layout {
                 grid-template-columns: 1fr;
                 grid-template-rows: auto auto;
@@ -2182,23 +2184,26 @@ $base_url = getBaseUrl();
                         </span>
                     </div>
                 </div>
+
+                <!-- 🔒 CAMBIO: Botones de acción solo visibles para admin -->
                 <div class="detail-actions">
                     <a href="inventario_maestro.php" class="btn-detail secondary">
                         <i class="fas fa-arrow-left"></i> Volver
                     </a>
-                    <button class="btn-detail success" onclick="abrirModalEnlace()">
-                        <i class="fas fa-link"></i> Generar Enlace
-                    </button>
-                    <button class="btn-detail biometric" onclick="abrirModalEnlaceBiometrico()">
-                        <i class="fas fa-fingerprint"></i> Enlace Biométrico
-                    </button>
-                    <button class="btn-detail warning" onclick="abrirModalGestion()">
-                        <i class="fas fa-cog"></i> Gestionar
-                    </button>
-                    <a href="propiedad_editar.php?id=<?php echo $property_id; ?>" class="btn-detail primary">
-                        <i class="fas fa-edit"></i> Editar
-                    </a>
-                    <?php if (esAdmin()): ?>
+
+                    <?php if ($es_admin): ?>
+                        <button class="btn-detail success" onclick="abrirModalEnlace()">
+                            <i class="fas fa-link"></i> Generar Enlace
+                        </button>
+                        <button class="btn-detail biometric" onclick="abrirModalEnlaceBiometrico()">
+                            <i class="fas fa-fingerprint"></i> Enlace Biométrico
+                        </button>
+                        <button class="btn-detail warning" onclick="abrirModalGestion()">
+                            <i class="fas fa-cog"></i> Gestionar
+                        </button>
+                        <a href="propiedad_editar.php?id=<?php echo $property_id; ?>" class="btn-detail primary">
+                            <i class="fas fa-edit"></i> Editar
+                        </a>
                         <button type="button" 
                                 class="btn-detail primary" 
                                 style="background: #8b5cf6;"
@@ -2209,7 +2214,7 @@ $base_url = getBaseUrl();
                 </div>
             </div>
 
-                        <!-- Galería de Imágenes -->
+            <!-- Galería de Imágenes -->
             <div class="main-card galeria-card">
                 <?php if (!empty($imagenes_propiedad)): ?>
                     <!-- Imagen Principal Grande -->
@@ -2241,7 +2246,7 @@ $base_url = getBaseUrl();
                         <?php endif; ?>
                     </div>
 
-                    <!-- Miniaturas (fila horizontal abajo) -->
+                    <!-- Miniaturas -->
                     <?php if (count($imagenes_propiedad) > 1): ?>
                     <div class="galeria-miniaturas" id="galeriaMiniaturas">
                         <?php foreach ($imagenes_propiedad as $index => $img): ?>
@@ -2313,7 +2318,6 @@ $base_url = getBaseUrl();
                         </div>
                     </div>
 
-                    <!-- Características -->
                     <div class="main-card">
                         <div class="card-header">
                             <h3><i class="fas fa-ruler-combined"></i> Características</h3>
@@ -2341,7 +2345,6 @@ $base_url = getBaseUrl();
 
                 <!-- Columna Derecha -->
                 <div>
-                    <!-- Financiero -->
                     <div class="main-card">
                         <div class="card-header">
                             <h3><i class="fas fa-coins"></i> Información Financiera</h3>
@@ -2364,7 +2367,6 @@ $base_url = getBaseUrl();
                         </div>
                     </div>
 
-                    <!-- Propietario / Vendedor -->
                     <div class="main-card">
                         <div class="card-header">
                             <h3><i class="fas fa-user"></i> Propietario / Vendedor</h3>
@@ -2408,8 +2410,8 @@ $base_url = getBaseUrl();
                         </div>
                     </div>
 
-                    <!-- ===== SECCIÓN: ENLACES GENERADOS (DOCUMENTOS) ===== -->
-                    <?php if (!empty($tokens_generados)): ?>
+                    <!-- Enlaces de Documentos (solo admin) -->
+                    <?php if ($es_admin && !empty($tokens_generados)): ?>
                     <div class="main-card">
                         <div class="card-header">
                             <h3><i class="fas fa-file-alt"></i> Enlaces de Documentos</h3>
@@ -2451,8 +2453,8 @@ $base_url = getBaseUrl();
                     </div>
                     <?php endif; ?>
 
-                    <!-- ===== SECCIÓN: ENLACES BIOMÉTRICOS GENERADOS ===== -->
-                    <?php if (!empty($tokens_biometricos)): ?>
+                    <!-- Enlaces Biométricos (solo admin) -->
+                    <?php if ($es_admin && !empty($tokens_biometricos)): ?>
                     <div class="main-card" style="border-top: 3px solid #667eea;">
                         <div class="card-header" style="background: #f5f3ff;">
                             <h3><i class="fas fa-fingerprint" style="color: #667eea;"></i> Enlaces Biométricos</h3>
@@ -2493,7 +2495,7 @@ $base_url = getBaseUrl();
                 </div>
             </div>
 
-            <!-- ===== SECCIÓN: DOCUMENTOS DE LA PROPIEDAD ===== -->
+            <!-- Documentos de la Propiedad -->
             <div class="main-card documentos-section">
                 <div class="card-header">
                     <h3>
@@ -2507,6 +2509,7 @@ $base_url = getBaseUrl();
                             <?php endif; ?>
                         </span>
                     </h3>
+                    <?php if ($es_admin): ?>
                     <div style="display: flex; gap: 8px;">
                         <a href="upload_documentos.php?id=<?php echo $property_id; ?>" 
                            class="btn-detail primary" 
@@ -2515,17 +2518,13 @@ $base_url = getBaseUrl();
                             <i class="fas fa-user-shield"></i> Subir (Admin)
                         </a>
                     </div>
+                    <?php endif; ?>
                 </div>
                 <div class="card-body" style="padding: 10px 20px;">
                     <?php if ($documentos_propiedad['total'] === 0): ?>
                         <div style="text-align: center; padding: 30px 20px; color: #94a3b8;">
                             <i class="fas fa-file" style="font-size: 40px; display: block; margin-bottom: 10px; opacity: 0.5;"></i>
                             <p style="margin: 0;">No hay documentos asociados a esta propiedad.</p>
-                            <p style="font-size: 0.85rem; margin-top: 5px;">
-                                <a href="upload_documentos.php?id=<?php echo $property_id; ?>" style="color: #1d4ed8; text-decoration: none;">
-                                    Subir el primer documento
-                                </a>
-                            </p>
                         </div>
                     <?php else: ?>
                         <!-- Documentos Generales -->
@@ -2626,7 +2625,7 @@ $base_url = getBaseUrl();
                 </div>
             </div>
 
-            <!-- ===== SECCIÓN: DATOS BIOMÉTRICOS ===== -->
+            <!-- Datos Biométricos -->
             <div class="main-card" style="border-top: 3px solid #667eea;">
                 <div class="card-header" style="background: #f5f3ff;">
                     <h3>
@@ -2640,6 +2639,7 @@ $base_url = getBaseUrl();
                             </span>
                         <?php endif; ?>
                     </h3>
+                    <?php if ($es_admin): ?>
                     <div style="display: flex; gap: 8px;">
                         <button onclick="abrirModalEnlaceBiometrico()" class="btn-detail biometric" style="padding: 4px 12px; font-size: 0.75rem;">
                             <i class="fas fa-link"></i> Generar Enlace
@@ -2651,17 +2651,13 @@ $base_url = getBaseUrl();
                             <i class="fas fa-user-shield"></i> Capturar (Admin)
                         </a>
                     </div>
+                    <?php endif; ?>
                 </div>
                 <div class="card-body" style="padding: 10px 20px;">
                     <?php if (empty($datos_biometricos)): ?>
                         <div style="text-align: center; padding: 30px 20px; color: #94a3b8;">
                             <i class="fas fa-fingerprint" style="font-size: 40px; display: block; margin-bottom: 10px; opacity: 0.5;"></i>
                             <p style="margin: 0;">No hay datos biométricos capturados para esta propiedad.</p>
-                            <p style="font-size: 0.85rem; margin-top: 5px;">
-                                <a href="upload_biometricos.php?id=<?php echo $property_id; ?>" style="color: #667eea; text-decoration: none;">
-                                    <i class="fas fa-plus-circle"></i> Capturar datos biométricos
-                                </a>
-                            </p>
                         </div>
                     <?php else: ?>
                         <!-- Resumen de huellas -->
@@ -2769,6 +2765,7 @@ $base_url = getBaseUrl();
     </div>
 </main>
 
+<?php if ($es_admin): ?>
 <!-- ===== MODAL PARA GENERAR ENLACE (DOCUMENTOS) ===== -->
 <div class="modal-overlay" id="modalEnlace">
     <div class="modal-box">
@@ -2961,6 +2958,7 @@ $base_url = getBaseUrl();
                             <option value="pendiente" <?php echo ($propiedad['status'] ?? '') === 'pendiente' ? 'selected' : ''; ?>>Pendiente</option>
                             <option value="vendido" <?php echo ($propiedad['status'] ?? '') === 'vendido' ? 'selected' : ''; ?>>Vendido</option>
                             <option value="suspendido" <?php echo ($propiedad['status'] ?? '') === 'suspendido' ? 'selected' : ''; ?>>Suspendido</option>
+                            <option value="apartado" <?php echo ($propiedad['status'] ?? '') === 'apartado' ? 'selected' : ''; ?>>Apartado</option>
                         </select>
                     </div>
                     <button type="submit" name="action_gestion" value="cambiar_estado" class="btn-modal primary" style="margin-top: 8px; width: 100%;">
@@ -3216,6 +3214,7 @@ $base_url = getBaseUrl();
         </div>
     </div>
 </div>
+<?php endif; // 🔒 FIN: modales solo para admin ?>
 
 <!-- Lightbox para ver imágenes en grande -->
 <div class="lightbox-overlay" id="lightbox">
@@ -3238,6 +3237,9 @@ $base_url = getBaseUrl();
 </div>
 
 <script>
+// ===== VARIABLE GLOBAL DE ROL =====
+const ES_ADMIN = <?php echo $es_admin ? 'true' : 'false'; ?>;
+
 // ===== GALERÍA DE IMÁGENES =====
 const imagenesGaleria = <?php echo json_encode(array_map(function($img) {
     return [
@@ -3255,7 +3257,6 @@ function seleccionarImagen(index) {
     indiceActual = index;
     const imgPrincipal = document.getElementById('imagenPrincipal');
     
-    // Efecto de transición
     imgPrincipal.classList.add('cambiando');
     
     setTimeout(() => {
@@ -3263,21 +3264,17 @@ function seleccionarImagen(index) {
         imgPrincipal.classList.remove('cambiando');
     }, 150);
     
-    // Actualizar contador
     document.getElementById('contadorImagen').textContent = index + 1;
     
-    // Actualizar miniaturas
     document.querySelectorAll('.miniatura-item').forEach((item, i) => {
         item.classList.toggle('activa', i === index);
     });
     
-    // Actualizar lightbox si está abierto
     if (lightboxAbierto) {
         document.getElementById('lightboxImg').src = imagenesGaleria[index].src;
         document.getElementById('lightboxContador').textContent = index + 1;
     }
     
-    // Scroll a la miniatura activa
     const miniaturaActiva = document.querySelector('.miniatura-item.activa');
     if (miniaturaActiva) {
         miniaturaActiva.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
@@ -3323,14 +3320,12 @@ function navegarLightbox(direccion) {
     seleccionarImagen(nuevoIndice);
 }
 
-// Cerrar lightbox con click en el fondo
 document.getElementById('lightbox')?.addEventListener('click', function(e) {
     if (e.target === this) {
         cerrarLightbox();
     }
 });
 
-// Navegación con teclado
 document.addEventListener('keydown', function(e) {
     if (lightboxAbierto) {
         if (e.key === 'Escape') cerrarLightbox();
@@ -3339,7 +3334,6 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// Descargar imagen actual
 function descargarImagenActual() {
     if (imagenesGaleria.length === 0) return;
     
@@ -3353,7 +3347,6 @@ function descargarImagenActual() {
     mostrarToast('📥 Descargando imagen...');
 }
 
-// Descargar todas las imágenes (una a una, con delay para no saturar)
 function descargarTodasLasImagenes() {
     if (imagenesGaleria.length === 0) return;
     
@@ -3373,14 +3366,18 @@ function descargarTodasLasImagenes() {
 
 // ===== DESCARGA DE EXPEDIENTE (ZIP en escritorio, individual en móvil) =====
 function descargarExpediente() {
+    // 🔒 CAMBIO: Solo admin
+    if (!ES_ADMIN) {
+        mostrarToast('⛔ No tienes permisos para esta acción');
+        return;
+    }
+    
     const esMovil = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
                     || (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
     
     if (esMovil) {
-        // En móvil: abrir modal con descargas individuales
         abrirModalDescargaMovil();
     } else {
-        // En escritorio: descargar ZIP normal
         if (confirm('¿Descargar expediente completo de esta propiedad?')) {
             window.location.href = 'descargar_expediente.php?id=<?php echo $property_id; ?>';
         }
@@ -3389,12 +3386,16 @@ function descargarExpediente() {
 
 // ===== MODAL DE DESCARGA MÓVIL =====
 function abrirModalDescargaMovil() {
-    document.getElementById('modalDescargaMovil').classList.add('active');
+    const modal = document.getElementById('modalDescargaMovil');
+    if (!modal) return;
+    modal.classList.add('active');
     document.body.style.overflow = 'hidden';
 }
 
 function cerrarModalDescargaMovil() {
-    document.getElementById('modalDescargaMovil').classList.remove('active');
+    const modal = document.getElementById('modalDescargaMovil');
+    if (!modal) return;
+    modal.classList.remove('active');
     document.body.style.overflow = '';
 }
 
@@ -3404,7 +3405,6 @@ document.getElementById('modalDescargaMovil')?.addEventListener('click', functio
     }
 });
 
-// Descargar todos los archivos desde el modal (secuencialmente)
 function descargarTodosMovil() {
     const links = document.querySelectorAll('#listaDescargasMovil .btn-download-single');
     if (links.length === 0) return;
@@ -3413,7 +3413,6 @@ function descargarTodosMovil() {
     
     links.forEach((link, i) => {
         setTimeout(() => {
-            // Crear un anchor temporal para forzar la descarga
             const a = document.createElement('a');
             a.href = link.href;
             a.download = link.getAttribute('download') || 'archivo';
@@ -3430,23 +3429,32 @@ function descargarTodosMovil() {
 
 // ===== MODAL ENLACE DOCUMENTOS =====
 function abrirModalEnlace() {
-    document.getElementById('modalEnlace').classList.add('active');
+    // 🔒 CAMBIO: Solo admin
+    if (!ES_ADMIN) {
+        mostrarToast('⛔ No tienes permisos para esta acción');
+        return;
+    }
+    const modal = document.getElementById('modalEnlace');
+    if (!modal) return;
+    modal.classList.add('active');
     document.body.style.overflow = 'hidden';
 }
 
 function cerrarModalEnlace() {
-    document.getElementById('modalEnlace').classList.remove('active');
+    const modal = document.getElementById('modalEnlace');
+    if (!modal) return;
+    modal.classList.remove('active');
     document.body.style.overflow = '';
 }
 
-document.getElementById('modalEnlace').addEventListener('click', function(e) {
+document.getElementById('modalEnlace')?.addEventListener('click', function(e) {
     if (e.target === this) {
         cerrarModalEnlace();
     }
 });
 
-// Mostrar/ocultar campo de teléfono
-document.getElementById('enviarWhatsapp').addEventListener('change', function() {
+// 🔒 CAMBIO: Optional chaining para evitar error si no existe (no-admin)
+document.getElementById('enviarWhatsapp')?.addEventListener('change', function() {
     const telefonoGroup = document.getElementById('telefonoGroup');
     if (this.checked) {
         telefonoGroup.style.display = 'block';
@@ -3459,23 +3467,31 @@ document.getElementById('enviarWhatsapp').addEventListener('change', function() 
 
 // ===== MODAL ENLACE BIOMÉTRICO =====
 function abrirModalEnlaceBiometrico() {
-    document.getElementById('modalEnlaceBiometrico').classList.add('active');
+    // 🔒 CAMBIO: Solo admin
+    if (!ES_ADMIN) {
+        mostrarToast('⛔ No tienes permisos para esta acción');
+        return;
+    }
+    const modal = document.getElementById('modalEnlaceBiometrico');
+    if (!modal) return;
+    modal.classList.add('active');
     document.body.style.overflow = 'hidden';
 }
 
 function cerrarModalEnlaceBiometrico() {
-    document.getElementById('modalEnlaceBiometrico').classList.remove('active');
+    const modal = document.getElementById('modalEnlaceBiometrico');
+    if (!modal) return;
+    modal.classList.remove('active');
     document.body.style.overflow = '';
 }
 
-document.getElementById('modalEnlaceBiometrico').addEventListener('click', function(e) {
+document.getElementById('modalEnlaceBiometrico')?.addEventListener('click', function(e) {
     if (e.target === this) {
         cerrarModalEnlaceBiometrico();
     }
 });
 
-// Mostrar/ocultar campo de teléfono para biométrico
-document.getElementById('enviarWhatsappBiometrico').addEventListener('change', function() {
+document.getElementById('enviarWhatsappBiometrico')?.addEventListener('change', function() {
     const telefonoGroup = document.getElementById('telefonoGroupBiometrico');
     if (this.checked) {
         telefonoGroup.style.display = 'block';
@@ -3488,16 +3504,25 @@ document.getElementById('enviarWhatsappBiometrico').addEventListener('change', f
 
 // ===== MODAL GESTIÓN =====
 function abrirModalGestion() {
-    document.getElementById('modalGestion').classList.add('active');
+    // 🔒 CAMBIO: Solo admin
+    if (!ES_ADMIN) {
+        mostrarToast('⛔ No tienes permisos para esta acción');
+        return;
+    }
+    const modal = document.getElementById('modalGestion');
+    if (!modal) return;
+    modal.classList.add('active');
     document.body.style.overflow = 'hidden';
 }
 
 function cerrarModalGestion() {
-    document.getElementById('modalGestion').classList.remove('active');
+    const modal = document.getElementById('modalGestion');
+    if (!modal) return;
+    modal.classList.remove('active');
     document.body.style.overflow = '';
 }
 
-document.getElementById('modalGestion').addEventListener('click', function(e) {
+document.getElementById('modalGestion')?.addEventListener('click', function(e) {
     if (e.target === this) {
         cerrarModalGestion();
     }
@@ -3566,7 +3591,6 @@ document.addEventListener('DOMContentLoaded', function() {
         overlay.addEventListener('click', toggleSidebar);
     }
 
-    // Mostrar toast si hay mensaje de éxito
     <?php if (!empty($enlace_generado)): ?>
         setTimeout(() => {
             mostrarToast('✅ Enlace generado y enviado al cliente');

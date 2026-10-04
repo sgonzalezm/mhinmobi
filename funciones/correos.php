@@ -25,11 +25,6 @@ function enviarCorreo($email, $nombre, $asunto, $mensaje_html) {
         $mail->CharSet    = 'UTF-8';
         $mail->Timeout    = 30;
         
-        // 🔥 DEBUG ACTIVADO (esto escribirá en el log de PHP)
-        //$mail->SMTPDebug = 2;
-        //$mail->Debugoutput = function($str, $level) {
-            //error_log("PHPMailer DEBUG: " . trim($str));
-        };
         
         // Opciones SSL
         $mail->SMTPOptions = array(

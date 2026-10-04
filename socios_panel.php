@@ -1059,7 +1059,7 @@ $colores_chart = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d
             </button>
             <h1>Panel de Control</h1>
             <p class="welcome">
-                Bienvenido, <span><?php echo htmlspecialchars($usuario['nombre'] ?? 'Usuario'); ?></span>
+                Bienvenido, <span><?php echo htmlspecialchars($usuario['usuario_nombre'] ?? 'Usuario'); ?></span>
                 <?php 
                 $hora = date('H');
                 if ($hora < 12): ?>

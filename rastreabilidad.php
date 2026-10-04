@@ -363,7 +363,7 @@ function getStageIcon($stage) {
                             </div>
                             <div class="tracking-card-property">
                                 <i class="fas fa-map-marker-alt"></i> 
-                                <?php echo htmlspecialchars($proceso['domicilio'] . ', ' . $proceso['state']); ?>
+                                <?php echo htmlspecialchars($proceso['domicilio'] . ', ' . $proceso['estado']); ?>
                             </div>
                             <div class="progress-bar-container">
                                 <div class="progress-bar" style="width: <?php echo $progress; ?>%"></div>

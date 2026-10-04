@@ -46,9 +46,9 @@ try {
             pt.*,
             p.title as property_title,
             p.operation_type,
-            p.address_municipality,
-            p.address_state,
-            p.address_city,
+            p.domicilio,
+            p.estado,
+            p.colonia,
             f.asking_price,
             f.min_acceptable_price,
             f.commission_percentage,
@@ -787,7 +787,7 @@ function getEtapaNombre($etapa) {
                         </div>
                         <div class="process-address">
                             <i class="fas fa-map-marker-alt"></i> 
-                            <?php echo htmlspecialchars($proceso['address_city'] . ', ' . $proceso['address_municipality'] . ', ' . $proceso['address_state']); ?>
+                            <?php echo htmlspecialchars($proceso['colonia'] . ', ' . $proceso['domicilio'] . ', ' . $proceso['estado']); ?>
                         </div>
                         <?php if ($proceso['asking_price']): ?>
                             <div class="process-address" style="margin-top: 5px;">

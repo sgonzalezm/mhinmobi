@@ -43,7 +43,7 @@ if ($hastaValido !== '') {
     $params[':hasta'] = $hastaValido;
 }
 if ($filtroZona !== '') {
-    $where .= " AND p.address_municipality = :zona";
+    $where .= " AND p.colonia = :zona";
     $params[':zona'] = $filtroZona;
 }
 if ($filtroOperacion !== '') {
@@ -86,12 +86,12 @@ try {
 $zonasDisponibles = [];
 try {
     $stmtZonas = $conn->query("
-        SELECT DISTINCT address_municipality AS zona
+        SELECT DISTINCT colonia AS zona
         FROM properties
-        WHERE address_municipality IS NOT NULL
-          AND address_municipality != ''
+        WHERE colonia IS NOT NULL
+          AND colonia != ''
           AND status IN ('finalizada','finalizado','vendido','vendida')
-        ORDER BY address_municipality ASC
+        ORDER BY colonia ASC
     ");
     $zonasDisponibles = $stmtZonas->fetchAll(PDO::FETCH_COLUMN);
 } catch (PDOException $e) {
@@ -103,7 +103,7 @@ $porZona = [];
 try {
     $stmtZona = $conn->prepare("
         SELECT 
-            p.address_municipality AS zona,
+            p.colonia AS zona,
             COUNT(*) AS ventas,
             AVG(f.sold_price) AS precio_promedio,
             MIN(f.sold_price) AS precio_min,
@@ -115,7 +115,7 @@ try {
         $where
           AND f.sold_price IS NOT NULL
           AND f.sold_price > 0
-        GROUP BY p.address_municipality
+        GROUP BY p.colonia
         ORDER BY ventas DESC
     ");
     $stmtZona->execute($params);
@@ -182,7 +182,7 @@ try {
         SELECT 
             p.id,
             p.title,
-            p.address_municipality AS zona,
+            p.colonia AS zona,
             p.address_lat AS lat,
             p.address_lng AS lng,
             p.operation_type,

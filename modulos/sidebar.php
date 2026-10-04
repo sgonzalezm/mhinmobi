@@ -6,7 +6,7 @@ $rol_actual = $_SESSION['usuario_rol'] ?? 'externo';
 // Definición de permisos por rol
 $permisos = [
     'admin' => ['inicio', 'calificador', 'calendario', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'crm_clientes', 'rastreabilidad', 'mensajes', 'gestion_acceso', 'administracion', 'audit_log'],
-    'asesor' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'rastreabilidad', 'mensajes'],
+    'asesor' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'rastreabilidad', 'mensajes'],
     'captador' => ['inicio', 'calificador', 'publicar_propiedad', 'mensajes'],
     'propietario' => ['mis_propiedades', 'publicar_propiedad', 'mensajes'],
     'externo' => ['mensajes']
