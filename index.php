@@ -27,17 +27,57 @@ function getImagenUrl($imagen) {
 
 function getUbicacionCompleta($propiedad) {
     $parts = [];
-    if (!empty($propiedad['domicilio'])) {
-        $parts[] = $propiedad['domicilio'];
-    }
-    if (!empty($propiedad['address_city'])) {
-        $parts[] = $propiedad['address_city'];
+    $status = $propiedad['status'] ?? '';
+    
+    // Para vendidas o apartadas, solo mostrar colonia (más privacidad)
+    if ($status === 'vendido' || $status === 'apartado') {
+        if (!empty($propiedad['colonia'])) {
+            $parts[] = $propiedad['colonia'];
+        }
+    } else {
+        if (!empty($propiedad['domicilio'])) {
+            $parts[] = $propiedad['domicilio'];
+        }
+        if (!empty($propiedad['colonia'])) {
+            $parts[] = $propiedad['colonia'];
+        }
+        if (!empty($propiedad['address_city'])) {
+            $parts[] = $propiedad['address_city'];
+        }
     }
     return !empty($parts) ? implode(', ', $parts) : 'Ubicación no especificada';
 }
 
 function tieneFeaturing($propiedad) {
     return !empty($propiedad['featuring_id']) && $propiedad['featuring_status'] === 'active';
+}
+
+function esVendida($propiedad) {
+    return ($propiedad['status'] ?? '') === 'vendido';
+}
+
+function esApartada($propiedad) {
+    return ($propiedad['status'] ?? '') === 'apartado';
+}
+
+function getTipoClase($tipo) {
+    return strtolower($tipo) === 'venta' ? 'venta' : 'renta';
+}
+
+function getTipoLabel($tipo) {
+    return strtolower($tipo) === 'venta' ? 'En Venta' : 'En Renta';
+}
+
+function getCategoriaIcon($property_type) {
+    $icons = [
+        'Casa' => 'fa-regular fa-house',
+        'Departamento' => 'fa-regular fa-building',
+        'Terreno' => 'fa-regular fa-map',
+        'Local comercial' => 'fa-regular fa-store',
+        'Oficina' => 'fa-regular fa-building-columns',
+        'Nave industrial' => 'fa-regular fa-warehouse'
+    ];
+    return $icons[$property_type] ?? 'fa-regular fa-building';
 }
 
 // ===== CONSULTAR PROPIEDADES DESTACADAS =====
@@ -50,11 +90,13 @@ if ($conn) {
                 p.id,
                 p.title,
                 p.operation_type,
+                p.colonia,
                 p.address_city,
                 p.domicilio,
                 p.status,
                 p.property_type,
                 p.created_at,
+                p.sold_at,
                 pd.square_meters,
                 pd.bedrooms,
                 pd.bathrooms,
@@ -65,22 +107,60 @@ if ($conn) {
                 f.end_date as featuring_end,
                 (SELECT file_path FROM property_media 
                  WHERE property_id = p.id AND is_primary = 1 
-                 ORDER BY sort_order ASC LIMIT 1) as imagen_principal
+                 ORDER BY sort_order ASC LIMIT 1) as imagen_principal,
+                -- Días para vender (solo vendidas)
+                CASE 
+                    WHEN p.status = 'vendido' 
+                         AND p.sold_at IS NOT NULL 
+                         AND p.created_at IS NOT NULL 
+                         AND p.sold_at >= p.created_at
+                    THEN DATEDIFF(p.sold_at, p.created_at)
+                    ELSE NULL
+                END as dias_para_vender
             FROM properties p
             LEFT JOIN property_details pd ON p.id = pd.property_id
             LEFT JOIN property_financials pf ON p.id = pf.property_id
             LEFT JOIN property_featuring f ON p.id = f.property_id AND f.status = 'active'
-            WHERE p.status = 'activo'
+            WHERE p.status IN ('activo', 'apartado', 'vendido')
+            AND p.publica = 1
             GROUP BY p.id
             ORDER BY 
-                CASE WHEN f.status = 'active' THEN 0 ELSE 1 END,
+                CASE 
+                    WHEN p.status = 'activo' AND f.status = 'active' THEN 0
+                    WHEN p.status = 'activo' THEN 1
+                    WHEN p.status = 'apartado' THEN 2
+                    WHEN p.status = 'vendido' THEN 3
+                    ELSE 4
+                END,
                 p.created_at DESC
             LIMIT 6
         ";
 
         $stmt = $conn->prepare($sql);
         $stmt->execute();
-        $propiedades_destacadas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $todas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Limitar: máximo 2 vendidas y 2 apartadas en el index (opcional)
+        $max_vendidas  = 2;
+        $max_apartadas = 2;
+        $cont_vendidas = 0;
+        $cont_apartadas = 0;
+        $propiedades_destacadas = [];
+
+        foreach ($todas as $p) {
+            $status = $p['status'] ?? '';
+            if ($status === 'vendido') {
+                if ($cont_vendidas >= $max_vendidas) continue;
+                $cont_vendidas++;
+            } elseif ($status === 'apartado') {
+                if ($cont_apartadas >= $max_apartadas) continue;
+                $cont_apartadas++;
+            }
+            $propiedades_destacadas[] = $p;
+        }
+
+        // Recortar a 6 por si acaso
+        $propiedades_destacadas = array_slice($propiedades_destacadas, 0, 6);
 
     } catch (PDOException $e) {
         error_log("Error al consultar propiedades destacadas: " . $e->getMessage());
@@ -96,6 +176,8 @@ if ($conn) {
     <title>Vera Terra Inmobiliaria</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/css/Logo1_veraterra.png">
     <style>
         /* ===== RESET & ROOT ===== */
         * {
@@ -516,6 +598,7 @@ if ($conn) {
             box-shadow: var(--shadow);
             transition: transform var(--transition), box-shadow var(--transition);
             border: 1px solid rgba(197, 160, 89, 0.15);
+            position: relative;
         }
 
         .property-card:hover {
@@ -523,19 +606,124 @@ if ($conn) {
             box-shadow: 0 15px 40px rgba(11, 31, 58, 0.12);
         }
 
+        /* ===== FEATURING (DESTACADA) ===== */
+        .property-card.featured {
+            border: 2px solid var(--gold);
+            box-shadow: 0 8px 30px rgba(197, 160, 89, 0.2);
+        }
+
+        .property-card.featured::before {
+            content: '⭐ DESTACADA';
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 10;
+            background: var(--gold);
+            color: #fff;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 10px rgba(197, 160, 89, 0.3);
+        }
+
+        /* ===== VENDIDA: DIFUMINADO SUTIL ===== */
+        .property-card.vendida .property-img-container img {
+            filter: blur(2px) brightness(0.85);
+        }
+
+        .property-card.vendida:hover .property-img-container img {
+            filter: blur(0px) brightness(0.95);
+            transform: scale(1.06);
+        }
+
+        /* ===== APARTADA: TINTE SUTIL ===== */
+        .property-card.apartada .property-img-container img {
+            filter: brightness(0.92) saturate(0.9);
+        }
+
+        .property-card.apartada:hover .property-img-container img {
+            filter: brightness(1) saturate(1);
+            transform: scale(1.06);
+        }
+
+        /* ===== RIBBON VENDIDA ===== */
+        .vendida-ribbon {
+            position: absolute;
+            top: 14px;
+            left: -30px;
+            background: #8b1a1a;
+            color: #fff;
+            padding: 5px 40px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            transform: rotate(-45deg);
+            z-index: 15;
+            box-shadow: 0 2px 10px rgba(139, 26, 26, 0.4);
+            text-transform: uppercase;
+        }
+
+        /* ===== RIBBON APARTADA ===== */
+        .apartada-ribbon {
+            position: absolute;
+            top: 14px;
+            left: -30px;
+            background: #d97706;
+            color: #fff;
+            padding: 5px 40px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            transform: rotate(-45deg);
+            z-index: 15;
+            box-shadow: 0 2px 10px rgba(217, 119, 6, 0.4);
+            text-transform: uppercase;
+        }
+
+        /* ===== BADGE DE DÍAS VENDIDA ===== */
+        .dias-vender-badge {
+            position: absolute;
+            bottom: 14px;
+            right: 14px;
+            background: rgba(11, 31, 58, 0.9);
+            color: #fff;
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            border: 1px solid var(--gold);
+            z-index: 5;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .dias-vender-badge i {
+            color: var(--gold);
+        }
+
+        .dias-vender-badge .numero {
+            color: var(--gold);
+            font-weight: 700;
+            font-size: 0.75rem;
+        }
+
         .property-img-container {
             position: relative;
             width: 100%;
-            aspect-ratio: 4 / 3;          /* Proporción más natural para fotos de casas */
+            aspect-ratio: 4 / 3;
             overflow: hidden;
-            background: #f0f0f0;          /* Fondo mientras carga */
+            background: #f0f0f0;
         }
 
         .property-img-container img {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            object-position: center center; /* Centra el recorte */
+            object-position: center center;
             transition: transform 0.6s ease;
         }
 
@@ -557,6 +745,31 @@ if ($conn) {
             justify-content: center;
             font-size: 0.8rem;
             border: 1px solid var(--gold);
+            z-index: 5;
+        }
+
+        /* ===== STATUS BADGE (VENTA/RENTA) ===== */
+        .property-status {
+            position: absolute;
+            bottom: 14px;
+            left: 14px;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            z-index: 5;
+        }
+
+        .property-status.venta {
+            background: var(--gold);
+            color: var(--navy);
+        }
+
+        .property-status.renta {
+            background: #2e7d5e;
+            color: #fff;
         }
 
         .property-info {
@@ -961,20 +1174,49 @@ if ($conn) {
 
             <?php if (!empty($propiedades_destacadas)): ?>
                 <?php foreach ($propiedades_destacadas as $prop): 
-                    $tiene_featuring = tieneFeaturing($prop);
-                    $ubicacion       = getUbicacionCompleta($prop);
-                    $precio          = formatearPrecio($prop['price']);
-                    $imagen          = getImagenUrl($prop['imagen_principal']);
+                    $es_vendida  = esVendida($prop);
+                    $es_apartada = esApartada($prop);
+                    $tiene_featuring = !$es_vendida && !$es_apartada && tieneFeaturing($prop);
+                    $tipo_clase = getTipoClase($prop['operation_type'] ?? 'venta');
+                    $tipo_label = getTipoLabel($prop['operation_type'] ?? 'venta');
+                    $ubicacion  = getUbicacionCompleta($prop);
+                    $precio     = formatearPrecio($prop['price']);
+                    $imagen     = getImagenUrl($prop['imagen_principal']);
+                    
+                    // Clases de la tarjeta
+                    $card_class = 'property-card';
+                    if ($es_vendida) {
+                        $card_class .= ' vendida';
+                    } elseif ($es_apartada) {
+                        $card_class .= ' apartada';
+                    } elseif ($tiene_featuring) {
+                        $card_class .= ' featured';
+                    }
                 ?>
                     <a href="propiedad_detalle_portal.php?id=<?php echo urlencode($prop['id']); ?>" class="property-card-link">
-                        <div class="property-card">
+                        <div class="<?php echo $card_class; ?>">
                             <div class="property-img-container">
                                 <img src="<?php echo $imagen; ?>" 
-                                    alt="<?php echo htmlspecialchars($prop['title']); ?>" 
-                                    loading="lazy" />
-                                <div class="property-badge">
-                                    <i class="fas fa-gem"></i>
-                                </div>
+                                     alt="<?php echo htmlspecialchars($prop['title']); ?>" 
+                                     loading="lazy" />
+                                
+                                <?php if ($es_vendida): ?>
+                                    <div class="vendida-ribbon">Vendida</div>
+                                <?php elseif ($es_apartada): ?>
+                                    <div class="apartada-ribbon">Apartada</div>
+                                <?php else: ?>
+                                    <div class="property-badge">
+                                        <i class="<?php echo getCategoriaIcon($prop['property_type'] ?? ''); ?>"></i>
+                                    </div>
+                                    <div class="property-status <?php echo $tipo_clase; ?>"><?php echo $tipo_label; ?></div>
+                                <?php endif; ?>
+
+                                <?php if ($es_vendida && !empty($prop['dias_para_vender'])): ?>
+                                    <div class="dias-vender-badge">
+                                        <i class="fa-solid fa-clock"></i>
+                                        Vendida en <span class="numero"><?php echo $prop['dias_para_vender']; ?></span> días
+                                    </div>
+                                <?php endif; ?>
                             </div>
                             <div class="property-info">
                                 <h3><?php echo htmlspecialchars($prop['title']); ?></h3>
@@ -983,17 +1225,34 @@ if ($conn) {
                                     <?php echo htmlspecialchars($ubicacion); ?>
                                 </div>
                                 <div class="price"><?php echo $precio; ?></div>
-                                <div class="features">
-                                    <?php if (!empty($prop['bedrooms']) && $prop['bedrooms'] > 0): ?>
-                                        <span><i class="fas fa-bed"></i> <?php echo htmlspecialchars($prop['bedrooms']); ?></span>
-                                    <?php endif; ?>
-                                    <?php if (!empty($prop['bathrooms']) && $prop['bathrooms'] > 0): ?>
-                                        <span><i class="fas fa-bath"></i> <?php echo htmlspecialchars($prop['bathrooms']); ?></span>
-                                    <?php endif; ?>
-                                    <?php if (!empty($prop['square_meters']) && $prop['square_meters'] > 0): ?>
-                                        <span><i class="fas fa-vector-square"></i> <?php echo number_format($prop['square_meters'], 0, ',', '.'); ?> m²</span>
-                                    <?php endif; ?>
-                                </div>
+                                
+                                <?php if ($es_vendida): ?>
+                                    <div class="features">
+                                        <span style="color:#8b1a1a; font-style:italic; font-size:0.75rem;">
+                                            <i class="fa-solid fa-check-circle" style="color:#8b1a1a;"></i> 
+                                            Esta propiedad ya fue vendida
+                                        </span>
+                                    </div>
+                                <?php elseif ($es_apartada): ?>
+                                    <div class="features">
+                                        <span style="color:#d97706; font-style:italic; font-size:0.75rem;">
+                                            <i class="fa-solid fa-handshake" style="color:#d97706;"></i> 
+                                            Esta propiedad está apartada
+                                        </span>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="features">
+                                        <?php if (!empty($prop['bedrooms']) && $prop['bedrooms'] > 0): ?>
+                                            <span><i class="fas fa-bed"></i> <?php echo htmlspecialchars($prop['bedrooms']); ?></span>
+                                        <?php endif; ?>
+                                        <?php if (!empty($prop['bathrooms']) && $prop['bathrooms'] > 0): ?>
+                                            <span><i class="fas fa-bath"></i> <?php echo htmlspecialchars($prop['bathrooms']); ?></span>
+                                        <?php endif; ?>
+                                        <?php if (!empty($prop['square_meters']) && $prop['square_meters'] > 0): ?>
+                                            <span><i class="fas fa-vector-square"></i> <?php echo number_format($prop['square_meters'], 0, ',', '.'); ?> m²</span>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </a>

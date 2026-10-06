@@ -21,6 +21,9 @@ $filtro_busqueda = isset($_GET['busqueda']) ? trim($_GET['busqueda']) : '';
 $where_conditions = [];
 $params = [];
 
+// Mostrar SOLO propiedades publicadas (checkbox activo en inventario)
+$where_conditions[] = "p.publica = 1";
+
 // Mostrar propiedades activas Y vendidas
 $where_conditions[] = "p.status IN ('activo', 'vendido', 'apartado')";
 
@@ -85,6 +88,7 @@ try {
             p.colonia,
             p.domicilio,
             p.status,
+            p.publica,
             p.property_type,
             p.created_at,
             p.sold_at,

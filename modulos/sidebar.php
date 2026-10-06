@@ -5,7 +5,7 @@ $rol_actual = $_SESSION['usuario_rol'] ?? 'externo';
 
 // Definición de permisos por rol
 $permisos = [
-    'admin' => ['inicio', 'calificador', 'calendario', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'crm_clientes', 'rastreabilidad', 'mensajes', 'gestion_acceso', 'administracion', 'audit_log'],
+    'admin' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'crm_clientes', 'rastreabilidad', 'mensajes', 'gestion_acceso', 'administracion', 'bolsa_trabajo'],
     'asesor' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'rastreabilidad', 'mensajes'],
     'captador' => ['inicio', 'calificador', 'publicar_propiedad', 'mensajes'],
     'propietario' => ['mis_propiedades', 'publicar_propiedad', 'mensajes'],
@@ -72,12 +72,6 @@ $roles_espanol = [
             <i class="fas fa-star"></i> Calificador de Propiedades
         </a>
         <?php endif; ?>
-            
-        <?php if (ver('calendario')): ?>
-        <a href="../calendario.php">
-            <i class="fas fa-calendar"></i> Calendario
-        </a>
-        <?php endif; ?>
 
         <?php if (ver('mis_propiedades')): ?>
         <a href="../mis_propiedades.php">
@@ -86,7 +80,7 @@ $roles_espanol = [
         <?php endif; ?>
 
         <?php if (ver('publicar_propiedad')): ?>
-        <a href="vender.php">
+        <a href="/vender.php">
             <i class="fas fa-plus-circle"></i> Publicar Propiedad
         </a>
         <?php endif; ?>
@@ -128,9 +122,9 @@ $roles_espanol = [
         </a>
         <?php endif; ?>
 
-        <?php if (ver('audit_log')): ?>
-        <a href="../visor_audit_log.php">
-            <i class="fas fa-envelope-open-text"></i> Audit Log
+        <?php if (ver('bolsa_trabajo')): ?>
+        <a href="../vacantes_admin.php">
+            <i class="fas fa-envelope-open-text"></i> Bolsa de Trabajo
         </a>
         <?php endif; ?>
     </nav>

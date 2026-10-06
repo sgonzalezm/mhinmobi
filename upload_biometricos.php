@@ -28,7 +28,7 @@ if (isset($_GET['id']) && is_numeric($_GET['id']) && !isset($_GET['token'])) {
     
     try {
         $stmt = $conn->prepare("
-            SELECT id, title, address_city, address_municipality 
+            SELECT id, title, estado, domicilio 
             FROM properties 
             WHERE id = ?
         ");
@@ -1199,9 +1199,6 @@ $dedos_capturados = array_column($huellas_existentes, 'dedo');
         <div class="admin-actions">
             <a href="propiedad_detalle_inventario.php?id=<?php echo $token_data['property_id']; ?>">
                 <i class="fas fa-arrow-left"></i> Volver
-            </a>
-            <a href="inventario.php">
-                <i class="fas fa-th-list"></i> Inventario
             </a>
         </div>
     </div>
