@@ -7,7 +7,7 @@ $rol_actual = $_SESSION['usuario_rol'] ?? 'externo';
 $permisos = [
     'admin' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'crm_clientes', 'rastreabilidad', 'mensajes', 'gestion_acceso', 'administracion', 'bolsa_trabajo'],
     'asesor' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'rastreabilidad', 'mensajes'],
-    'captador' => ['inicio', 'calificador', 'publicar_propiedad', 'mensajes'],
+    'captador' => ['inicio', 'calificador', 'publicar_propiedad', 'mensajes', 'gestion_leads'],
     'propietario' => ['mis_propiedades', 'publicar_propiedad', 'mensajes'],
     'externo' => ['mensajes']
 ];
@@ -113,6 +113,12 @@ $roles_espanol = [
         <?php if (ver('gestion_acceso')): ?>
         <a href="../accesos.php">
             <i class="fas fa-key"></i> Gestión de acceso
+        </a>
+        <?php endif; ?>
+
+        <?php if (ver('gestion_leads')): ?>
+        <a href="../gestion_leads.php">
+            <i class="fas fa-user-friends"></i> Gestión de Leads
         </a>
         <?php endif; ?>
 

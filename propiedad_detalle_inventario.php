@@ -6,7 +6,6 @@ session_start();
 
 date_default_timezone_set('America/Mexico_City');
 
-
 require_once 'includes/conexion.php';
 require_once 'includes/auth.php';
 
@@ -2210,6 +2209,9 @@ $base_url = getBaseUrl();
                                 onclick="descargarExpediente()">
                             <i class="fas fa-file-archive"></i> Descargar Expediente
                         </button>
+                        <a href="descargar_ficha_tecnica.php?id=<?php echo $property_id; ?>" class="btn-detail primary">
+                            <i class="fas fa-edit"></i> Descargar Ficha Téc. PDF
+                        </a>
                     <?php endif; ?>
                 </div>
             </div>
