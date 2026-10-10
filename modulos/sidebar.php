@@ -5,7 +5,7 @@ $rol_actual = $_SESSION['usuario_rol'] ?? 'externo';
 
 // Definición de permisos por rol
 $permisos = [
-    'admin' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'crm_clientes', 'rastreabilidad', 'mensajes', 'gestion_acceso', 'administracion', 'bolsa_trabajo'],
+    'admin' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'crm_clientes', 'rastreabilidad', 'mensajes', 'gestion_acceso', 'administracion', 'bolsa_trabajo', 'audit_logs'],
     'asesor' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'rastreabilidad', 'mensajes'],
     'captador' => ['inicio', 'calificador', 'publicar_propiedad', 'mensajes', 'gestion_leads'],
     'propietario' => ['mis_propiedades', 'publicar_propiedad', 'mensajes'],
@@ -131,6 +131,11 @@ $roles_espanol = [
         <?php if (ver('bolsa_trabajo')): ?>
         <a href="../vacantes_admin.php">
             <i class="fas fa-envelope-open-text"></i> Bolsa de Trabajo
+        </a>
+        <?php endif; ?>
+        <?php if (ver('audit_logs')): ?>
+        <a href="../audit_logs.php">
+            <i class="fas fa-clock "></i> Audit Logs
         </a>
         <?php endif; ?>
     </nav>

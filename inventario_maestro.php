@@ -236,7 +236,8 @@ function getStatusBadge($status) {
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#1d4ed8">
     <link rel="stylesheet" href="css/socios.css">
     <title>Inventario de Propiedades | Vera Terra</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
@@ -247,6 +248,10 @@ function getStatusBadge($status) {
     <style>
         * { box-sizing: border-box; }
 
+        html, body { overflow-x: hidden; max-width: 100vw; }
+        img { max-width: 100%; height: auto; }
+
+        /* ========== ESTILOS BASE (desktop) ========== */
         .properties-table-wrapper {
             overflow-x: auto; border-radius: 10px;
             border: 1px solid #e2e8f0; background: #fff;
@@ -304,11 +309,12 @@ function getStatusBadge($status) {
 
         .col-actions { text-align: center; white-space: nowrap; }
         .action-btn {
-            width: 30px; height: 30px; border: none; background: transparent;
-            color: #94a3b8; border-radius: 6px; cursor: pointer;
-            transition: all 0.15s; font-size: 0.8rem;
+            width: 34px; height: 34px; border: none; background: transparent;
+            color: #64748b; border-radius: 8px; cursor: pointer;
+            transition: all 0.15s; font-size: 0.85rem;
+            -webkit-tap-highlight-color: transparent;
         }
-        .action-btn:hover { background: #f1f5f9; color: #0f172a; }
+        .action-btn:hover, .action-btn:focus { background: #f1f5f9; color: #0f172a; }
         .action-btn.view:hover { background: #dbeafe; color: #1d4ed8; }
         .action-btn.assign:hover { background: #e0e7ff; color: #4338ca; }
 
@@ -375,20 +381,13 @@ function getStatusBadge($status) {
             background: #fff; padding: 24px 32px; border-radius: 12px;
             display: flex; align-items: center; gap: 14px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin: 0 20px;
         }
         .export-box i { font-size: 1.6rem; color: #16a34a; }
         .export-box span { font-size: 0.9rem; font-weight: 600; color: #0f172a; }
 
-        @media (max-width: 768px) {
-            .table-toolbar { flex-direction: column; align-items: stretch; }
-            .table-toolbar .search-box { width: 100%; }
-            .table-toolbar .search-box input { flex: 1; }
-        }
-        @media (max-width: 600px) { .view-tab.portal-link { margin-left: 0; } }
-
         .table-container { overflow-x: auto; }
 
-        /* Badges asesor */
         .asesor-badge {
             display: inline-flex; align-items: center; gap: 5px;
             font-size: 0.72rem; font-weight: 600; padding: 3px 9px;
@@ -397,51 +396,32 @@ function getStatusBadge($status) {
         }
         .asesor-badge.empty { background: #f1f5f9; color: #94a3b8; font-weight: 500; }
 
-        /* ===== Checkbox publicación en grid ===== */
         .col-publica { text-align: center; }
         .check-publica-form { display: inline-block; margin: 0; }
         .check-publica {
-            appearance: none;
-            -webkit-appearance: none;
-            width: 40px; height: 22px;
-            background: #cbd5e1;
-            border-radius: 11px;
-            position: relative;
-            cursor: pointer;
-            transition: background 0.2s;
-            outline: none;
-            border: none;
-            vertical-align: middle;
+            appearance: none; -webkit-appearance: none;
+            width: 40px; height: 22px; background: #cbd5e1;
+            border-radius: 11px; position: relative; cursor: pointer;
+            transition: background 0.2s; outline: none; border: none; vertical-align: middle;
+            -webkit-tap-highlight-color: transparent;
         }
         .check-publica::after {
-            content: '';
-            position: absolute;
-            top: 2px; left: 2px;
-            width: 18px; height: 18px;
-            background: #fff;
-            border-radius: 50%;
-            transition: transform 0.2s;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+            content: ''; position: absolute; top: 2px; left: 2px;
+            width: 18px; height: 18px; background: #fff; border-radius: 50%;
+            transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
         }
         .check-publica:checked { background: #16a34a; }
         .check-publica:checked::after { transform: translateX(18px); }
         .check-publica:disabled { opacity: 0.5; cursor: wait; }
 
-        /* 🔒 CAMBIO PERMISOS: ícono bloqueado para no-admins */
         .publica-locked {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 40px; height: 22px;
-            background: #f1f5f9;
-            border-radius: 11px;
-            color: #94a3b8;
-            font-size: 0.75rem;
-            cursor: not-allowed;
-            opacity: 0.6;
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 40px; height: 22px; background: #f1f5f9;
+            border-radius: 11px; color: #94a3b8; font-size: 0.75rem;
+            cursor: not-allowed; opacity: 0.6;
         }
 
-        /* ===== MODAL ===== */
+        /* ========== MODAL ========== */
         .modal-overlay {
             position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55);
             display: none; align-items: center; justify-content: center;
@@ -452,6 +432,7 @@ function getStatusBadge($status) {
             background: #fff; border-radius: 14px; width: 100%; max-width: 440px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.25);
             animation: modalIn 0.2s ease;
+            max-height: calc(100vh - 40px); overflow-y: auto;
         }
         @keyframes modalIn {
             from { transform: translateY(-20px); opacity: 0; }
@@ -460,11 +441,15 @@ function getStatusBadge($status) {
         .modal-header {
             display: flex; justify-content: space-between; align-items: center;
             padding: 16px 20px; border-bottom: 1px solid #e2e8f0;
+            position: sticky; top: 0; background: #fff; z-index: 2;
+            border-radius: 14px 14px 0 0;
         }
         .modal-header h3 { margin: 0; font-size: 1rem; color: #0f172a; }
         .modal-close {
             background: transparent; border: none; color: #94a3b8;
-            font-size: 1.1rem; cursor: pointer; padding: 6px 10px; border-radius: 6px;
+            font-size: 1.1rem; cursor: pointer; padding: 8px 12px; border-radius: 6px;
+            min-width: 44px; min-height: 44px;
+            -webkit-tap-highlight-color: transparent;
         }
         .modal-close:hover { background: #f1f5f9; color: #0f172a; }
 
@@ -472,7 +457,7 @@ function getStatusBadge($status) {
         .modal-property-title {
             font-size: 0.82rem; color: #475569; background: #f8fafc;
             padding: 8px 12px; border-radius: 8px; margin: 0 0 16px 0;
-            border-left: 3px solid #1d4ed8;
+            border-left: 3px solid #1d4ed8; word-break: break-word;
         }
         .form-group { margin-bottom: 0; }
         .form-group label {
@@ -480,24 +465,180 @@ function getStatusBadge($status) {
             color: #334155; margin-bottom: 6px;
         }
         .form-group select {
-            width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1;
-            border-radius: 8px; font-size: 0.85rem; outline: none; background: #fff;
+            width: 100%; padding: 12px 12px; border: 1px solid #cbd5e1;
+            border-radius: 8px; font-size: 0.95rem; outline: none; background: #fff;
         }
         .form-group select:focus { border-color: #1d4ed8; }
-        .form-help { display: block; font-size: 0.7rem; color: #94a3b8; margin-top: 6px; }
+        .form-help { display: block; font-size: 0.72rem; color: #94a3b8; margin-top: 6px; }
 
         .modal-footer {
             display: flex; justify-content: flex-end; gap: 10px;
             padding: 14px 20px; border-top: 1px solid #e2e8f0;
+            position: sticky; bottom: 0; background: #fff;
+            border-radius: 0 0 14px 14px;
         }
         .btn-modal {
-            padding: 9px 18px; border-radius: 8px; font-size: 0.82rem;
+            padding: 12px 20px; border-radius: 8px; font-size: 0.85rem;
             font-weight: 600; cursor: pointer; border: none; transition: all 0.15s;
+            min-height: 44px; -webkit-tap-highlight-color: transparent;
         }
         .btn-modal.secondary { background: #f1f5f9; color: #334155; }
         .btn-modal.secondary:hover { background: #e2e8f0; }
         .btn-modal.primary { background: #1d4ed8; color: #fff; }
         .btn-modal.primary:hover { background: #1e40af; }
+
+        /* ========== RESPONSIVE (TABLET) ========== */
+        @media (max-width: 992px) {
+            .table-toolbar { flex-direction: column; align-items: stretch; }
+            .table-toolbar .search-box { width: 100%; }
+            .table-toolbar .search-box input { flex: 1; min-width: 0; }
+        }
+
+        /* ========== RESPONSIVE (MÓVIL) — Tabla → Cards ========== */
+        @media (max-width: 768px) {
+            .properties-table-wrapper { border: none; background: transparent; }
+
+            /* Ocultar cabecera */
+            .properties-table thead { display: none; }
+
+            /* Cada fila es una tarjeta */
+            .properties-table,
+            .properties-table tbody,
+            .properties-table tr,
+            .properties-table td {
+                display: block;
+                width: 100%;
+                min-width: 0;
+            }
+            .properties-table { min-width: 0; font-size: 0.85rem; }
+
+            .properties-table tbody tr {
+                background: #fff;
+                border: 1px solid #e2e8f0;
+                border-radius: 12px;
+                margin-bottom: 12px;
+                padding: 12px;
+                position: relative;
+                box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+            }
+            .properties-table tbody tr:hover { background: #fff; }
+
+            .properties-table tbody td {
+                border-bottom: none;
+                padding: 6px 0;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 12px;
+                text-align: right;
+            }
+            .properties-table tbody td::before {
+                content: attr(data-label);
+                font-size: 0.7rem;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.4px;
+                color: #64748b;
+                text-align: left;
+                flex: 0 0 auto;
+                padding-right: 8px;
+            }
+
+            /* Imagen destacada arriba, ancho completo */
+            .properties-table td.col-img {
+                justify-content: center;
+                padding: 0 0 12px 0;
+                border-bottom: 1px solid #f1f5f9;
+                margin-bottom: 8px;
+            }
+            .properties-table td.col-img::before { display: none; }
+            .properties-table td.col-img .thumb {
+                width: 100%;
+                height: 160px;
+                border-radius: 10px;
+            }
+            .properties-table td.col-img .thumb .no-image { font-size: 2rem; }
+
+            /* Título sin label, destacado */
+            .properties-table td.col-title {
+                display: block;
+                text-align: left;
+                font-size: 0.95rem;
+                padding-bottom: 10px;
+            }
+            .properties-table td.col-title::before { display: none; }
+
+            /* Precio alineado a la derecha, sin label */
+            .properties-table td.col-price {
+                display: block;
+                text-align: right;
+                font-size: 1.05rem;
+                padding-top: 6px;
+                padding-bottom: 10px;
+                border-top: 1px dashed #e2e8f0;
+                margin-top: 6px;
+            }
+            .properties-table td.col-price::before { display: none; }
+
+            /* Publicada: el toggle a la derecha con label */
+            .properties-table td.col-publica { justify-content: space-between; }
+
+            /* Acciones en fila completa, botones grandes */
+            .properties-table td.col-actions {
+                display: flex;
+                justify-content: flex-end;
+                gap: 10px;
+                padding-top: 10px;
+                border-top: 1px solid #f1f5f9;
+                margin-top: 8px;
+            }
+            .properties-table td.col-actions::before { display: none; }
+            .action-btn {
+                width: 44px; height: 44px;
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                font-size: 1rem;
+            }
+            .action-btn.view { color: #1d4ed8; }
+            .action-btn.assign { color: #4338ca; }
+
+            /* Mensajes */
+            .message-box { font-size: 0.8rem; padding: 10px 12px; }
+
+            /* Tabs adaptadas */
+            .view-tabs { padding: 4px; gap: 4px; }
+            .view-tab { flex: 1 1 calc(50% - 4px); justify-content: center; padding: 10px 8px; font-size: 0.78rem; }
+            .view-tab.portal-link { flex: 1 1 100%; margin-left: 0; margin-top: 4px; }
+
+            /* Toolbar */
+            .table-toolbar { padding: 10px 12px; }
+            .table-toolbar .search-box input,
+            .table-toolbar .search-box select { font-size: 16px; /* evita zoom iOS */ width: 100%; }
+            .btn-excel { width: 100%; justify-content: center; padding: 12px; min-height: 44px; }
+
+            /* Modal ocupa más pantalla */
+            .modal-overlay { padding: 0; align-items: flex-end; }
+            .modal-box {
+                max-width: 100%;
+                border-radius: 16px 16px 0 0;
+                max-height: 92vh;
+                animation: modalInMobile 0.25s ease;
+            }
+            @keyframes modalInMobile {
+                from { transform: translateY(100%); }
+                to   { transform: translateY(0); }
+            }
+            .modal-header { border-radius: 16px 16px 0 0; }
+            .modal-footer { border-radius: 0; }
+            .modal-footer .btn-modal { flex: 1; }
+        }
+
+        /* ========== EXTRA PEQUEÑOS ========== */
+        @media (max-width: 400px) {
+            .properties-table tbody td { font-size: 0.82rem; }
+            .properties-table td.col-title { font-size: 0.9rem; }
+            .properties-table td.col-price { font-size: 1rem; }
+        }
     </style>
 </head>
 <body>
@@ -652,7 +793,7 @@ function getStatusBadge($status) {
                             ?>
                                 <tr data-text="<?php echo strtolower($title . ' ' . $municipio . ' ' . $domicilio . ' ' . $colonia . ' ' . $estadoGeo); ?>"
                                     data-operation="<?php echo $opType; ?>">
-                                    <td class="col-img">
+                                    <td class="col-img" data-label="">
                                         <div class="thumb">
                                             <?php if ($hasImage): ?>
                                                 <img src="<?php echo $imagePath; ?>" 
@@ -665,27 +806,28 @@ function getStatusBadge($status) {
                                             <?php endif; ?>
                                         </div>
                                     </td>
-                                    <td class="col-title" data-raw-title="<?php echo $title; ?>">
+                                    <td class="col-title" data-label="Título" data-raw-title="<?php echo $title; ?>">
                                         <span class="op-badge <?php echo $badge['class']; ?>" data-exclude="true"><?php echo $badge['label']; ?></span>
                                         <?php echo $title; ?>
                                         <?php if ($esVendida): ?>
                                             <i class="fas fa-flag-checkered" style="color:#92400e; margin-left:4px;" title="Histórica"></i>
                                         <?php endif; ?>
                                     </td>
-                                    <td>
+                                    <td data-label="Status">
                                         <span class="status-pill <?php echo $statusBadge['class']; ?>">
                                             <?php echo $statusBadge['label']; ?>
                                         </span>
                                     </td>
-                                    <td><?php echo $estadoGeo; ?></td>
-                                    <td><?php echo $municipio; ?></td>
-                                    <td><?php echo $colonia; ?></td>
-                                    <td><?php echo $domicilio; ?></td>
+                                    <td data-label="Estado"><?php echo $estadoGeo; ?></td>
+                                    <td data-label="Municipio"><?php echo $municipio; ?></td>
+                                    <td data-label="Colonia"><?php echo $colonia; ?></td>
+                                    <td data-label="Dirección"><?php echo $domicilio; ?></td>
                                     <td class="col-price <?php echo $priceClass; ?>" 
+                                        data-label="Precio"
                                         data-raw-price="<?php echo $hasPrice ? floatval($price) : ''; ?>">
                                         <?php echo $priceText; ?>
                                     </td>
-                                    <td class="col-asesor">
+                                    <td class="col-asesor" data-label="Asesor">
                                         <?php if (!empty($asesorNombre)): ?>
                                             <span class="asesor-badge">
                                                 <i class="fas fa-user-tie"></i>
@@ -699,7 +841,7 @@ function getStatusBadge($status) {
                                     </td>
 
                                     <!-- 🔒 CAMBIO PERMISOS: checkbox solo para admin -->
-                                    <td class="col-publica">
+                                    <td class="col-publica" data-label="Publicada">
                                         <?php if ($es_admin): ?>
                                             <form method="POST" class="check-publica-form" 
                                                   onsubmit="return confirmarPublicacion(this);">
@@ -719,7 +861,7 @@ function getStatusBadge($status) {
                                     </td>
 
                                     <!-- 🔒 CAMBIO PERMISOS: botón asignar solo para admin -->
-                                    <td class="col-actions">
+                                    <td class="col-actions" data-label="">
                                         <button class="action-btn view" title="Ver detalles" 
                                                 onclick="verPropiedad('<?php echo (int)$propiedad['id']; ?>')">
                                             <i class="fas fa-eye"></i>
@@ -817,6 +959,11 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // Cerrar modal con Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') cerrarModalAsignar();
+    });
+
     const searchInput = document.getElementById('searchTable');
     const filterOperation = document.getElementById('filterOperation');
     if (searchInput && filterOperation) {
@@ -847,10 +994,14 @@ function abrirModalAsignar(id, titulo, assignedTo) {
     document.getElementById('modalPropertyTitle').textContent = '📌 ' + titulo;
     document.getElementById('modalAsesor').value = assignedTo > 0 ? String(assignedTo) : '';
     modal.classList.add('show');
+    document.body.style.overflow = 'hidden'; // 🔒 evita scroll de fondo en móvil
 }
 function cerrarModalAsignar() {
     const modal = document.getElementById('modalAsignar');
-    if (modal) modal.classList.remove('show');
+    if (modal) {
+        modal.classList.remove('show');
+        document.body.style.overflow = '';
+    }
 }
 document.getElementById('modalAsignar')?.addEventListener('click', function(e) {
     if (e.target === this) cerrarModalAsignar();

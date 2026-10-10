@@ -17,6 +17,18 @@ if (!$usuario) {
     exit;
 }
 
+// ===== VERIFICAR SI PUEDE VER CONTACTOS Y LEADS =====
+// Admin, asesor y captador tienen acceso
+function puedeVerContactosYLeads($usuario) {
+    $rol = strtolower(trim($usuario['role'] ?? ''));
+    return in_array($rol, [
+        'admin', 'administrador', 'administradora',
+        'asesor', 'asesores', 'agente', 'agentes',
+        'captador', 'captadores', 'capturista', 'capturistas'
+    ], true);
+}
+$puede_ver_crm = puedeVerContactosYLeads($usuario);
+
 // ===== EVALUACIONES DE PROPIEDADES (bandeja principal) =====
 $mensajes = [];
 try {
@@ -57,11 +69,11 @@ foreach ($mensajes as $m) {
     }
 }
 
-// ===== CONTACTOS NUEVOS (solo admin) =====
+// ===== CONTACTOS NUEVOS (admin, asesor, captador) =====
 $contactos_nuevos = 0;
 $total_contactos = 0;
 $leads_nuevos = 0;
-if (esAdmin()) {
+if ($puede_ver_crm) {
     try {
         $stmt = $conn->prepare("SELECT COUNT(*) as total FROM contactos WHERE status = 'nuevo'");
         $stmt->execute();
@@ -155,7 +167,10 @@ if (esAdmin()) {
             box-shadow: 0 6px 20px rgba(111, 66, 193, 0.15);
         }
 
+        /* ===== OCULTAR NUMERALIA EN MÓVIL ===== */
         @media (max-width: 768px) {
+            .stats-grid { display: none !important; }
+
             .mensaje-item { flex-wrap: wrap; }
             .mensaje-item .mensaje-meta {
                 width: 100%; text-align: left;
@@ -183,26 +198,17 @@ if (esAdmin()) {
             </p>
         </div>
         <div class="header-actions">
-            <?php if (esAdmin()): ?>
+            <?php if ($puede_ver_crm): ?>
                 <a href="gestion_contactos.php" class="btn-header secondary" style="position:relative; background: #6f42c1; color: #fff;">
                     <i class="fas fa-address-book"></i> Contactos
                     <?php if ($contactos_nuevos > 0): ?>
                         <span class="badge-contacts"><?php echo $contactos_nuevos; ?></span>
                     <?php endif; ?>
                 </a>
-                <a href="gestion_leads.php" class="btn-header secondary" style="position:relative; background: #6f42c1; color: #fff;">
-                    <i class="fas fa-address-book"></i> Leads
-                    <?php if ($leads_nuevos > 0): ?>
-                        <span class="badge-contacts"><?php echo $leads_nuevos; ?></span>
-                    <?php endif; ?>
+                <a href="gestion_leads.php" class="btn-header secondary" style="position:relative; background: #af375b; color: #fff;">
+                    <i class="fas fa-binoculars"></i> Leads
                 </a>
             <?php endif; ?>
-            <button class="btn-header primary" onclick="nuevoMensaje()">
-                <i class="fas fa-plus-circle"></i> Nuevo Mensaje
-            </button>
-            <button class="btn-header secondary" onclick="marcarTodosLeidos()">
-                <i class="fas fa-check-double"></i> Marcar todos como leídos
-            </button>
         </div>
     </div>
 
@@ -229,7 +235,7 @@ if (esAdmin()) {
             <div class="stat-label">Recibidos</div>
         </div>
 
-        <?php if (esAdmin()): ?>
+        <?php if ($puede_ver_crm): ?>
             <a href="gestion_contactos.php" style="text-decoration: none; color: inherit; display: block;">
                 <div class="stat-card contactos" style="border-left-color: #6f42c1;">
                     <span class="stat-icon" style="color: #6f42c1;"><i class="fas fa-users"></i></span>
@@ -356,9 +362,6 @@ if (esAdmin()) {
         window.location.href = 'ver_evaluacion.php?id=' + id;
     }
 
-    function nuevoMensaje() {
-        alert('Función: Crear nuevo mensaje');
-    }
 
     function eliminarMensaje(id) {
         if (confirm('¿Eliminar esta evaluación?')) {
@@ -366,9 +369,6 @@ if (esAdmin()) {
         }
     }
 
-    function marcarTodosLeidos() {
-        alert('Función: Marcar todos como leídos');
-    }
 </script>
 
 </body>

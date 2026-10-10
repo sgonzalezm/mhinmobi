@@ -1112,6 +1112,13 @@ $stats['con_visita'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
             max-width: 500px;
             margin: 10px auto;
         }
+
+        /* ===== OCULTAR TARJETAS DE NUMERALIA EN MÓVIL ===== */
+        @media (max-width: 768px) {
+            .stats-grid {
+                display: none !important;
+            }
+        }
     </style>
 </head>
 <body>

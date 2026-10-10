@@ -21,14 +21,101 @@ if (!$usuario) {
 $vendedor_id = $usuario['id'];
 
 // ============================================
-// 1. OBTENER PROPIEDADES DEL VENDEDOR
+// 0. NIVEL Y RENDIMIENTO DEL MES ACTUAL
+// ============================================
+$niveles_comision = [];
+$nivel_actual = null;
+$nivel_siguiente = null;
+$comision_porcentaje_actual = 5.0;
+
+$inicio_mes = date('Y-m-01 00:00:00');
+$fin_mes    = date('Y-m-t 23:59:59');
+
+$ventas_mes = [];
+$stats_mes = [
+    'count'             => 0,
+    'monto_vendido'     => 0,
+    'comision_estimada' => 0,
+    'propiedades'       => [] // IDs de propiedades vendidas este mes
+];
+
+try {
+    // Cargar niveles activos ordenados
+    $stmtNiv = $conn->query("
+        SELECT * FROM comision_niveles 
+        WHERE activo = 1 
+        ORDER BY nivel_orden ASC
+    ");
+    $niveles_comision = $stmtNiv->fetchAll(PDO::FETCH_ASSOC);
+
+    // Propiedades asignadas al vendedor vendidas ESTE MES
+    $stmtVendidasMes = $conn->prepare("
+        SELECT 
+            p.id,
+            p.title,
+            p.status,
+            p.updated_at AS sold_at,
+            pf.asking_price
+        FROM properties p
+        LEFT JOIN property_financials pf ON p.id = pf.property_id
+        WHERE p.assigned_to = ?
+          AND LOWER(p.status) IN ('vendido', 'completado')
+          AND p.updated_at BETWEEN ? AND ?
+        ORDER BY p.updated_at DESC
+    ");
+    $stmtVendidasMes->execute([$vendedor_id, $inicio_mes, $fin_mes]);
+    $ventas_mes = $stmtVendidasMes->fetchAll(PDO::FETCH_ASSOC);
+
+    $stats_mes['count'] = count($ventas_mes);
+    foreach ($ventas_mes as $v) {
+        $stats_mes['monto_vendido'] += (float)($v['asking_price'] ?? 0);
+        $stats_mes['propiedades'][] = (int)$v['id'];
+    }
+
+    // Determinar nivel según ventas del mes
+    foreach ($niveles_comision as $idx => $n) {
+        $min = (int)$n['ventas_min'];
+        $max = (int)$n['ventas_max'];
+        if ($stats_mes['count'] >= $min && $stats_mes['count'] <= $max) {
+            $nivel_actual = $n;
+            $nivel_siguiente = $niveles_comision[$idx + 1] ?? null;
+            break;
+        }
+    }
+
+    // Fallback: si supera el máximo del último nivel, o está por debajo del primero
+    if (!$nivel_actual && !empty($niveles_comision)) {
+        $ultimo = end($niveles_comision);
+        if ($stats_mes['count'] >= (int)$ultimo['ventas_min']) {
+            $nivel_actual = $ultimo;
+            $nivel_siguiente = null;
+        } else {
+            $nivel_actual = $niveles_comision[0];
+            $nivel_siguiente = $niveles_comision[1] ?? null;
+        }
+    }
+
+    if ($nivel_actual) {
+        $comision_porcentaje_actual = (float)$nivel_actual['comision_porcentaje'];
+    }
+
+    // Comisión estimada del mes
+    if ($stats_mes['count'] > 0) {
+        $stats_mes['comision_estimada'] = $stats_mes['monto_vendido'] * ($comision_porcentaje_actual / 100);
+    }
+
+} catch (PDOException $e) {
+    error_log("Error calculando nivel y rendimiento mensual: " . $e->getMessage());
+}
+
+// ============================================
+// 1. OBTENER PROPIEDADES ASIGNADAS AL VENDEDOR
 // ============================================
 $propiedades = [];
 $error_msg = '';
 $alertas = [];
 
 try {
-    // Consulta principal con JOIN a las tablas correctas
     $stmt = $conn->prepare("
         SELECT 
             p.id,
@@ -55,7 +142,7 @@ try {
         LEFT JOIN property_details pd ON p.id = pd.property_id
         LEFT JOIN property_financials pf ON p.id = pf.property_id
         LEFT JOIN property_media pm ON p.id = pm.property_id AND pm.is_primary = 1
-        WHERE p.owner_id = ?
+        WHERE p.assigned_to = ?
         ORDER BY p.created_at DESC
     ");
     $stmt->execute([$vendedor_id]);
@@ -80,9 +167,8 @@ try {
         }
     }
 
-
     if (empty($propiedades)) {
-        $error_msg = "No tienes propiedades registradas en el sistema.";
+        $error_msg = "No tienes propiedades asignadas en el sistema.";
     }
 
 } catch (PDOException $e) {
@@ -94,57 +180,59 @@ try {
 // 2. CALCULAR MÉTRICAS Y ESTADÍSTICAS
 // ============================================
 $stats = [
-    'total' => count($propiedades),
-    'activas' => 0,
-    'pendientes' => 0,
-    'vendidas' => 0,
-    'suspendidas' => 0,
-    'venta' => 0,
-    'compra' => 0,
-    'con_precio' => 0,
-    'sin_precio' => 0,
-    'con_imagen' => 0,
-    'sin_imagen' => 0,
-    'total_inventario' => 0,
-    'comision_potencial_total' => 0,
-    'propiedades_riesgo' => 0
+    'total'             => count($propiedades),
+    'activas'           => 0,
+    'pendientes'        => 0,
+    'vendidas'          => 0,
+    'suspendidas'       => 0,
+    'venta'             => 0,
+    'compra'            => 0,
+    'con_precio'        => 0,
+    'sin_precio'        => 0,
+    'con_imagen'        => 0,
+    'sin_imagen'        => 0,
+    'total_inventario'  => 0,
+    'propiedades_riesgo'=> 0
 ];
 
-foreach ($propiedades as $p) {
-    // Estadísticas por estado
+foreach ($propiedades as $key => $p) {
     $status = strtolower(trim($p['status'] ?? ''));
+
     if ($status === 'activo') $stats['activas']++;
     elseif ($status === 'pendiente') $stats['pendientes']++;
     elseif ($status === 'vendido') $stats['vendidas']++;
     elseif ($status === 'suspendido') $stats['suspendidas']++;
-    
-    // Estadísticas por operación
+
     $opType = strtolower(trim($p['operation_type'] ?? ''));
     if ($opType === 'venta') $stats['venta']++;
     if ($opType === 'compra') $stats['compra']++;
-    
-    // Precios
-    if (isset($p['price']) && $p['price'] > 0) {
+
+    $precioProp = isset($p['price']) ? (float)$p['price'] : 0;
+    if ($precioProp > 0) {
         $stats['con_precio']++;
-        $stats['total_inventario'] += $p['price'];
+        $stats['total_inventario'] += $precioProp;
     } else {
         $stats['sin_precio']++;
     }
-    
+
+    // Marca de venta del mes
+    $propiedades[$key]['vendida_este_mes'] = in_array((int)$p['id'], $stats_mes['propiedades'], true);
+    $propiedades[$key]['porcentaje_nivel']  = $comision_porcentaje_actual;
+
     // Imágenes
     if (!empty($p['image_url'])) {
         $stats['con_imagen']++;
     } else {
         $stats['sin_imagen']++;
     }
-    
+
     // Propiedades en riesgo
-    if (empty($p['price']) || $p['price'] == 0 || empty($p['image_url'])) {
+    if ($precioProp <= 0 || empty($p['image_url'])) {
         $stats['propiedades_riesgo']++;
     }
-    
-    // Alertas específicas
-    if (empty($p['price']) || $p['price'] == 0) {
+
+    // Alertas
+    if ($precioProp <= 0) {
         $alertas[] = [
             'type' => 'warning',
             'icon' => 'fa-triangle-exclamation',
@@ -152,7 +240,7 @@ foreach ($propiedades as $p) {
             'property_id' => $p['id']
         ];
     }
-    
+
     if (empty($p['image_url'])) {
         $alertas[] = [
             'type' => 'info',
@@ -161,8 +249,8 @@ foreach ($propiedades as $p) {
             'property_id' => $p['id']
         ];
     }
-    
-    if (($p['days_active'] ?? 0) > 30 && $p['status'] === 'activo') {
+
+    if (($p['days_active'] ?? 0) > 30 && $status === 'activo') {
         $alertas[] = [
             'type' => 'warning',
             'icon' => 'fa-clock',
@@ -236,91 +324,201 @@ function getDetallesCorta($detalles) {
     <link rel="stylesheet" href="css/socios.css">
     <title>Mis Propiedades | Panel Vendedor</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    
-    <!-- ===== Librerías para exportación XLSX con estilos ===== -->
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-    
+
     <style>
-        /* ===== ESTILOS CORPORATIVOS ===== */
         * { box-sizing: border-box; }
 
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 12px;
-            margin-bottom: 16px;
+        /* ===== TABLERO DEL MES ===== */
+        .dashboard-month {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 1px solid #e8edf4;
+            border-radius: 14px;
+            padding: 20px 22px;
+            margin-bottom: 18px;
         }
 
-        .metric-card {
-            background: #ffffff;
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .dashboard-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dashboard-title i { color: #1d4ed8; }
+
+        .month-label {
+            font-size: 0.75rem;
+            color: #64748b;
+            font-weight: 600;
+            background: #f1f5f9;
+            padding: 3px 10px;
+            border-radius: 10px;
+            text-transform: capitalize;
+        }
+
+        .nivel-badge-lg {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 14px;
+            border-radius: 14px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .dash-block {
+            background: #fff;
             border: 1px solid #e8edf4;
             border-radius: 10px;
             padding: 14px 16px;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             gap: 12px;
             transition: all 0.2s;
         }
 
-        .metric-card:hover {
+        .dash-block:hover {
             border-color: #c7d2e0;
             box-shadow: 0 2px 8px rgba(0,0,0,0.04);
         }
 
-        .metric-icon {
-            width: 40px;
-            height: 40px;
+        .dash-block.highlight {
+            background: linear-gradient(135deg, #f0fdfa 0%, #ffffff 100%);
+            border-color: #99f6e4;
+        }
+
+        .dash-icon {
+            width: 42px;
+            height: 42px;
             border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.2rem;
+            font-size: 1.15rem;
             flex-shrink: 0;
         }
 
-        .metric-icon.blue { background: #dbeafe; color: #1d4ed8; }
-        .metric-icon.green { background: #dcfce7; color: #16a34a; }
-        .metric-icon.purple { background: #ede9fe; color: #7c3aed; }
-        .metric-icon.orange { background: #fef3c7; color: #d97706; }
-        .metric-icon.red { background: #fee2e2; color: #dc2626; }
-        .metric-icon.teal { background: #ccfbf1; color: #0d9488; }
-        .metric-icon.pink { background: #fce7f3; color: #db2777; }
+        .dash-icon.blue   { background: #dbeafe; color: #1d4ed8; }
+        .dash-icon.green  { background: #dcfce7; color: #16a34a; }
+        .dash-icon.teal   { background: #ccfbf1; color: #0d9488; }
 
-        .metric-info {
-            flex: 1;
-            min-width: 0;
-        }
+        .dash-info { flex: 1; min-width: 0; }
 
-        .metric-value {
-            font-size: 1.3rem;
+        .dash-value {
+            font-size: 1.35rem;
             font-weight: 700;
             color: #0f172a;
             line-height: 1.2;
         }
 
-        .metric-label {
-            font-size: 0.7rem;
+        .dash-label {
+            font-size: 0.72rem;
             color: #64748b;
             text-transform: uppercase;
             letter-spacing: 0.3px;
             font-weight: 600;
+            margin-top: 2px;
         }
 
-        .metric-trend {
-            font-size: 0.65rem;
+        .dash-sub {
+            font-size: 0.72rem;
+            color: #94a3b8;
+            margin-top: 6px;
+            line-height: 1.35;
+        }
+
+        .dash-progress {
+            margin-top: 8px;
+            padding-top: 12px;
+            border-top: 1px solid #e8edf4;
+        }
+
+        .dash-progress.max-level {
+            color: #16a34a;
             font-weight: 600;
-            padding: 1px 8px;
-            border-radius: 10px;
-            margin-left: auto;
-            white-space: nowrap;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
-        .metric-trend.positive { background: #dcfce7; color: #16a34a; }
-        .metric-trend.negative { background: #fee2e2; color: #dc2626; }
-        .metric-trend.neutral { background: #f1f5f9; color: #475569; }
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.82rem;
+            color: #334155;
+            margin-bottom: 8px;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
 
-        /* Alertas */
+        .progress-info i { color: #10b981; margin-right: 4px; }
+        .progress-pct { font-weight: 700; color: #0f172a; }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.4s ease;
+        }
+
+        .dashboard-note {
+            margin-top: 14px;
+            font-size: 0.72rem;
+            color: #64748b;
+            background: #f8fafc;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border-left: 3px solid #3b82f6;
+        }
+
+        .dashboard-note i { color: #3b82f6; margin-right: 4px; }
+
+        /* ===== Badge de nivel junto al saludo ===== */
+        .nivel-badge-vendedor {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            margin-left: 8px;
+            vertical-align: middle;
+            letter-spacing: 0.3px;
+        }
+
+        /* ===== Alertas ===== */
         .alerts-container {
             background: #ffffff;
             border: 1px solid #e8edf4;
@@ -338,9 +536,7 @@ function getDetallesCorta($detalles) {
             border-bottom: 1px solid #f1f5f9;
         }
 
-        .alert-item:last-child {
-            border-bottom: none;
-        }
+        .alert-item:last-child { border-bottom: none; }
 
         .alert-item .alert-icon.warning { color: #d97706; }
         .alert-item .alert-icon.info { color: #3b82f6; }
@@ -356,11 +552,9 @@ function getDetallesCorta($detalles) {
             cursor: pointer;
         }
 
-        .alert-item .alert-action:hover {
-            text-decoration: underline;
-        }
+        .alert-item .alert-action:hover { text-decoration: underline; }
 
-        /* ===== TABLA DE PROPIEDADES ===== */
+        /* ===== TABLA ===== */
         .properties-table-wrapper {
             overflow-x: auto;
             border-radius: 10px;
@@ -372,7 +566,7 @@ function getDetallesCorta($detalles) {
             width: 100%;
             border-collapse: collapse;
             font-size: 0.82rem;
-            min-width: 1000px;
+            min-width: 1050px;
         }
 
         .properties-table thead th {
@@ -395,19 +589,10 @@ function getDetallesCorta($detalles) {
             vertical-align: middle;
         }
 
-        .properties-table tbody tr:hover {
-            background: #f8faff;
-        }
+        .properties-table tbody tr:hover { background: #f8faff; }
+        .properties-table tbody tr:last-child td { border-bottom: none; }
 
-        .properties-table tbody tr:last-child td {
-            border-bottom: none;
-        }
-
-        /* Columna imagen */
-        .col-img {
-            width: 60px;
-            text-align: center;
-        }
+        .col-img { width: 60px; text-align: center; }
 
         .col-img .thumb {
             width: 48px;
@@ -450,14 +635,12 @@ function getDetallesCorta($detalles) {
         .op-badge-mini.compra { background: #3b82f6; }
         .op-badge-mini.general { background: #6b7280; }
 
-        /* Columna título */
         .col-title {
             min-width: 180px;
             max-width: 240px;
             font-weight: 600;
         }
 
-        /* Estados */
         .status-pill {
             display: inline-block;
             font-size: 0.65rem;
@@ -474,14 +657,12 @@ function getDetallesCorta($detalles) {
         .status-pill.status-suspended { background: #fee2e2; color: #991b1b; }
         .status-pill.status-other { background: #f1f5f9; color: #475569; }
 
-        /* Detalles */
         .col-details {
             font-size: 0.72rem;
             color: #64748b;
             white-space: nowrap;
         }
 
-        /* Precio */
         .col-price {
             text-align: right;
             font-weight: 700;
@@ -495,7 +676,6 @@ function getDetallesCorta($detalles) {
             font-size: 0.72rem;
         }
 
-        /* Días activa */
         .col-days {
             text-align: center;
             font-size: 0.75rem;
@@ -507,7 +687,6 @@ function getDetallesCorta($detalles) {
             font-weight: 700;
         }
 
-        /* Acciones */
         .col-actions {
             text-align: center;
             white-space: nowrap;
@@ -527,7 +706,47 @@ function getDetallesCorta($detalles) {
         .action-btn.view:hover { background: #dbeafe; color: #1d4ed8; }
         .action-btn.edit:hover { background: #dcfce7; color: #16a34a; }
 
-        /* Barra superior de la tabla */
+        /* ===== Marcas de venta ===== */
+        .badge-vendida-mes {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 12px;
+            background: #d1fae5;
+            color: #065f46;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .badge-vendida-prev {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.68rem;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 12px;
+            background: #f1f5f9;
+            color: #64748b;
+        }
+
+        .badge-no-vendida {
+            color: #cbd5e1;
+            font-size: 0.8rem;
+        }
+
+        tr.row-sold-month {
+            background: #f0fdfa !important;
+        }
+
+        tr.row-sold-month:hover {
+            background: #e6fbf5 !important;
+        }
+
+        /* ===== Toolbar ===== */
         .table-toolbar {
             display: flex;
             justify-content: space-between;
@@ -553,6 +772,7 @@ function getDetallesCorta($detalles) {
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
+            align-items: center;
         }
         .table-toolbar .search-box input,
         .table-toolbar .search-box select {
@@ -567,6 +787,29 @@ function getDetallesCorta($detalles) {
         .table-toolbar .search-box select:focus {
             border-color: #1d4ed8;
         }
+
+        .filter-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #475569;
+            cursor: pointer;
+            background: #fff;
+            user-select: none;
+            transition: all 0.15s;
+        }
+
+        .filter-toggle:hover { border-color: #1d4ed8; color: #1d4ed8; }
+
+        .filter-toggle input { accent-color: #10b981; }
+
+        .filter-toggle span i { color: #10b981; margin-right: 2px; }
+
         .btn-excel {
             display: inline-flex;
             align-items: center;
@@ -582,12 +825,8 @@ function getDetallesCorta($detalles) {
             transition: background 0.15s;
         }
         .btn-excel:hover { background: #15803d; }
-        .btn-excel:disabled {
-            background: #94a3b8;
-            cursor: not-allowed;
-        }
+        .btn-excel:disabled { background: #94a3b8; cursor: not-allowed; }
 
-        /* Mensajes */
         .message-box {
             padding: 12px 16px;
             border-radius: 8px;
@@ -603,9 +842,7 @@ function getDetallesCorta($detalles) {
         .message-box.error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
         .message-box.success { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
 
-        .table-container {
-            overflow-x: auto;
-        }
+        .table-container { overflow-x: auto; }
 
         .empty-state {
             text-align: center;
@@ -618,16 +855,9 @@ function getDetallesCorta($detalles) {
             margin-bottom: 15px;
         }
 
-        .empty-state h3 {
-            color: #1e293b;
-            margin-bottom: 8px;
-        }
+        .empty-state h3 { color: #1e293b; margin-bottom: 8px; }
+        .empty-state p { color: #94a3b8; }
 
-        .empty-state p {
-            color: #94a3b8;
-        }
-
-        /* Spinner de carga para exportación */
         .export-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -647,34 +877,15 @@ function getDetallesCorta($detalles) {
             gap: 14px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.2);
         }
-        .export-box i {
-            font-size: 1.6rem;
-            color: #16a34a;
-        }
-        .export-box span {
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: #0f172a;
-        }
-
-        @media (max-width: 992px) {
-            .metrics-grid {
-                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            }
-        }
+        .export-box i { font-size: 1.6rem; color: #16a34a; }
+        .export-box span { font-size: 0.9rem; font-weight: 600; color: #0f172a; }
 
         @media (max-width: 768px) {
+            .dashboard-grid { grid-template-columns: 1fr; }
+            .dashboard-title { font-size: 0.95rem; }
             .table-toolbar { flex-direction: column; align-items: stretch; }
             .table-toolbar .search-box { width: 100%; }
             .table-toolbar .search-box input { flex: 1; }
-
-            .metric-card {
-                padding: 10px 12px;
-            }
-
-            .metric-value {
-                font-size: 1.1rem;
-            }
         }
     </style>
 </head>
@@ -693,61 +904,126 @@ function getDetallesCorta($detalles) {
             <h1>Mis Propiedades</h1>
             <p class="welcome">
                 <i class="fas fa-user-tie"></i> Bienvenido, <?php echo htmlspecialchars($usuario['nombre'] ?? 'Vendedor'); ?>
+                <?php if ($nivel_actual): ?>
+                    <span class="nivel-badge-vendedor"
+                          style="background: <?php echo htmlspecialchars($nivel_actual['color_hex']); ?>20;
+                                 color: <?php echo htmlspecialchars($nivel_actual['color_hex']); ?>;">
+                        <?php echo htmlspecialchars($nivel_actual['icono']); ?>
+                        <?php echo htmlspecialchars($nivel_actual['nivel_nombre']); ?>
+                        · <?php echo number_format($comision_porcentaje_actual, 1); ?>%
+                    </span>
+                <?php endif; ?>
             </p>
-        </div>
-        <div class="header-actions">
-            <button class="btn-header primary" onclick="nuevaPropiedad()">
-                <i class="fas fa-plus"></i> Nueva Propiedad
-            </button>
         </div>
     </div>
 
-    <!-- ===== MÉTRICAS DESTACADAS ===== -->
-    <div class="metrics-grid">
-        <div class="metric-card">
-            <div class="metric-icon blue"><i class="fas fa-home"></i></div>
-            <div class="metric-info">
-                <div class="metric-value"><?php echo $stats['total']; ?></div>
-                <div class="metric-label">Total Propiedades</div>
+    <!-- ===== TABLERO DE RENDIMIENTO DEL MES ===== -->
+    <div class="dashboard-month">
+        <div class="dashboard-header">
+            <div class="dashboard-title">
+                <i class="fas fa-chart-line"></i>
+                Rendimiento del mes
+                <span class="month-label"><?php echo ucfirst(strftime('%B %Y', strtotime(date('Y-m-01')))); ?></span>
             </div>
-            <span class="metric-trend neutral"><?php echo $stats['activas']; ?> activas</span>
-        </div>
-
-        <div class="metric-card">
-            <div class="metric-icon green"><i class="fas fa-tag"></i></div>
-            <div class="metric-info">
-                <div class="metric-value"><?php echo formatearPrecio($stats['total_inventario']); ?></div>
-                <div class="metric-label">Valor Total Inventario</div>
-            </div>
-        </div>
-
-        <div class="metric-card">
-            <div class="metric-icon purple"><i class="fas fa-coins"></i></div>
-            <div class="metric-info">
-                <div class="metric-value"><?php echo formatearPrecio($stats['comision_potencial_total']); ?></div>
-                <div class="metric-label">Comisión Potencial Total</div>
-            </div>
-        </div>
-
-        <div class="metric-card">
-            <div class="metric-icon orange"><i class="fas fa-image"></i></div>
-            <div class="metric-info">
-                <div class="metric-value"><?php echo $stats['con_imagen']; ?>/<?php echo $stats['total']; ?></div>
-                <div class="metric-label">Con Imagen Principal</div>
-            </div>
-            <?php if ($stats['sin_imagen'] > 0): ?>
-                <span class="metric-trend negative"><?php echo $stats['sin_imagen']; ?> pendientes</span>
-            <?php else: ?>
-                <span class="metric-trend positive">✓ Completo</span>
+            <?php if ($nivel_actual): ?>
+                <span class="nivel-badge-lg"
+                      style="background: <?php echo htmlspecialchars($nivel_actual['color_hex']); ?>20;
+                             color: <?php echo htmlspecialchars($nivel_actual['color_hex']); ?>;">
+                    <?php echo htmlspecialchars($nivel_actual['icono']); ?>
+                    <?php echo htmlspecialchars($nivel_actual['nivel_nombre']); ?>
+                    · <?php echo number_format($comision_porcentaje_actual, 1); ?>%
+                </span>
             <?php endif; ?>
         </div>
 
-        <div class="metric-card">
-            <div class="metric-icon red"><i class="fas fa-exclamation-triangle"></i></div>
-            <div class="metric-info">
-                <div class="metric-value"><?php echo $stats['propiedades_riesgo']; ?></div>
-                <div class="metric-label">Propiedades en Riesgo</div>
+        <div class="dashboard-grid">
+            <!-- Ventas del mes -->
+            <div class="dash-block">
+                <div class="dash-icon blue"><i class="fas fa-handshake"></i></div>
+                <div class="dash-info">
+                    <div class="dash-value"><?php echo $stats_mes['count']; ?></div>
+                    <div class="dash-label">Ventas cerradas este mes</div>
+                    <?php if ($nivel_actual): ?>
+                        <div class="dash-sub">
+                            Nivel <?php echo htmlspecialchars($nivel_actual['nivel_nombre']); ?>
+                            (<?php echo $nivel_actual['ventas_min']; ?>–<?php echo $nivel_actual['ventas_max']; ?> ventas)
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
+
+            <!-- Monto vendido -->
+            <div class="dash-block">
+                <div class="dash-icon green"><i class="fas fa-sack-dollar"></i></div>
+                <div class="dash-info">
+                    <div class="dash-value"><?php echo formatearPrecio($stats_mes['monto_vendido']); ?></div>
+                    <div class="dash-label">Monto vendido este mes</div>
+                    <div class="dash-sub">Suma de precios de propiedades vendidas</div>
+                </div>
+            </div>
+
+            <!-- Comisión estimada -->
+            <div class="dash-block highlight">
+                <div class="dash-icon teal"><i class="fas fa-coins"></i></div>
+                <div class="dash-info">
+                    <div class="dash-value">
+                        <?php echo $stats_mes['count'] > 0
+                            ? formatearPrecio($stats_mes['comision_estimada'])
+                            : '—'; ?>
+                    </div>
+                    <div class="dash-label">Comisión estimada del mes</div>
+                    <div class="dash-sub">
+                        <?php if ($stats_mes['count'] > 0): ?>
+                            <?php echo number_format($comision_porcentaje_actual, 1); ?>% sobre
+                            <?php echo formatearPrecio($stats_mes['monto_vendido']); ?>
+                        <?php else: ?>
+                            Aún sin ventas este mes
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Barra de progreso al siguiente nivel -->
+        <?php if ($nivel_siguiente): ?>
+            <?php
+                $min_actual = (int)$nivel_actual['ventas_min'];
+                $meta = (int)$nivel_siguiente['ventas_min'];
+                $progreso = $meta > $min_actual
+                    ? min(100, (($stats_mes['count'] - $min_actual) / max(1, $meta - $min_actual)) * 100)
+                    : 0;
+                $progreso = max(0, $progreso);
+                $faltan = max(0, $meta - $stats_mes['count']);
+            ?>
+            <div class="dash-progress">
+                <div class="progress-info">
+                    <span>
+                        <i class="fas fa-arrow-trend-up"></i>
+                        Faltan <strong><?php echo $faltan; ?></strong> venta<?php echo $faltan === 1 ? '' : 's'; ?> para llegar a
+                        <strong><?php echo htmlspecialchars($nivel_siguiente['nivel_nombre']); ?></strong>
+                        (<?php echo number_format((float)$nivel_siguiente['comision_porcentaje'], 1); ?>%)
+                    </span>
+                    <span class="progress-pct"><?php echo round($progreso); ?>%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill"
+                         style="width: <?php echo $progreso; ?>%;
+                                background: <?php echo htmlspecialchars($nivel_siguiente['color_hex']); ?>;">
+                    </div>
+                </div>
+            </div>
+        <?php else: ?>
+            <div class="dash-progress max-level">
+                <i class="fas fa-trophy"></i>
+                ¡Estás en el nivel más alto! Comisión del <?php echo number_format($comision_porcentaje_actual, 1); ?>% aplicada.
+            </div>
+        <?php endif; ?>
+
+        <div class="dashboard-note">
+            <i class="fas fa-info-circle"></i>
+            El nivel se calcula por las ventas cerradas del <strong>mes calendario</strong>
+            (<?php echo date('d/m', strtotime($inicio_mes)); ?> al <?php echo date('d/m', strtotime($fin_mes)); ?>).
+            Las comisiones son <strong>estimadas</strong> hasta que se escritura cada operación.
         </div>
     </div>
 
@@ -777,7 +1053,7 @@ function getDetallesCorta($detalles) {
     <div class="table-container">
         <div class="table-toolbar">
             <div class="toolbar-left">
-                <h3><i class="fas fa-list-ul"></i> Listado de mis propiedades</h3>
+                <h3><i class="fas fa-list-ul"></i> Listado de mis propiedades asignadas</h3>
             </div>
             <div class="search-box">
                 <input type="text" placeholder="Buscar por título o ubicación..." id="searchTable">
@@ -793,6 +1069,10 @@ function getDetallesCorta($detalles) {
                     <option value="vendido">Vendido</option>
                     <option value="suspendido">Suspendido</option>
                 </select>
+                <label class="filter-toggle">
+                    <input type="checkbox" id="filterVendidasMes">
+                    <span><i class="fas fa-check-circle"></i> Solo vendidas del mes</span>
+                </label>
                 <button class="btn-excel" id="btnExportar" onclick="exportarExcel()">
                     <i class="fas fa-file-excel"></i> Exportar Excel
                 </button>
@@ -810,11 +1090,8 @@ function getDetallesCorta($detalles) {
             <?php if (empty($propiedades) && empty($error_msg)): ?>
                 <div class="empty-state">
                     <i class="fas fa-home"></i>
-                    <h3>No tienes propiedades registradas</h3>
-                    <p>Comienza registrando tu primera propiedad en el sistema</p>
-                    <button onclick="nuevaPropiedad()" class="btn-header primary" style="margin-top: 16px;">
-                        <i class="fas fa-plus"></i> Registrar Propiedad
-                    </button>
+                    <h3>No tienes propiedades asignadas</h3>
+                    <p>Cuando un administrador te asigne propiedades, aparecerán aquí</p>
                 </div>
             <?php elseif (!empty($propiedades)): ?>
                 <div class="properties-table-wrapper">
@@ -829,11 +1106,12 @@ function getDetallesCorta($detalles) {
                                 <th>Detalles</th>
                                 <th style="text-align:center;">Días</th>
                                 <th style="text-align:right;">Precio</th>
+                                <th style="text-align:center;">Venta</th>
                                 <th class="col-actions">Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($propiedades as $propiedad): 
+                            <?php foreach ($propiedades as $propiedad):
                                 $badge = getOperationBadge($propiedad['operation_type'] ?? '');
                                 $statusBadge = getStatusBadge($propiedad['status'] ?? '');
                                 $price = $propiedad['price'] ?? null;
@@ -853,18 +1131,23 @@ function getDetallesCorta($detalles) {
                                 $statusLower = strtolower(trim($propiedad['status'] ?? ''));
                                 $days = (int)($propiedad['days_active'] ?? 0);
                                 $daysAlert = ($days > 30 && $statusLower === 'activo');
+                                $vendidaMes = !empty($propiedad['vendida_este_mes']);
+                                $esVendida = in_array($statusLower, ['vendido', 'completado'], true);
+                                $rowClass = $vendidaMes ? 'row-sold-month' : '';
                             ?>
-                                <tr data-text="<?php echo strtolower($title . ' ' . $location); ?>"
+                                <tr class="<?php echo $rowClass; ?>"
+                                    data-text="<?php echo strtolower($title . ' ' . $location); ?>"
                                     data-operation="<?php echo $opType; ?>"
-                                    data-status="<?php echo $statusLower; ?>">
+                                    data-status="<?php echo $statusLower; ?>"
+                                    data-vendida-mes="<?php echo $vendidaMes ? '1' : '0'; ?>">
                                     <td class="col-img">
                                         <div class="thumb">
                                             <span class="op-badge-mini <?php echo $badge['class']; ?>">
                                                 <?php echo substr($badge['label'], 0, 1); ?>
                                             </span>
                                             <?php if ($hasImage): ?>
-                                                <img src="<?php echo $imagePath; ?>" 
-                                                     alt="<?php echo $title; ?>" 
+                                                <img src="<?php echo $imagePath; ?>"
+                                                     alt="<?php echo $title; ?>"
                                                      loading="lazy"
                                                      onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                                                 <div class="no-image" style="display:none;"><i class="fas fa-image"></i></div>
@@ -890,12 +1173,25 @@ function getDetallesCorta($detalles) {
                                             <i class="fas fa-exclamation-triangle" style="margin-left:3px;"></i>
                                         <?php endif; ?>
                                     </td>
-                                    <td class="col-price <?php echo $priceClass; ?>" 
+                                    <td class="col-price <?php echo $priceClass; ?>"
                                         data-raw-price="<?php echo $hasPrice ? floatval($price) : ''; ?>">
                                         <?php if ($hasPrice): ?>
                                             <?php echo formatearPrecio($price); ?>
                                         <?php else: ?>
                                             Sin precio
+                                        <?php endif; ?>
+                                    </td>
+                                    <td style="text-align:center;">
+                                        <?php if ($vendidaMes): ?>
+                                            <span class="badge-vendida-mes" title="Vendida este mes">
+                                                <i class="fas fa-check-circle"></i> Este mes
+                                            </span>
+                                        <?php elseif ($esVendida): ?>
+                                            <span class="badge-vendida-prev" title="Vendida en un mes anterior">
+                                                <i class="fas fa-check"></i> Vendida
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="badge-no-vendida">—</span>
                                         <?php endif; ?>
                                     </td>
                                     <td class="col-actions">
@@ -923,7 +1219,6 @@ function getDetallesCorta($detalles) {
     </div>
 </main>
 
-<!-- Overlay de carga para exportación -->
 <div class="export-overlay" id="exportOverlay">
     <div class="export-box">
         <i class="fas fa-file-excel fa-spin"></i>
@@ -945,13 +1240,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    if(menuToggle) {
-        menuToggle.addEventListener('click', toggleSidebar);
-    }
-    
-    if(overlay) {
-        overlay.addEventListener('click', toggleSidebar);
-    }
+    if(menuToggle) menuToggle.addEventListener('click', toggleSidebar);
+    if(overlay) overlay.addEventListener('click', toggleSidebar);
 
     document.querySelectorAll('.sidebar nav a').forEach(link => {
         link.addEventListener('click', () => {
@@ -961,35 +1251,40 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Filtros
+    // ===== Filtros =====
     const searchInput = document.getElementById('searchTable');
     const filterOperation = document.getElementById('filterOperation');
     const filterStatus = document.getElementById('filterStatus');
+    const filterVendidasMes = document.getElementById('filterVendidasMes');
 
     function filtrarFilas() {
         const searchText = (searchInput.value || '').toLowerCase().trim();
         const operationVal = (filterOperation.value || '').toLowerCase().trim();
         const statusVal = (filterStatus.value || '').toLowerCase().trim();
+        const soloVendidasMes = filterVendidasMes && filterVendidasMes.checked;
         const rows = document.querySelectorAll('.properties-table tbody tr');
 
         rows.forEach(row => {
             const rowText = (row.getAttribute('data-text') || '').toLowerCase();
             const rowOp = (row.getAttribute('data-operation') || '').toLowerCase();
             const rowStatus = (row.getAttribute('data-status') || '').toLowerCase();
+            const vendidaMes = row.getAttribute('data-vendida-mes') === '1';
 
             const matchesSearch = rowText.includes(searchText);
             const matchesOp = operationVal === '' || rowOp === operationVal;
             const matchesStatus = statusVal === '' || rowStatus === statusVal;
+            const matchesVendida = !soloVendidasMes || vendidaMes;
 
-            row.style.display = (matchesSearch && matchesOp && matchesStatus) ? '' : 'none';
+            row.style.display = (matchesSearch && matchesOp && matchesStatus && matchesVendida) ? '' : 'none';
         });
     }
 
     if(searchInput) searchInput.addEventListener('keyup', filtrarFilas);
     if(filterOperation) filterOperation.addEventListener('change', filtrarFilas);
     if(filterStatus) filterStatus.addEventListener('change', filtrarFilas);
+    if(filterVendidasMes) filterVendidasMes.addEventListener('change', filtrarFilas);
 
-    // Acciones
+    // ===== Acciones =====
     window.nuevaPropiedad = function() {
         window.location.href = 'propiedad_nueva.php';
     };
@@ -1003,7 +1298,7 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 });
 
-// ===== Exportar a Excel (.xlsx) con formato corporativo usando ExcelJS =====
+// ===== Exportar a Excel =====
 window.exportarExcel = async function() {
     const tabla = document.getElementById('propertiesTable');
     if (!tabla) {
@@ -1022,7 +1317,6 @@ window.exportarExcel = async function() {
     if (btnExportar) btnExportar.disabled = true;
 
     try {
-        // ===== Recopilar datos de la tabla =====
         const filas = [];
         const headers = [];
 
@@ -1033,13 +1327,13 @@ window.exportarExcel = async function() {
             }
         });
 
-        // Filas de datos (excepto la última celda "Acciones")
+        // Filas (excepto la última celda)
         tabla.querySelectorAll('tbody tr').forEach(tr => {
             const celdas = tr.querySelectorAll('td');
             const fila = [];
             celdas.forEach((td, idx) => {
                 if (idx < celdas.length - 1) {
-                    // 1) Precio: usar data-raw-price
+                    // Precio
                     const rawPrice = td.getAttribute('data-raw-price');
                     if (rawPrice !== null && rawPrice !== '' && !isNaN(parseFloat(rawPrice))) {
                         fila.push({ tipo: 'numero', valor: parseFloat(rawPrice) });
@@ -1050,14 +1344,14 @@ window.exportarExcel = async function() {
                         return;
                     }
 
-                    // 2) Título: usar data-raw-title (sin badge)
+                    // Título
                     const rawTitle = td.getAttribute('data-raw-title');
                     if (rawTitle !== null) {
                         fila.push({ tipo: 'texto', valor: rawTitle.trim() });
                         return;
                     }
 
-                    // 3) Resto: clonar, quitar elementos excluidos e iconos, leer texto limpio
+                    // Resto
                     const clon = td.cloneNode(true);
                     clon.querySelectorAll('[data-exclude="true"]').forEach(el => el.remove());
                     clon.querySelectorAll('i.fa').forEach(el => el.remove());
@@ -1073,7 +1367,6 @@ window.exportarExcel = async function() {
             return;
         }
 
-        // ===== Crear workbook =====
         const workbook = new ExcelJS.Workbook();
         workbook.creator = 'Vera Terra Inmobiliaria';
         workbook.created = new Date();
@@ -1082,7 +1375,7 @@ window.exportarExcel = async function() {
             views: [{ state: 'frozen', ySplit: 4 }]
         });
 
-        // ===== Calcular anchos de columna dinámicamente =====
+        // Anchos
         const anchos = headers.map((h, colIdx) => {
             let maxLen = h.length;
             filas.forEach(fila => {
@@ -1104,7 +1397,7 @@ window.exportarExcel = async function() {
 
         worksheet.columns = anchos.map(w => ({ width: w }));
 
-        // ===== Encabezado con logo y título (filas 1-3) =====
+        // Logo
         try {
             const logoUrl = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/') + 'css/Logo1_veraterra.png';
             const resp = await fetch(logoUrl);
@@ -1151,7 +1444,7 @@ window.exportarExcel = async function() {
         worksheet.getRow(3).height = 16;
         worksheet.getRow(4).height = 22;
 
-        // ===== Fila 4: encabezados =====
+        // Encabezados
         const headerRow = worksheet.getRow(4);
         headers.forEach((h, i) => {
             const cell = headerRow.getCell(i + 1);
@@ -1171,7 +1464,7 @@ window.exportarExcel = async function() {
             };
         });
 
-        // ===== Filas de datos =====
+        // Filas
         filas.forEach((fila, rowIdx) => {
             const row = worksheet.getRow(5 + rowIdx);
             const esPar = rowIdx % 2 === 0;
@@ -1186,7 +1479,8 @@ window.exportarExcel = async function() {
                     cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF0F172A' } };
                 } else {
                     cell.value = celda.valor || '';
-                    if (String(celda.valor).toLowerCase().includes('sin precio')) {
+                    if (String(celda.valor).toLowerCase().includes('sin precio') ||
+                        String(celda.valor).toLowerCase().includes('no calculable')) {
                         cell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FF94A3B8' } };
                         cell.alignment = { vertical: 'middle', horizontal: 'right' };
                     } else {
@@ -1212,13 +1506,11 @@ window.exportarExcel = async function() {
             row.height = 20;
         });
 
-        // ===== Autofiltro =====
         worksheet.autoFilter = {
             from: { row: 4, column: 1 },
             to:   { row: 4, column: headers.length }
         };
 
-        // ===== Generar y descargar =====
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], {
             type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'

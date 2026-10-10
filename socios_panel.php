@@ -1041,6 +1041,13 @@ $colores_chart = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d
             min-width: 18px;
             text-align: center;
         }
+
+        /* ===== OCULTAR TARJETAS KPI EN MÓVIL ===== */
+        @media (max-width: 768px) {
+            .kpi-grid {
+                display: none !important;
+            }
+        }
     </style>
 </head>
 <body>

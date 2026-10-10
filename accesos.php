@@ -127,14 +127,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Obtener lista de usuarios
 $usuarios = obtenerTodosUsuarios($conn);
-
-// Obtener usuario para editar (si se solicita)
-$usuario_editar = null;
-if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
-    $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
-    $stmt->execute([$_GET['editar']]);
-    $usuario_editar = $stmt->fetch(PDO::FETCH_ASSOC);
-}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -518,32 +510,7 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
             display: inline;
         }
 
-        /* ===== FORMULARIOS ===== */
-        .usuarios-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        .form-usuario {
-            background: white;
-            padding: 20px;
-            border-radius: 14px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-        }
-
-        .form-usuario h4 {
-            color: #4c51bf;
-            margin: 0 0 20px 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 1.05rem;
-            padding-bottom: 12px;
-            border-bottom: 2px solid #f1f5f9;
-        }
-
+        /* ===== FORMULARIOS (dentro del modal) ===== */
         .form-group {
             margin-bottom: 16px;
         }
@@ -595,6 +562,12 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
             gap: 12px;
         }
 
+        .hint-inline {
+            font-weight: normal;
+            color: #94a3b8;
+            font-size: 0.78rem;
+        }
+
         .btn-submit {
             background: linear-gradient(135deg, #4c51bf 0%, #3c41a8 100%);
             color: white;
@@ -644,6 +617,7 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
         .form-actions {
             display: flex;
             gap: 10px;
+            margin-top: 4px;
         }
 
         .form-actions .btn-cancelar {
@@ -679,51 +653,55 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
             margin-top: 6px;
         }
 
-        /* ===== MODAL MÓVIL ===== */
-        .mobile-modal {
+        /* ===== MODAL (compartido desktop/móvil) ===== */
+        .modal {
             display: none;
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,0.5);
+            background: rgba(15, 23, 42, 0.55);
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
             z-index: 1000;
-            align-items: flex-end;
+            align-items: center;
             justify-content: center;
-            padding: 0;
+            padding: 20px;
+            overflow-y: auto;
         }
 
-        .mobile-modal.show {
+        .modal.show {
             display: flex;
         }
 
-        .mobile-modal-content {
+        .modal-content {
             background: white;
             width: 100%;
-            max-height: 90vh;
-            border-radius: 20px 20px 0 0;
+            max-width: 560px;
+            border-radius: 18px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+            max-height: calc(100vh - 40px);
             overflow-y: auto;
-            animation: slideUp 0.3s ease;
-            padding-bottom: env(safe-area-inset-bottom, 20px);
+            animation: modalIn 0.25s ease;
         }
 
-        @keyframes slideUp {
-            from { transform: translateY(100%); }
-            to { transform: translateY(0); }
+        @keyframes modalIn {
+            from { opacity: 0; transform: translateY(16px) scale(0.98); }
+            to   { opacity: 1; transform: translateY(0)   scale(1); }
         }
 
-        .mobile-modal-header {
+        .modal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 18px 20px;
+            padding: 18px 22px;
             border-bottom: 1px solid #f1f5f9;
             position: sticky;
             top: 0;
             background: white;
-            z-index: 1;
-            border-radius: 20px 20px 0 0;
+            z-index: 2;
+            border-radius: 18px 18px 0 0;
         }
 
-        .mobile-modal-header h3 {
+        .modal-header h3 {
             margin: 0;
             font-size: 1.1rem;
             color: #2d3748;
@@ -732,7 +710,7 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
             gap: 8px;
         }
 
-        .mobile-modal-close {
+        .modal-close {
             background: #f1f5f9;
             border: none;
             width: 36px;
@@ -743,48 +721,18 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
             align-items: center;
             justify-content: center;
             color: #64748b;
+            transition: background 0.2s, color 0.2s;
             font-size: 1rem;
         }
 
-        .mobile-modal-body {
-            padding: 20px;
-        }
+        .modal-close:hover { background: #e2e8f0; color: #1e293b; }
 
-        /* ===== FAB ===== */
-        .fab {
-            display: none;
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 56px;
-            height: 56px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #4c51bf 0%, #3c41a8 100%);
-            color: white;
-            border: none;
-            font-size: 1.3rem;
-            cursor: pointer;
-            box-shadow: 0 4px 16px rgba(76, 81, 191, 0.4);
-            z-index: 100;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s ease;
-        }
-
-        .fab:active {
-            transform: scale(0.92);
+        .modal-body {
+            padding: 22px;
         }
 
         /* ===== RESPONSIVE ===== */
-        @media (max-width: 992px) {
-            .usuarios-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
         @media (max-width: 768px) {
-            /* OJO: NO sobrescribir margin ni margin-left del .main-content
-               porque socios.css lo usa para el sidebar */
             .main-content {
                 padding: 12px;
                 padding-bottom: 90px;
@@ -802,10 +750,6 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
 
             .header-actions {
                 display: none;
-            }
-
-            .fab {
-                display: flex;
             }
 
             /* Ocultar tabla, mostrar cards */
@@ -828,20 +772,6 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
                 padding: 0 4px;
             }
 
-            /* Formularios en móvil */
-            .usuarios-grid {
-                gap: 16px;
-            }
-
-            .form-usuario {
-                padding: 16px;
-                border-radius: 14px;
-            }
-
-            .form-usuario h4 {
-                font-size: 1rem;
-            }
-
             .form-row {
                 grid-template-columns: 1fr;
                 gap: 16px;
@@ -852,21 +782,37 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
                 font-size: 16px; /* Evita zoom en iOS */
             }
 
-            /* Sección de edición en móvil (se usa modal) */
-            #form-editar {
-                display: none;
+            /* Modal como bottom-sheet */
+            .modal {
+                padding: 0;
+                align-items: flex-end;
             }
 
-            /* Formulario crear en desktop se oculta en móvil (se usa FAB + modal) */
-            #formulariosDesktop {
-                display: none;
+            .modal-content {
+                max-width: 100%;
+                max-height: 92vh;
+                border-radius: 20px 20px 0 0;
+                animation: sheetIn 0.3s ease;
+                padding-bottom: env(safe-area-inset-bottom, 12px);
+            }
+
+            @keyframes sheetIn {
+                from { transform: translateY(100%); }
+                to   { transform: translateY(0); }
+            }
+
+            .modal-header {
+                border-radius: 20px 20px 0 0;
+            }
+
+            .modal-body {
+                padding: 18px;
             }
         }
 
         @media (min-width: 769px) {
             .main-content {
                 padding: 25px;
-                /* NO tocar margin-left: lo maneja socios.css para el sidebar */
             }
 
             .header-left .welcome {
@@ -939,10 +885,6 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
                 font-size: 0.75rem;
                 padding: 0 8px;
             }
-
-            .form-usuario {
-                padding: 14px;
-            }
         }
     </style>
 </head>
@@ -1011,6 +953,16 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
                         </tr>
                     <?php else: ?>
                         <?php foreach ($usuarios as $u): ?>
+                            <?php
+                                $u_json = htmlspecialchars(json_encode([
+                                    'id'       => (int)$u['id'],
+                                    'name'     => $u['name'] ?? '',
+                                    'email'    => $u['email'] ?? '',
+                                    'telefono' => $u['telefono'] ?? '',
+                                    'role'     => $u['role'] ?? 'propietario',
+                                    'activo'   => (int)($u['activo'] ?? 1),
+                                ], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+                            ?>
                             <tr>
                                 <td class="col-id"><strong>#<?php echo $u['id']; ?></strong></td>
                                 <td>
@@ -1021,7 +973,7 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
                                 </td>
                                 <td class="col-telefono"><?php echo htmlspecialchars($u['telefono'] ?? '—'); ?></td>
                                 <td>
-                                    <span class="badge-rol <?php echo $u['role'] ?? 'propietario'; ?>">
+                                    <span class="badge-rol <?php echo htmlspecialchars($u['role'] ?? 'propietario'); ?>">
                                         <?php echo ucfirst($u['role'] ?? 'Propietario'); ?>
                                     </span>
                                 </td>
@@ -1035,14 +987,20 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
                                 </td>
                                 <td>
                                     <div class="action-btns">
-                                        <a href="?editar=<?php echo $u['id']; ?>" class="action-btn edit" title="Editar">
+                                        <button type="button" class="action-btn edit"
+                                                onclick='abrirModalEditar(<?php echo $u_json; ?>)'
+                                                title="Editar">
                                             <i class="fas fa-edit"></i>
-                                        </a>
-                                        <button class="action-btn toggle" onclick="toggleUsuario(<?php echo $u['id']; ?>, <?php echo $u['activo'] ?? 1; ?>)" title="<?php echo ($u['activo'] ?? 1) ? 'Desactivar' : 'Activar'; ?>">
+                                        </button>
+                                        <button type="button" class="action-btn toggle"
+                                                onclick="toggleUsuario(<?php echo $u['id']; ?>, <?php echo $u['activo'] ?? 1; ?>)"
+                                                title="<?php echo ($u['activo'] ?? 1) ? 'Desactivar' : 'Activar'; ?>">
                                             <i class="fas <?php echo ($u['activo'] ?? 1) ? 'fa-pause' : 'fa-play'; ?>"></i>
                                         </button>
                                         <?php if ($u['id'] != $_SESSION['usuario_id']): ?>
-                                            <button class="action-btn delete" onclick="eliminarUsuario(<?php echo $u['id']; ?>)" title="Eliminar">
+                                            <button type="button" class="action-btn delete"
+                                                    onclick="eliminarUsuario(<?php echo $u['id']; ?>)"
+                                                    title="Eliminar">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         <?php endif; ?>
@@ -1064,6 +1022,16 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
                 </div>
             <?php else: ?>
                 <?php foreach ($usuarios as $u): ?>
+                    <?php
+                        $u_json = htmlspecialchars(json_encode([
+                            'id'       => (int)$u['id'],
+                            'name'     => $u['name'] ?? '',
+                            'email'    => $u['email'] ?? '',
+                            'telefono' => $u['telefono'] ?? '',
+                            'role'     => $u['role'] ?? 'propietario',
+                            'activo'   => (int)($u['activo'] ?? 1),
+                        ], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+                    ?>
                     <div class="usuario-card <?php echo ($u['activo'] ?? 1) ? '' : 'inactivo'; ?>">
                         <div class="usuario-card-header">
                             <div class="user-info">
@@ -1074,7 +1042,7 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
                         </div>
 
                         <div class="usuario-card-body">
-                            <span class="badge-rol <?php echo $u['role'] ?? 'propietario'; ?>">
+                            <span class="badge-rol <?php echo htmlspecialchars($u['role'] ?? 'propietario'); ?>">
                                 <?php echo ucfirst($u['role'] ?? 'Propietario'); ?>
                             </span>
                             <span class="badge-estado <?php echo ($u['activo'] ?? 1) ? 'activo' : 'inactivo'; ?>">
@@ -1091,134 +1059,24 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
                         </div>
 
                         <div class="usuario-card-actions">
-                            <a href="?editar=<?php echo $u['id']; ?>" class="action-btn edit">
+                            <button type="button" class="action-btn edit"
+                                    onclick='abrirModalEditar(<?php echo $u_json; ?>)'>
                                 <i class="fas fa-edit"></i> <span>Editar</span>
-                            </a>
-                            <button class="action-btn toggle" onclick="toggleUsuario(<?php echo $u['id']; ?>, <?php echo $u['activo'] ?? 1; ?>)">
+                            </button>
+                            <button type="button" class="action-btn toggle"
+                                    onclick="toggleUsuario(<?php echo $u['id']; ?>, <?php echo $u['activo'] ?? 1; ?>)">
                                 <i class="fas <?php echo ($u['activo'] ?? 1) ? 'fa-pause' : 'fa-play'; ?>"></i>
                                 <span><?php echo ($u['activo'] ?? 1) ? 'Desactivar' : 'Activar'; ?></span>
                             </button>
                             <?php if ($u['id'] != $_SESSION['usuario_id']): ?>
-                                <button class="action-btn delete" onclick="eliminarUsuario(<?php echo $u['id']; ?>)">
+                                <button type="button" class="action-btn delete"
+                                        onclick="eliminarUsuario(<?php echo $u['id']; ?>)">
                                     <i class="fas fa-trash"></i> <span>Eliminar</span>
                                 </button>
                             <?php endif; ?>
                         </div>
                     </div>
                 <?php endforeach; ?>
-            <?php endif; ?>
-        </div>
-    </div>
-
-    <!-- Formularios (Desktop) -->
-    <div class="usuarios-grid" id="formulariosDesktop">
-        <div class="form-usuario" id="form-crear">
-            <h4><i class="fas fa-user-plus"></i> Crear Nuevo Usuario</h4>
-            <form method="POST" action="" onsubmit="return validarFormulario(this)">
-                <input type="hidden" name="accion" value="crear_usuario">
-                <div class="form-group">
-                    <label>Nombre Completo <span class="required">*</span></label>
-                    <input type="text" name="name" required placeholder="Ej: Juan Pérez">
-                </div>
-                <div class="form-group">
-                    <label>Email <span class="required">*</span></label>
-                    <input type="email" name="email" required placeholder="ejemplo@correo.com">
-                </div>
-                <div class="form-group">
-                    <label>Teléfono</label>
-                    <input type="tel" name="telefono" placeholder="Ej: 55 1234 5678">
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Contraseña <span class="required">*</span></label>
-                        <input type="password" name="password" required minlength="6" placeholder="Mínimo 6 caracteres">
-                    </div>
-                    <div class="form-group">
-                        <label>Confirmar Contraseña <span class="required">*</span></label>
-                        <input type="password" name="confirm_password" required placeholder="Repite la contraseña">
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Rol <span class="required">*</span></label>
-                        <select name="role" required>
-                            <option value="propietario">Propietario</option>
-                            <option value="asesor">Asesor</option>
-                            <option value="admin">Administrador</option>
-                            <option value="externo">Externo</option>
-                            <option value="captador">Captador</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Estado</label>
-                        <select name="activo">
-                            <option value="1">Activo</option>
-                            <option value="0">Inactivo</option>
-                        </select>
-                    </div>
-                </div>
-                <button type="submit" class="btn-submit">
-                    <i class="fas fa-save"></i> Crear Usuario
-                </button>
-            </form>
-        </div>
-
-        <div class="form-usuario" id="form-editar">
-            <h4><i class="fas fa-user-edit"></i> Editar Usuario</h4>
-            <?php if ($usuario_editar): ?>
-                <form method="POST" action="" onsubmit="return validarFormularioEdicion(this)">
-                    <input type="hidden" name="accion" value="editar_usuario">
-                    <input type="hidden" name="usuario_id" value="<?php echo $usuario_editar['id']; ?>">
-                    <div class="form-group">
-                        <label>Nombre Completo <span class="required">*</span></label>
-                        <input type="text" name="name" required value="<?php echo htmlspecialchars($usuario_editar['name'] ?? ''); ?>">
-                    </div>
-                    <div class="form-group">
-                        <label>Email <span class="required">*</span></label>
-                        <input type="email" name="email" required value="<?php echo htmlspecialchars($usuario_editar['email'] ?? ''); ?>">
-                    </div>
-                    <div class="form-group">
-                        <label>Teléfono</label>
-                        <input type="tel" name="telefono" value="<?php echo htmlspecialchars($usuario_editar['telefono'] ?? ''); ?>">
-                    </div>
-                    <div class="form-group">
-                        <label>Nueva Contraseña <span style="font-weight: normal; color: #94a3b8; font-size: 0.8rem;">(dejar vacío para mantener)</span></label>
-                        <input type="password" name="nuevo_password" minlength="6" placeholder="Mínimo 6 caracteres">
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Rol <span class="required">*</span></label>
-                            <select name="role" required>
-                                <option value="propietario" <?php echo ($usuario_editar['role'] ?? '') === 'propietario' ? 'selected' : ''; ?>>Propietario</option>
-                                <option value="asesor" <?php echo ($usuario_editar['role'] ?? '') === 'asesor' ? 'selected' : ''; ?>>Asesor</option>
-                                <option value="admin" <?php echo ($usuario_editar['role'] ?? '') === 'admin' ? 'selected' : ''; ?>>Administrador</option>
-                                <option value="inmobiliaria" <?php echo ($usuario_editar['role'] ?? '') === 'inmobiliaria' ? 'selected' : ''; ?>>Inmobiliaria</option>
-                                <option value="captador" <?php echo ($usuario_editar['role'] ?? '') === 'captador' ? 'selected' : ''; ?>>Captador</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Estado</label>
-                            <select name="activo">
-                                <option value="1" <?php echo ($usuario_editar['activo'] ?? 1) == 1 ? 'selected' : ''; ?>>Activo</option>
-                                <option value="0" <?php echo ($usuario_editar['activo'] ?? 1) == 0 ? 'selected' : ''; ?>>Inactivo</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-actions">
-                        <a href="accesos.php" class="btn-cancelar">
-                            <i class="fas fa-times"></i> Cancelar
-                        </a>
-                        <button type="submit" class="btn-submit">
-                            <i class="fas fa-save"></i> Actualizar
-                        </button>
-                    </div>
-                </form>
-            <?php else: ?>
-                <div class="empty-state" style="padding: 30px;">
-                    <i class="fas fa-user-edit"></i>
-                    <p>Selecciona un usuario para editarlo</p>
-                    <p class="hint">Haz clic en <i class="fas fa-edit"></i> en la tabla</p>
-                </div>
             <?php endif; ?>
         </div>
     </div>
@@ -1229,127 +1087,110 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
     <i class="fas fa-plus"></i>
 </button>
 
-<!-- Modal Móvil para Crear Usuario -->
-<div class="mobile-modal" id="modalCrear">
-    <div class="mobile-modal-content">
-        <div class="mobile-modal-header">
-            <h3><i class="fas fa-user-plus"></i> Nuevo Usuario</h3>
-            <button class="mobile-modal-close" onclick="cerrarModalCrear()">
+<!-- ===== MODAL ÚNICO (Crear / Editar) ===== -->
+<div class="modal" id="modalUsuario">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modalTitulo"><i class="fas fa-user-plus"></i> Nuevo Usuario</h3>
+            <button type="button" class="modal-close" onclick="cerrarModal()" aria-label="Cerrar">
                 <i class="fas fa-times"></i>
             </button>
         </div>
-        <div class="mobile-modal-body">
-            <form method="POST" action="" onsubmit="return validarFormulario(this)">
-                <input type="hidden" name="accion" value="crear_usuario">
+        <div class="modal-body">
+            <form method="POST" action="" id="formUsuario" onsubmit="return validarFormularioUsuario(this)">
+                <input type="hidden" name="accion" id="modalAccion" value="crear_usuario">
+                <input type="hidden" name="usuario_id" id="modalUsuarioId" value="">
+
                 <div class="form-group">
                     <label>Nombre Completo <span class="required">*</span></label>
-                    <input type="text" name="name" required placeholder="Ej: Juan Pérez">
+                    <input type="text" name="name" id="modalName" required placeholder="Ej: Juan Pérez">
                 </div>
+
                 <div class="form-group">
                     <label>Email <span class="required">*</span></label>
-                    <input type="email" name="email" required placeholder="ejemplo@correo.com">
+                    <input type="email" name="email" id="modalEmail" required placeholder="ejemplo@correo.com">
                 </div>
+
                 <div class="form-group">
                     <label>Teléfono</label>
-                    <input type="tel" name="telefono" placeholder="Ej: 55 1234 5678">
+                    <input type="tel" name="telefono" id="modalTelefono" placeholder="Ej: 55 1234 5678">
                 </div>
-                <div class="form-group">
+
+                <!-- Campos solo visibles al CREAR -->
+                <div class="form-group" id="grupoPassword">
                     <label>Contraseña <span class="required">*</span></label>
-                    <input type="password" name="password" required minlength="6" placeholder="Mínimo 6 caracteres">
+                    <input type="password" name="password" id="modalPassword" minlength="6" placeholder="Mínimo 6 caracteres">
                 </div>
-                <div class="form-group">
+
+                <div class="form-group" id="grupoConfirm">
                     <label>Confirmar Contraseña <span class="required">*</span></label>
-                    <input type="password" name="confirm_password" required placeholder="Repite la contraseña">
+                    <input type="password" name="confirm_password" id="modalConfirm" placeholder="Repite la contraseña">
                 </div>
+
+                <!-- Campo solo visible al EDITAR -->
+                <div class="form-group" id="grupoNuevoPassword" style="display:none;">
+                    <label>Nueva Contraseña <span class="hint-inline">(dejar vacío para mantener)</span></label>
+                    <input type="password" name="nuevo_password" id="modalNuevoPassword" minlength="6" placeholder="Mínimo 6 caracteres">
+                </div>
+
                 <div class="form-row">
                     <div class="form-group">
                         <label>Rol <span class="required">*</span></label>
-                        <select name="role" required>
+                        <select name="role" id="modalRole" required>
                             <option value="propietario">Propietario</option>
                             <option value="asesor">Asesor</option>
                             <option value="admin">Administrador</option>
                             <option value="externo">Externo</option>
+                            <option value="inmobiliaria">Inmobiliaria</option>
                             <option value="captador">Captador</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label>Estado</label>
-                        <select name="activo">
+                        <select name="activo" id="modalActivo">
                             <option value="1">Activo</option>
                             <option value="0">Inactivo</option>
                         </select>
                     </div>
                 </div>
-                <button type="submit" class="btn-submit">
-                    <i class="fas fa-save"></i> Crear Usuario
-                </button>
-            </form>
-        </div>
-    </div>
-</div>
 
-<!-- Modal Móvil para Editar Usuario -->
-<?php if ($usuario_editar): ?>
-<div class="mobile-modal" id="modalEditar">
-    <div class="mobile-modal-content">
-        <div class="mobile-modal-header">
-            <h3><i class="fas fa-user-edit"></i> Editar Usuario #<?php echo $usuario_editar['id']; ?></h3>
-            <button class="mobile-modal-close" onclick="cerrarModalEditar()">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div class="mobile-modal-body">
-            <form method="POST" action="" onsubmit="return validarFormularioEdicion(this)">
-                <input type="hidden" name="accion" value="editar_usuario">
-                <input type="hidden" name="usuario_id" value="<?php echo $usuario_editar['id']; ?>">
-                <div class="form-group">
-                    <label>Nombre Completo <span class="required">*</span></label>
-                    <input type="text" name="name" required value="<?php echo htmlspecialchars($usuario_editar['name'] ?? ''); ?>">
-                </div>
-                <div class="form-group">
-                    <label>Email <span class="required">*</span></label>
-                    <input type="email" name="email" required value="<?php echo htmlspecialchars($usuario_editar['email'] ?? ''); ?>">
-                </div>
-                <div class="form-group">
-                    <label>Teléfono</label>
-                    <input type="tel" name="telefono" value="<?php echo htmlspecialchars($usuario_editar['telefono'] ?? ''); ?>">
-                </div>
-                <div class="form-group">
-                    <label>Nueva Contraseña <span style="font-weight: normal; color: #94a3b8; font-size: 0.8rem;">(dejar vacío para mantener)</span></label>
-                    <input type="password" name="nuevo_password" minlength="6" placeholder="Mínimo 6 caracteres">
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Rol <span class="required">*</span></label>
-                        <select name="role" required>
-                            <option value="propietario" <?php echo ($usuario_editar['role'] ?? '') === 'propietario' ? 'selected' : ''; ?>>Propietario</option>
-                            <option value="asesor" <?php echo ($usuario_editar['role'] ?? '') === 'asesor' ? 'selected' : ''; ?>>Asesor</option>
-                            <option value="admin" <?php echo ($usuario_editar['role'] ?? '') === 'admin' ? 'selected' : ''; ?>>Administrador</option>
-                            <option value="inmobiliaria" <?php echo ($usuario_editar['role'] ?? '') === 'inmobiliaria' ? 'selected' : ''; ?>>Inmobiliaria</option>
-                            <option value="captador" <?php echo ($usuario_editar['role'] ?? '') === 'captador' ? 'selected' : ''; ?>>Captador</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Estado</label>
-                        <select name="activo">
-                            <option value="1" <?php echo ($usuario_editar['activo'] ?? 1) == 1 ? 'selected' : ''; ?>>Activo</option>
-                            <option value="0" <?php echo ($usuario_editar['activo'] ?? 1) == 0 ? 'selected' : ''; ?>>Inactivo</option>
-                        </select>
-                    </div>
-                </div>
                 <div class="form-actions">
-                    <a href="accesos.php" class="btn-cancelar" style="flex: 0 0 auto;">
+                    <button type="button" class="btn-cancelar" onclick="cerrarModal()">
                         <i class="fas fa-times"></i> Cancelar
-                    </a>
-                    <button type="submit" class="btn-submit">
-                        <i class="fas fa-save"></i> Actualizar
+                    </button>
+                    <button type="submit" class="btn-submit" id="modalBtnSubmit">
+                        <i class="fas fa-save"></i> <span id="modalBtnTexto">Crear Usuario</span>
                     </button>
                 </div>
             </form>
         </div>
     </div>
 </div>
-<?php endif; ?>
+
+<style>
+    /* FAB (estaba en el CSS original) */
+    .fab {
+        display: none;
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #4c51bf 0%, #3c41a8 100%);
+        color: white;
+        border: none;
+        font-size: 1.3rem;
+        cursor: pointer;
+        box-shadow: 0 4px 16px rgba(76, 81, 191, 0.4);
+        z-index: 100;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+    }
+    .fab:active { transform: scale(0.92); }
+    @media (max-width: 768px) { .fab { display: flex; } }
+</style>
 
 <script>
     // ===== MENÚ MÓVIL =====
@@ -1372,92 +1213,100 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
         });
     });
 
-    // ===== MODAL CREAR =====
+    // ===== MODAL USUARIO (crear/editar) =====
     function abrirModalCrear() {
-        const modal = document.getElementById('modalCrear');
-        if (modal && window.innerWidth <= 768) {
-            modal.classList.add('show');
-            document.body.style.overflow = 'hidden';
-        } else {
-            // Desktop: scroll al formulario
-            const form = document.getElementById('form-crear');
-            if (form) {
-                form.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                setTimeout(() => {
-                    form.querySelector('input[name="name"]')?.focus();
-                }, 400);
-            }
-        }
+        const form = document.getElementById('formUsuario');
+        form.reset();
+
+        document.getElementById('modalTitulo').innerHTML =
+            '<i class="fas fa-user-plus"></i> Nuevo Usuario';
+        document.getElementById('modalAccion').value = 'crear_usuario';
+        document.getElementById('modalUsuarioId').value = '';
+        document.getElementById('modalBtnTexto').textContent = 'Crear Usuario';
+
+        // Crear: password + confirm visibles y obligatorios
+        document.getElementById('grupoPassword').style.display = '';
+        document.getElementById('grupoConfirm').style.display = '';
+        document.getElementById('grupoNuevoPassword').style.display = 'none';
+
+        document.getElementById('modalPassword').required = true;
+        document.getElementById('modalConfirm').required = true;
+        document.getElementById('modalNuevoPassword').required = false;
+
+        document.getElementById('modalUsuario').classList.add('show');
+        document.body.style.overflow = 'hidden';
+
+        setTimeout(() => document.getElementById('modalName').focus(), 120);
     }
 
-    function cerrarModalCrear() {
-        const modal = document.getElementById('modalCrear');
-        if (modal) {
-            modal.classList.remove('show');
-            document.body.style.overflow = '';
-        }
+    function abrirModalEditar(u) {
+        const form = document.getElementById('formUsuario');
+        form.reset();
+
+        document.getElementById('modalTitulo').innerHTML =
+            '<i class="fas fa-user-edit"></i> Editar Usuario #' + u.id;
+        document.getElementById('modalAccion').value = 'editar_usuario';
+        document.getElementById('modalUsuarioId').value = u.id;
+        document.getElementById('modalBtnTexto').textContent = 'Actualizar';
+
+        document.getElementById('modalName').value = u.name || '';
+        document.getElementById('modalEmail').value = u.email || '';
+        document.getElementById('modalTelefono').value = u.telefono || '';
+        document.getElementById('modalRole').value = u.role || 'propietario';
+        document.getElementById('modalActivo').value = String(u.activo ?? 1);
+
+        // Editar: ocultar password/confirm, mostrar nuevo_password
+        document.getElementById('grupoPassword').style.display = 'none';
+        document.getElementById('grupoConfirm').style.display = 'none';
+        document.getElementById('grupoNuevoPassword').style.display = '';
+
+        document.getElementById('modalPassword').required = false;
+        document.getElementById('modalConfirm').required = false;
+        document.getElementById('modalNuevoPassword').required = false;
+
+        document.getElementById('modalUsuario').classList.add('show');
+        document.body.style.overflow = 'hidden';
+
+        setTimeout(() => document.getElementById('modalName').focus(), 120);
     }
 
-    // ===== MODAL EDITAR =====
-    function abrirModalEditar() {
-        const modal = document.getElementById('modalEditar');
-        if (modal) {
-            modal.classList.add('show');
-            document.body.style.overflow = 'hidden';
-        }
+    function cerrarModal() {
+        document.getElementById('modalUsuario').classList.remove('show');
+        document.body.style.overflow = '';
     }
 
-    function cerrarModalEditar() {
-        const modal = document.getElementById('modalEditar');
-        if (modal) {
-            modal.classList.remove('show');
-            document.body.style.overflow = '';
-        }
-    }
-
-    // Abrir modal editar si hay usuario_editar en móvil
-    <?php if ($usuario_editar): ?>
-    if (window.innerWidth <= 768) {
-        abrirModalEditar();
-    }
-    <?php endif; ?>
-
-    // Cerrar modales al hacer clic fuera
-    document.querySelectorAll('.mobile-modal').forEach(modal => {
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.classList.remove('show');
-                document.body.style.overflow = '';
-            }
-        });
+    // Cerrar al hacer clic fuera o con ESC
+    document.getElementById('modalUsuario').addEventListener('click', (e) => {
+        if (e.target.id === 'modalUsuario') cerrarModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') cerrarModal();
     });
 
-    // ===== VALIDACIONES =====
-    function validarFormulario(form) {
-        const password = form.querySelector('input[name="password"]');
-        const confirm = form.querySelector('input[name="confirm_password"]');
-        
-        if (password.value !== confirm.value) {
-            alert('Las contraseñas no coinciden');
-            confirm.focus();
-            return false;
-        }
-        
-        if (password.value.length < 6) {
-            alert('La contraseña debe tener al menos 6 caracteres');
-            password.focus();
-            return false;
-        }
-        
-        return true;
-    }
-    
-    function validarFormularioEdicion(form) {
-        const password = form.querySelector('input[name="nuevo_password"]');
-        if (password.value && password.value.length < 6) {
-            alert('La contraseña debe tener al menos 6 caracteres');
-            password.focus();
-            return false;
+    // Validación unificada
+    function validarFormularioUsuario(form) {
+        const accion = document.getElementById('modalAccion').value;
+
+        if (accion === 'crear_usuario') {
+            const pwd = form.querySelector('#modalPassword');
+            const conf = form.querySelector('#modalConfirm');
+            if (pwd.value.length < 6) {
+                alert('La contraseña debe tener al menos 6 caracteres');
+                pwd.focus();
+                return false;
+            }
+            if (pwd.value !== conf.value) {
+                alert('Las contraseñas no coinciden');
+                conf.focus();
+                return false;
+            }
+        } else {
+            const nuevo = form.querySelector('#modalNuevoPassword');
+            if (nuevo.value && nuevo.value.length < 6) {
+                alert('La contraseña debe tener al menos 6 caracteres');
+                nuevo.focus();
+                return false;
+            }
         }
         return true;
     }
@@ -1477,7 +1326,7 @@ if (isset($_GET['editar']) && is_numeric($_GET['editar'])) {
             form.submit();
         }
     }
-    
+
     function eliminarUsuario(id) {
         if (confirm('¿Eliminar este usuario? Esta acción no se puede deshacer.')) {
             if (confirm('Confirmar eliminación del usuario #' + id + '?')) {
