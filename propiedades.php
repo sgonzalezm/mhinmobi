@@ -7,8 +7,13 @@
 session_start();
 require_once 'includes/conexion.php';
 
-// Configuración de paginación
-$itemsPorPagina = 6;
+// ===== CONFIGURACIÓN DE PAGINACIÓN =====
+$opciones_per_page = [12, 20, 40, 60, 100];
+$itemsPorPagina = isset($_GET['per_page']) ? intval($_GET['per_page']) : 20;
+if (!in_array($itemsPorPagina, $opciones_per_page)) {
+    $itemsPorPagina = 20; // Valor por defecto
+}
+
 $pagina_actual = isset($_GET['page']) ? intval($_GET['page']) : 1;
 if ($pagina_actual < 1) $pagina_actual = 1;
 
@@ -59,6 +64,11 @@ if (!empty($filtro_busqueda)) {
 $where_clause = !empty($where_conditions) ? 'WHERE ' . implode(' AND ', $where_conditions) : '';
 
 // ===== CONSULTA PRINCIPAL CON FEATURING =====
+$propiedades = [];
+$total_propiedades = 0;
+$total_paginas = 0;
+$offset = 0;
+
 try {
     // Contar total de propiedades (para paginación)
     $count_sql = "
@@ -71,10 +81,10 @@ try {
     $stmt = $conn->prepare($count_sql);
     $stmt->execute($params);
     $total_propiedades = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
-    $total_paginas = ceil($total_propiedades / $itemsPorPagina);
+    $total_paginas = $total_propiedades > 0 ? ceil($total_propiedades / $itemsPorPagina) : 0;
     
     // Asegurar página válida
-    if ($pagina_actual > $total_paginas && $total_paginas > 0) {
+    if ($total_paginas > 0 && $pagina_actual > $total_paginas) {
         $pagina_actual = $total_paginas;
     }
     $offset = ($pagina_actual - 1) * $itemsPorPagina;
@@ -148,7 +158,12 @@ try {
     $propiedades = [];
     $total_paginas = 0;
     $total_propiedades = 0;
+    $offset = 0;
 }
+
+// ===== CÁLCULO DEL RANGO MOSTRADO =====
+$mostrando_desde = $total_propiedades > 0 ? ($offset + 1) : 0;
+$mostrando_hasta = $total_propiedades > 0 ? min($offset + $itemsPorPagina, $total_propiedades) : 0;
 
 // ===== FUNCIONES AUXILIARES =====
 function formatearPrecio($precio) {
@@ -207,14 +222,15 @@ function getUbicacionCompleta($propiedad) {
 }
 
 function tieneFeaturing($propiedad) {
-    return !empty($propiedad['featuring_id']) && $propiedad['featuring_status'] === 'active';
+    return !empty($propiedad['featuring_id']) && ($propiedad['featuring_status'] ?? '') === 'active';
 }
 
 function getDiasRestantesFeaturing($propiedad) {
     if (!tieneFeaturing($propiedad)) return 0;
+    if (empty($propiedad['featuring_end'])) return 0;
     $end = strtotime($propiedad['featuring_end']);
     $now = time();
-    return max(0, ceil(($end - $now) / 86400));
+    return max(0, (int)ceil(($end - $now) / 86400));
 }
 
 function esVendida($propiedad) {
@@ -225,6 +241,13 @@ function esApartada($propiedad) {
     return ($propiedad['status'] ?? '') === 'apartado';
 }
 
+function buildPageUrl($page, $tipo, $categoria, $busqueda, $per_page) {
+    return '?page=' . $page 
+         . '&tipo=' . urlencode($tipo) 
+         . '&categoria=' . urlencode($categoria) 
+         . '&busqueda=' . urlencode($busqueda)
+         . '&per_page=' . urlencode($per_page);
+}
 
 // ===== OBTENER CATEGORÍAS DISPONIBLES PARA FILTROS =====
 $categorias_disponibles = [];
@@ -494,6 +517,7 @@ try {
             flex-wrap: wrap;
             gap: 12px;
             align-items: center;
+            width: 100%;
         }
 
         .filters-group select,
@@ -520,6 +544,23 @@ try {
             font-size: 0.85rem;
         }
 
+        .filters-group select#filterPerPage {
+            min-width: 150px;
+            background: #fff;
+        }
+
+        /* ===== RESULTS BAR ===== */
+        .results-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e8e4dc;
+        }
+
         .results-count {
             font-size: 0.85rem;
             color: var(--text-muted);
@@ -527,6 +568,23 @@ try {
         }
 
         .results-count span {
+            color: var(--navy);
+            font-weight: 700;
+        }
+
+        .results-range {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .results-range i {
+            color: var(--gold);
+        }
+
+        .results-range strong {
             color: var(--navy);
             font-weight: 700;
         }
@@ -705,7 +763,7 @@ try {
             position: absolute;
             top: 14px;
             left: -30px;
-            background: #d97706; /* ámbar */
+            background: #d97706;
             color: #fff;
             padding: 5px 40px;
             font-size: 0.7rem;
@@ -715,35 +773,6 @@ try {
             z-index: 15;
             box-shadow: 0 2px 10px rgba(217, 119, 6, 0.4);
             text-transform: uppercase;
-        }
-
-        /* ===== BADGE DE DÍAS APARTADA (opcional) ===== */
-        .dias-apartada-badge {
-            position: absolute;
-            bottom: 14px;
-            right: 14px;
-            background: rgba(11, 31, 58, 0.9);
-            color: #fff;
-            padding: 5px 14px;
-            border-radius: 20px;
-            font-size: 0.65rem;
-            font-weight: 600;
-            letter-spacing: 0.3px;
-            border: 1px solid #d97706;
-            z-index: 5;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .dias-apartada-badge i {
-            color: #d97706;
-        }
-
-        .dias-apartada-badge .numero {
-            color: #d97706;
-            font-weight: 700;
-            font-size: 0.75rem;
         }
 
         .property-badge {
@@ -954,7 +983,7 @@ try {
 
         /* ===== FOOTER ===== */
         footer {
-            background: var(--navy);
+            background: #ffffff;
             color: #fff;
             padding: 30px 5%;
             display: flex;
@@ -984,7 +1013,7 @@ try {
             display: flex;
             flex-wrap: wrap;
             gap: 20px;
-            color: #ccc;
+            color: #000;
         }
 
         .footer-contact i {
@@ -998,7 +1027,7 @@ try {
         }
 
         .social-links a {
-            color: #fff;
+            color: #494848;
             font-size: 1.1rem;
             transition: color var(--transition), transform var(--transition);
             width: 38px;
@@ -1030,6 +1059,12 @@ try {
             .filters-group select,
             .filters-group input {
                 min-width: 120px;
+            }
+
+            .results-bar {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
             }
         }
 
@@ -1074,9 +1109,16 @@ try {
                 text-align: center;
             }
 
-            .results-count {
+            .filters-group select#filterPerPage {
+                width: 100%;
+                min-width: unset;
+            }
+
+            .results-count,
+            .results-range {
                 text-align: center;
                 width: 100%;
+                justify-content: center;
             }
 
             .whatsapp-float {
@@ -1122,7 +1164,7 @@ try {
 </head>
 <body>
 
-    <?php include 'modulos/navbar.php'; ?>
+    <?php include __DIR__ . '/modulos/navbar.php'; ?>
 
     <!-- ===== FILTROS ===== -->
     <section class="filters-section">
@@ -1148,12 +1190,34 @@ try {
                             <?php endif; ?>
                         </select>
                         <input type="text" name="busqueda" id="filterSearch" placeholder="Buscar por ubicación..." value="<?php echo htmlspecialchars($filtro_busqueda); ?>" />
+                        
+                        <!-- Selector de propiedades por página -->
+                        <select name="per_page" id="filterPerPage" onchange="document.getElementById('filterForm').submit();" title="Propiedades por página">
+                            <option value="12" <?php echo $itemsPorPagina == 12 ? 'selected' : ''; ?>>12 por página</option>
+                            <option value="20" <?php echo $itemsPorPagina == 20 ? 'selected' : ''; ?>>20 por página</option>
+                            <option value="40" <?php echo $itemsPorPagina == 40 ? 'selected' : ''; ?>>40 por página</option>
+                            <option value="60" <?php echo $itemsPorPagina == 60 ? 'selected' : ''; ?>>60 por página</option>
+                            <option value="100" <?php echo $itemsPorPagina == 100 ? 'selected' : ''; ?>>100 por página</option>
+                        </select>
+                        
                         <button type="submit" class="btn-outline-gold"><i class="fa-solid fa-sliders"></i> Filtrar</button>
                         <a href="propiedades.php" class="btn-outline-gold"><i class="fa-solid fa-rotate"></i> Reiniciar</a>
                     </form>
                 </div>
+            </div>
+
+            <!-- ===== BARRA DE RESULTADOS ===== -->
+            <div class="results-bar">
+                <div class="results-range">
+                    <i class="fa-solid fa-list-ul"></i>
+                    <?php if ($total_propiedades > 0): ?>
+                        Mostrando <strong><?php echo $mostrando_desde; ?>-<?php echo $mostrando_hasta; ?></strong> de <strong><?php echo $total_propiedades; ?></strong> propiedades
+                    <?php else: ?>
+                        No hay propiedades para mostrar
+                    <?php endif; ?>
+                </div>
                 <div class="results-count">
-                    Mostrando <span><?php echo count($propiedades); ?></span> de <span><?php echo $total_propiedades; ?></span> propiedades
+                    Página <span><?php echo $pagina_actual; ?></span> de <span><?php echo max(1, $total_paginas); ?></span>
                 </div>
             </div>
         </div>
@@ -1300,7 +1364,7 @@ try {
             <?php if ($total_paginas > 1): ?>
                 <div class="pagination" id="pagination">
                     <?php if ($pagina_actual > 1): ?>
-                        <a href="?page=<?php echo $pagina_actual - 1; ?>&tipo=<?php echo urlencode($filtro_tipo); ?>&categoria=<?php echo urlencode($filtro_categoria); ?>&busqueda=<?php echo urlencode($filtro_busqueda); ?>">
+                        <a href="<?php echo buildPageUrl($pagina_actual - 1, $filtro_tipo, $filtro_categoria, $filtro_busqueda, $itemsPorPagina); ?>">
                             <i class="fa-solid fa-chevron-left"></i>
                         </a>
                     <?php else: ?>
@@ -1313,14 +1377,14 @@ try {
                     $fin = min($total_paginas, $pagina_actual + $rango);
 
                     if ($inicio > 1): ?>
-                        <a href="?page=1&tipo=<?php echo urlencode($filtro_tipo); ?>&categoria=<?php echo urlencode($filtro_categoria); ?>&busqueda=<?php echo urlencode($filtro_busqueda); ?>">1</a>
+                        <a href="<?php echo buildPageUrl(1, $filtro_tipo, $filtro_categoria, $filtro_busqueda, $itemsPorPagina); ?>">1</a>
                         <?php if ($inicio > 2): ?>
                             <span class="ellipsis">…</span>
                         <?php endif; ?>
                     <?php endif; ?>
 
                     <?php for ($i = $inicio; $i <= $fin; $i++): ?>
-                        <a href="?page=<?php echo $i; ?>&tipo=<?php echo urlencode($filtro_tipo); ?>&categoria=<?php echo urlencode($filtro_categoria); ?>&busqueda=<?php echo urlencode($filtro_busqueda); ?>" 
+                        <a href="<?php echo buildPageUrl($i, $filtro_tipo, $filtro_categoria, $filtro_busqueda, $itemsPorPagina); ?>" 
                            class="<?php echo $i === $pagina_actual ? 'active' : ''; ?>">
                             <?php echo $i; ?>
                         </a>
@@ -1330,13 +1394,13 @@ try {
                         <?php if ($fin < $total_paginas - 1): ?>
                             <span class="ellipsis">…</span>
                         <?php endif; ?>
-                        <a href="?page=<?php echo $total_paginas; ?>&tipo=<?php echo urlencode($filtro_tipo); ?>&categoria=<?php echo urlencode($filtro_categoria); ?>&busqueda=<?php echo urlencode($filtro_busqueda); ?>">
+                        <a href="<?php echo buildPageUrl($total_paginas, $filtro_tipo, $filtro_categoria, $filtro_busqueda, $itemsPorPagina); ?>">
                             <?php echo $total_paginas; ?>
                         </a>
                     <?php endif; ?>
 
                     <?php if ($pagina_actual < $total_paginas): ?>
-                        <a href="?page=<?php echo $pagina_actual + 1; ?>&tipo=<?php echo urlencode($filtro_tipo); ?>&categoria=<?php echo urlencode($filtro_categoria); ?>&busqueda=<?php echo urlencode($filtro_busqueda); ?>">
+                        <a href="<?php echo buildPageUrl($pagina_actual + 1, $filtro_tipo, $filtro_categoria, $filtro_busqueda, $itemsPorPagina); ?>">
                             <i class="fa-solid fa-chevron-right"></i>
                         </a>
                     <?php else: ?>
@@ -1356,7 +1420,7 @@ try {
         <span class="tooltip">¡Escríbenos!</span>
     </a>
 
-    <?php include 'footer.php'; ?>
+    <?php include __DIR__ . '/modulos/footer.php'; ?>
 
     <script>
         // ============================================================

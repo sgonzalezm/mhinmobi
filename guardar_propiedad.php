@@ -275,13 +275,13 @@ function verificarLogin($email, $password) {
     global $conn;
     
     try {
-        $sql = "SELECT id, name, email, password, rol FROM users WHERE email = ? AND activo = 1";
+        $sql = "SELECT id, name, email, password, role FROM users WHERE email = ? AND activo = 1";
         $stmt = $conn->prepare($sql);
         $stmt->execute([$email]);
         
         if ($row = $stmt->fetch()) {
             if (password_verify($password, $row['password'])) {
-                return ['id' => $row['id'], 'name' => $row['name'], 'email' => $row['email'], 'role' => $row['rol']];
+                return ['id' => $row['id'], 'name' => $row['name'], 'email' => $row['email'], 'role' => $row['role']];
             }
         }
         return false;
@@ -304,7 +304,7 @@ function registrarUsuario($nombre, $email, $password) {
         }
         
         $password_hash = password_hash($password, PASSWORD_DEFAULT);
-        $sql = "INSERT INTO users (name, email, password, rol, activo, fecha_registro) VALUES (?, ?, ?, 'propietario', 1, NOW())";
+        $sql = "INSERT INTO users (name, email, password, role, activo, fecha_registro) VALUES (?, ?, ?, 'propietario', 1, NOW())";
         $stmt = $conn->prepare($sql);
         $stmt->execute([$nombre, $email, $password_hash]);
         

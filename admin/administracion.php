@@ -304,7 +304,7 @@ try {
     $stats_esc = $stmt->fetch(PDO::FETCH_ASSOC) ?: $stats_esc;
 
     $sql = "SELECT 
-                p.id, p.title, p.address_city, p.address_municipality, p.status, p.signed_at, p.created_at,
+                p.id, p.title, p.estado, p.domicilio, p.status, p.signed_at, p.created_at,
                 f.asking_price, u.name as asesor_nombre
             FROM properties p
             LEFT JOIN property_financials f ON p.id = f.property_id
@@ -316,7 +316,7 @@ try {
     elseif ($filtro_esc === 'pendientes') $sql .= " AND p.signed_at IS NULL";
 
     if ($busqueda_esc !== '') {
-        $sql .= " AND (p.title LIKE ? OR p.address_city LIKE ? OR p.address_municipality LIKE ?)";
+        $sql .= " AND (p.title LIKE ? OR p.estado LIKE ? OR p.domicilio LIKE ?)";
         $like = '%' . $busqueda_esc . '%';
         $params[] = $like; $params[] = $like; $params[] = $like;
     }
@@ -729,7 +729,7 @@ try {
                                     <div style="font-weight: 600; color: #0f172a;"><?php echo sanitizar($prop['title']); ?></div>
                                     <div style="font-size: 0.75rem; color: #64748b;">
                                         <i class="fas fa-map-marker-alt"></i>
-                                        <?php echo sanitizar(implode(', ', array_filter([$prop['address_city'] ?? '', $prop['address_municipality'] ?? '']))); ?>
+                                        <?php echo sanitizar(implode(', ', array_filter([$prop['estado'] ?? '', $prop['domicilio'] ?? '']))); ?>
                                     </div>
                                 </td>
                                 <td><?php echo sanitizar($prop['asesor_nombre'] ?? '—'); ?></td>

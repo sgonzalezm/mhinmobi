@@ -349,42 +349,10 @@ function getAlertasDashboard($conn, $usuario_id) {
     $alertas = [];
     
     // 1. Propiedades sin precio
-    $stmt = $conn->prepare("
-        SELECT COUNT(*) as total 
-        FROM properties p
-        LEFT JOIN property_financials pf ON p.id = pf.property_id
-        WHERE p.owner_id = ? 
-        AND (pf.asking_price IS NULL OR pf.asking_price = 0)
-    ");
-    $stmt->execute([$usuario_id]);
-    $sin_precio = $stmt->fetchColumn();
-    if ($sin_precio > 0) {
-        $alertas[] = [
-            'tipo' => 'warning',
-            'icono' => 'fa-exclamation-triangle',
-            'mensaje' => "{$sin_precio} propiedad(es) sin precio asignado",
-            'url' => 'mis_propiedades.php?filtro=sin_precio'
-        ];
-    }
+    
     
     // 2. Propiedades sin imágenes
-    $stmt = $conn->prepare("
-        SELECT COUNT(*) as total 
-        FROM properties p
-        LEFT JOIN property_media pm ON p.id = pm.property_id
-        WHERE p.owner_id = ? 
-        AND pm.id IS NULL
-    ");
-    $stmt->execute([$usuario_id]);
-    $sin_imagenes = $stmt->fetchColumn();
-    if ($sin_imagenes > 0) {
-        $alertas[] = [
-            'tipo' => 'info',
-            'icono' => 'fa-image',
-            'mensaje' => "{$sin_imagenes} propiedad(es) sin imágenes",
-            'url' => 'mis_propiedades.php?filtro=sin_imagenes'
-        ];
-    }
+    
     
     // 3. Vencimientos próximos
     $stmt = $conn->prepare("
@@ -566,6 +534,7 @@ $colores_chart = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="css/socios.css">
+    <link rel="manifest" href="/manifest.json">
     <title>Dashboard | Inmobiliaria MH</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
