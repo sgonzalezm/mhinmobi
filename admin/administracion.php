@@ -37,13 +37,64 @@ function formatearMoneda($monto) {
     return '$' . number_format(floatval($monto), 0, ',', '.');
 }
 
+// ===== ENDPOINT AJAX: LEADS DE UN CAPTADOR =====
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'leads_captador') {
+    header('Content-Type: application/json; charset=utf-8');
+    $captador_id = (int)($_GET['captador_id'] ?? 0);
+    
+    if ($captador_id <= 0) {
+        echo json_encode(['error' => 'ID inválido']);
+        exit;
+    }
+    
+    try {
+        $stmt = $conn->prepare("
+            SELECT 
+                lm.id,
+                lm.full_name,
+                lm.email,
+                lm.phone,
+                lm.form_name,
+                lm.status AS lead_status,
+                lm.created_time,
+                lm.fecha_recepcion,
+                la.estado_seguimiento,
+                la.notas,
+                la.proxima_accion,
+                la.fecha_asignacion,
+                la.fecha_ultima_actualizacion
+            FROM leads_asignados la
+            INNER JOIN leads_meta lm ON lm.id = la.lead_id
+            WHERE la.usuario_id = ?
+            ORDER BY la.fecha_asignacion DESC
+            LIMIT 200
+        ");
+        $stmt->execute([$captador_id]);
+        $leads = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $stmtCap = $conn->prepare("SELECT name FROM users WHERE id = ?");
+        $stmtCap->execute([$captador_id]);
+        $captador_name = $stmtCap->fetchColumn() ?: 'Captador';
+        
+        echo json_encode([
+            'success' => true,
+            'captador' => $captador_name,
+            'leads' => $leads,
+            'total' => count($leads)
+        ]);
+    } catch (PDOException $e) {
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 // ===== PROCESAR ACTUALIZACIONES =====
 $mensaje = '';
 $tipo_mensaje = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
-    // === ACTUALIZAR COMISIÓN DE ASESOR (Manual) ===
+    // === ACTUALIZAR COMISIÓN DE ASESOR ===
     if (isset($_POST['accion']) && $_POST['accion'] === 'actualizar_comision_asesor') {
         try {
             $asesor_id = intval($_POST['asesor_id']);
@@ -53,7 +104,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('El porcentaje debe estar entre 0 y 100');
             }
             
-            // Actualizar directamente en la tabla users
             $stmt = $conn->prepare("UPDATE users SET comision_porcentaje = ? WHERE id = ? AND role = 'asesor'");
             $stmt->execute([$nuevo_porcentaje, $asesor_id]);
             
@@ -66,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // === ACTUALIZAR NIVELES DE COMISIÓN (Configuración de referencia) ===
+    // === ACTUALIZAR NIVELES ===
     if (isset($_POST['accion']) && $_POST['accion'] === 'actualizar_niveles') {
         try {
             foreach ($_POST['niveles'] as $id => $datos) {
@@ -92,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $id
                 ]);
             }
-            $mensaje = '✅ Niveles de comisión (referencia) actualizados correctamente';
+            $mensaje = '✅ Niveles de comisión actualizados correctamente';
             $tipo_mensaje = 'success';
             
         } catch (Exception $e) {
@@ -193,7 +243,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ===== OBTENER DATOS =====
 
-// 1. Obtener niveles de comisión (Solo para la pestaña de configuración)
+// 1. Obtener niveles de comisión
 $niveles = [];
 try {
     $stmt = $conn->query("SELECT * FROM comision_niveles WHERE activo = 1 ORDER BY nivel_orden ASC");
@@ -202,7 +252,7 @@ try {
     error_log("Error obteniendo niveles: " . $e->getMessage());
 }
 
-// 2. Obtener ASESORES (Usando comision_porcentaje de la tabla users)
+// 2. Obtener ASESORES
 $asesores = [];
 try {
     $stmt = $conn->query("
@@ -228,13 +278,12 @@ try {
     ");
     $asesores = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Agregar color de nivel basado en la tabla de referencia (solo para visualización)
     foreach ($asesores as &$a) {
-        $ventas = $a['propiedades_vendidas'] ?? 0;
+        $porcentaje_actual = (float)($a['comision_actual'] ?? 0);
         $nivel_asignado = null;
         
         foreach ($niveles as $n) {
-            if ($ventas >= $n['ventas_min'] && $ventas <= $n['ventas_max']) {
+            if (abs((float)$n['comision_porcentaje'] - $porcentaje_actual) < 0.01) {
                 $nivel_asignado = $n;
                 break;
             }
@@ -244,7 +293,7 @@ try {
             $a['nivel_label'] = $nivel_asignado['icono'] . ' ' . $nivel_asignado['nivel_nombre'];
             $a['color'] = $nivel_asignado['color_hex'];
         } else {
-            $a['nivel_label'] = 'Sin nivel';
+            $a['nivel_label'] = 'Sin nivel asignado';
             $a['color'] = '#6b7280';
         }
     }
@@ -253,7 +302,7 @@ try {
     error_log("Error obteniendo asesores: " . $e->getMessage());
 }
 
-// 3. Obtener CAPTADORES (sin métricas de propiedades aún)
+// 3. Obtener CAPTADORES con estadísticas de leads (usando leads_asignados)
 $captadores = [];
 try {
     $stmt = $conn->query("
@@ -263,10 +312,20 @@ try {
             u.email,
             u.telefono,
             u.activo,
-            u.created_at
+            u.created_at,
+            COUNT(la.id) AS total_leads,
+            SUM(CASE WHEN la.estado_seguimiento = 'nuevo' THEN 1 ELSE 0 END) AS leads_nuevos,
+            SUM(CASE WHEN la.estado_seguimiento = 'contactado' THEN 1 ELSE 0 END) AS leads_contactados,
+            SUM(CASE WHEN la.estado_seguimiento = 'negociacion' THEN 1 ELSE 0 END) AS leads_negociacion,
+            SUM(CASE WHEN la.estado_seguimiento = 'seguimiento' THEN 1 ELSE 0 END) AS leads_seguimiento,
+            SUM(CASE WHEN la.estado_seguimiento = 'cerrado_ganado' THEN 1 ELSE 0 END) AS leads_ganados,
+            SUM(CASE WHEN la.estado_seguimiento = 'cerrado_perdido' THEN 1 ELSE 0 END) AS leads_perdidos,
+            MAX(la.fecha_ultima_actualizacion) AS ultima_actividad
         FROM users u
+        LEFT JOIN leads_asignados la ON la.usuario_id = u.id
         WHERE u.role = 'captador'
-        ORDER BY u.name ASC
+        GROUP BY u.id
+        ORDER BY total_leads DESC, u.name ASC
     ");
     $captadores = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
@@ -345,7 +404,7 @@ try {
         .admin-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; }
         .admin-header-bar h1 { font-size: 1.6rem; font-weight: 700; color: #0f172a; margin: 0; }
         .admin-header-bar h1 i { color: #10b981; margin-right: 10px; }
-        .admin-user-info { display: flex; align-items: center; gap: 15px; background: #f8fafc; padding: 8px 16px 8px 12px; border-radius: 30px; border: 1px solid #e8edf4; }
+        .admin-user-info { display: flex; align-items: center; gap: 15px; background: #f8fafc; padding: 8px 16px 8px 12px; border-radius: 30px; border: 1px solid #e8edf4; flex-wrap: wrap; }
         .admin-avatar { width: 36px; height: 36px; background: #10b981; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 0.9rem; }
         .admin-name { font-weight: 600; color: #0f172a; font-size: 0.9rem; }
         .admin-role { font-size: 0.7rem; color: #64748b; background: #f1f5f9; padding: 2px 10px; border-radius: 12px; }
@@ -376,7 +435,7 @@ try {
 
         /* ===== ASESORES ===== */
         .asesores-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; margin-bottom: 20px; }
-        .asesor-card { background: white; border: 1px solid #e8edf4; border-radius: 12px; padding: 20px; transition: all 0.2s ease; position: relative; }
+        .asesor-card { background: white; border: 1px solid #e8edf4; border-radius: 12px; padding: 20px; transition: all 0.2s ease; }
         .asesor-card:hover { box-shadow: 0 8px 25px rgba(0,0,0,0.08); transform: translateY(-2px); }
         .asesor-card .asesor-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
         .asesor-card .asesor-avatar { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 1.2rem; flex-shrink: 0; }
@@ -388,32 +447,78 @@ try {
         .asesor-card .stats-row .stat-mini .number { font-size: 1.1rem; font-weight: 700; color: #0f172a; }
         .asesor-card .stats-row .stat-mini .label { font-size: 0.6rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.3px; }
         
-        /* Caja de comisión informativa */
-        .comision-info-box {
-            background: #f0fdf4;
-            border: 1px solid #bbf7d0;
-            border-radius: 8px;
-            padding: 12px;
-            text-align: center;
-            margin-top: 12px;
-        }
+        .comision-info-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px; text-align: center; margin-top: 12px; }
         .comision-info-box .label { font-size: 0.7rem; color: #166534; text-transform: uppercase; font-weight: 600; }
         .comision-info-box .value { font-size: 1.5rem; font-weight: 800; color: #065f46; }
         .comision-info-box .hint { font-size: 0.7rem; color: #4ade80; margin-top: 4px; }
 
         /* ===== CAPTADORES ===== */
-        .captadores-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
-        .captador-card { background: white; border: 1px solid #e8edf4; border-radius: 12px; padding: 20px; }
+        .captadores-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; }
+        .captador-card { background: white; border: 1px solid #e8edf4; border-radius: 12px; padding: 20px; transition: all 0.2s; }
+        .captador-card:hover { box-shadow: 0 8px 25px rgba(0,0,0,0.08); transform: translateY(-2px); }
         .captador-card .captador-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-        .captador-card .captador-avatar { width: 48px; height: 48px; border-radius: 50%; background: #8b5cf6; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.2rem; }
-        .captador-card .captador-info h3 { margin: 0; font-size: 1rem; color: #0f172a; }
+        .captador-card .captador-avatar { width: 48px; height: 48px; border-radius: 50%; background: #8b5cf6; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.2rem; flex-shrink: 0; }
+        .captador-card .captador-info h3 { margin: 0; font-size: 1rem; color: #0f172a; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
         .captador-card .captador-info .email { font-size: 0.8rem; color: #64748b; }
-        .captador-card .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
-        .captador-card .stat-mini { background: #f8fafc; padding: 8px; border-radius: 8px; text-align: center; }
-        .captador-card .stat-mini .number { font-size: 1.1rem; font-weight: 700; color: #0f172a; }
-        .captador-card .stat-mini .label { font-size: 0.6rem; color: #64748b; text-transform: uppercase; }
+        
+        .leads-total-block { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); border-radius: 10px; padding: 14px; text-align: center; color: white; margin: 12px 0; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25); }
+        .leads-total-num { font-size: 2rem; font-weight: 800; line-height: 1; }
+        .leads-total-lbl { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.9; margin-top: 4px; font-weight: 600; }
 
-        /* ===== TABLAS (ESCRITURACIÓN, NIVELES, HISTORIAL) ===== */
+        .leads-breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+        .lead-stat { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; font-size: 0.78rem; }
+        .lead-stat i { font-size: 0.9rem; width: 18px; text-align: center; }
+        .lead-stat .num { font-weight: 800; font-size: 0.95rem; margin-left: auto; }
+        .lead-stat .lbl { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.3px; opacity: 0.8; }
+        .lead-stat.nuevo { background: #dbeafe; color: #1e40af; }
+        .lead-stat.seguimiento { background: #fef3c7; color: #92400e; }
+        .lead-stat.ganado { background: #d1fae5; color: #065f46; }
+        .lead-stat.perdido { background: #fee2e2; color: #991b1b; }
+
+        .tasa-exito { margin: 12px 0; }
+        .tasa-info { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: #64748b; margin-bottom: 6px; }
+        .tasa-info strong { color: #0f172a; font-size: 0.9rem; }
+        .tasa-bar { width: 100%; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+        .tasa-fill { height: 100%; background: linear-gradient(90deg, #10b981 0%, #059669 100%); border-radius: 3px; transition: width 0.4s ease; }
+
+        .ultima-actividad { font-size: 0.72rem; color: #64748b; background: #f8fafc; padding: 6px 10px; border-radius: 6px; display: flex; align-items: center; gap: 6px; }
+        .ultima-actividad.sin-actividad { color: #94a3b8; font-style: italic; }
+
+        .btn-ver-leads { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; padding: 10px; background: #f1f5f9; border: none; border-radius: 8px; cursor: pointer; color: #334155; font-size: 0.8rem; font-weight: 600; width: 100%; transition: all 0.15s; font-family: inherit; }
+        .btn-ver-leads:hover { background: #e2e8f0; color: #1d4ed8; }
+        .btn-ver-leads.sin-leads { color: #94a3b8; cursor: not-allowed; }
+
+        /* ===== MODAL ===== */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); display: none; align-items: center; justify-content: center; z-index: 9999; padding: 20px; backdrop-filter: blur(4px); }
+        .modal-overlay.show { display: flex; }
+        .modal-content { background: #fff; border-radius: 16px; width: 100%; max-width: 1000px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .modal-header { padding: 20px 24px; border-bottom: 1px solid #e8edf4; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; }
+        .modal-header h3 { margin: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 10px; }
+        .modal-close { background: rgba(255,255,255,0.2); border: none; color: white; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; }
+        .modal-close:hover { background: rgba(255,255,255,0.3); }
+        .modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
+        
+        .leads-modal-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .leads-modal-table thead th { background: #f8fafc; padding: 10px 12px; text-align: left; font-size: 0.7rem; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #e2e8f0; position: sticky; top: 0; }
+        .leads-modal-table tbody td { padding: 12px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+        .leads-modal-table tbody tr:hover { background: #f8fafc; }
+        
+        .badge-estado { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; white-space: nowrap; }
+        .badge-estado.nuevo { background: #dbeafe; color: #1e40af; }
+        .badge-estado.contactado { background: #fed7aa; color: #9a3412; }
+        .badge-estado.negociacion { background: #e9d5ff; color: #6b21a8; }
+        .badge-estado.seguimiento { background: #ccfbf1; color: #115e59; }
+        .badge-estado.cerrado_ganado { background: #d1fae5; color: #065f46; }
+        .badge-estado.cerrado_perdido { background: #fee2e2; color: #991b1b; }
+        
+        .leads-modal-empty { text-align: center; padding: 60px 20px; color: #64748b; }
+        .leads-modal-empty i { font-size: 3rem; color: #cbd5e1; margin-bottom: 16px; display: block; }
+        
+        .loader { text-align: center; padding: 40px; color: #64748b; }
+        .loader i { font-size: 2rem; color: #8b5cf6; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ===== TABLAS ===== */
         .table-container { background: white; border: 1px solid #e8edf4; border-radius: 12px; padding: 20px; overflow-x: auto; }
         .data-table { width: 100%; border-collapse: collapse; }
         .data-table th { background: #f8fafc; padding: 10px 14px; text-align: left; font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; border-bottom: 2px solid #e8edf4; }
@@ -439,19 +544,21 @@ try {
         .esc-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
         .esc-actions input[type="datetime-local"] { padding: 4px 8px; border: 1px solid #e8edf4; border-radius: 6px; font-size: 0.78rem; width: 170px; }
 
-        /* ===== PLACEHOLDERS ===== */
         .placeholder-box { text-align: center; padding: 60px 20px; color: #64748b; background: white; border-radius: 12px; border: 1px dashed #cbd5e1; }
         .placeholder-box i { font-size: 4rem; color: #d1d5db; margin-bottom: 15px; display: block; }
         .placeholder-box h3 { color: #0f172a; margin-bottom: 10px; }
 
-        /* ===== RESPONSIVE ===== */
         @media (max-width: 768px) {
             .admin-container { padding: 15px; }
             .admin-header-bar { flex-direction: column; align-items: stretch; }
+            .admin-user-info { justify-content: center; padding: 8px; }
             .asesores-grid, .captadores-grid { grid-template-columns: 1fr; }
             .stats-grid { grid-template-columns: 1fr 1fr; }
             .tabs { flex-direction: column; }
             .tab-btn { text-align: center; }
+            .modal-body { padding: 16px; }
+            .leads-modal-table { font-size: 0.78rem; }
+            .leads-modal-table thead th, .leads-modal-table tbody td { padding: 8px; }
         }
     </style>
 </head>
@@ -467,7 +574,7 @@ try {
             <h1><i class="fas fa-crown"></i> Panel de Administración</h1>
             <div class="admin-user-info">
                 <div class="admin-avatar"><?php echo strtoupper(substr($usuario['name'] ?? 'A', 0, 1)); ?></div>
-                <a href="/actualizar_comisiones.php" class="btn-primary" style="text-decoration: none;">
+                <a href="/actualizar_comisiones.php" style="text-decoration: none; padding: 8px 16px; background: #1d4ed8; color: white; border-radius: 8px; font-size: 0.85rem; font-weight: 600;">
                     <i class="fas fa-sync-alt"></i> Recalcular Comisiones
                 </a>
                 <span class="admin-name"><?php echo sanitizar($usuario['name'] ?? 'Administrador'); ?></span>
@@ -562,7 +669,6 @@ try {
                         </div>
                     </div>
 
-                    <!-- Comisión Informativa (Solo lectura) -->
                     <div class="comision-info-box">
                         <div class="label">Comisión Asignada</div>
                         <div class="value"><?php echo $asesor['comision_actual']; ?>%</div>
@@ -583,50 +689,104 @@ try {
                 </div>
             <?php else: ?>
                 <div class="captadores-grid">
-                    <?php foreach ($captadores as $captador): ?>
+                    <?php foreach ($captadores as $captador): 
+                        $total = (int)$captador['total_leads'];
+                        $nuevos = (int)$captador['leads_nuevos'];
+                        $en_proceso = (int)$captador['leads_contactados'] + (int)$captador['leads_negociacion'] + (int)$captador['leads_seguimiento'];
+                        $ganados = (int)$captador['leads_ganados'];
+                        $perdidos = (int)$captador['leads_perdidos'];
+                        $tasa_exito = $total > 0 ? round(($ganados / $total) * 100, 1) : 0;
+                    ?>
                     <div class="captador-card">
                         <div class="captador-header">
                             <div class="captador-avatar">
                                 <?php echo strtoupper(substr($captador['name'], 0, 1)); ?>
                             </div>
-                            <div class="captador-info">
-                                <h3><?php echo sanitizar($captador['name']); ?></h3>
+                            <div class="captador-info" style="flex: 1; min-width: 0;">
+                                <h3>
+                                    <?php echo sanitizar($captador['name']); ?>
+                                    <span style="font-size: 0.65rem; padding: 2px 8px; border-radius: 10px;
+                                                 background: <?php echo $captador['activo'] ? '#d1fae5' : '#fee2e2'; ?>;
+                                                 color: <?php echo $captador['activo'] ? '#065f46' : '#991b1b'; ?>;
+                                                 font-weight: 700;">
+                                        <?php echo $captador['activo'] ? 'Activo' : 'Inactivo'; ?>
+                                    </span>
+                                </h3>
                                 <div class="email"><i class="fas fa-envelope"></i> <?php echo sanitizar($captador['email']); ?></div>
                                 <?php if (!empty($captador['telefono'])): ?>
                                     <div class="email"><i class="fas fa-phone"></i> <?php echo sanitizar($captador['telefono']); ?></div>
                                 <?php endif; ?>
                             </div>
                         </div>
-                        
-                        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #f1f5f9;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
-                                <span style="color: #64748b;">
-                                    <i class="fas fa-calendar"></i> 
-                                    Desde <?php echo date('d/m/Y', strtotime($captador['created_at'])); ?>
-                                </span>
-                                <span class="nivel-badge" style="background: <?php echo $captador['activo'] ? '#d1fae5' : '#fee2e2'; ?>; color: <?php echo $captador['activo'] ? '#065f46' : '#991b1b'; ?>;">
-                                    <?php echo $captador['activo'] ? 'Activo' : 'Inactivo'; ?>
-                                </span>
+
+                        <div class="leads-total-block">
+                            <div class="leads-total-num"><?php echo $total; ?></div>
+                            <div class="leads-total-lbl">Leads asignados</div>
+                        </div>
+
+                        <div class="leads-breakdown">
+                            <div class="lead-stat nuevo">
+                                <i class="fas fa-bell"></i>
+                                <span class="lbl">Nuevos</span>
+                                <span class="num"><?php echo $nuevos; ?></span>
+                            </div>
+                            <div class="lead-stat seguimiento">
+                                <i class="fas fa-spinner"></i>
+                                <span class="lbl">En proceso</span>
+                                <span class="num"><?php echo $en_proceso; ?></span>
+                            </div>
+                            <div class="lead-stat ganado">
+                                <i class="fas fa-trophy"></i>
+                                <span class="lbl">Ganados</span>
+                                <span class="num"><?php echo $ganados; ?></span>
+                            </div>
+                            <div class="lead-stat perdido">
+                                <i class="fas fa-times-circle"></i>
+                                <span class="lbl">Perdidos</span>
+                                <span class="num"><?php echo $perdidos; ?></span>
                             </div>
                         </div>
 
-                        <!-- Placeholder para cuando asocies propiedades -->
-                        <div style="margin-top: 12px; padding: 10px; background: #f8fafc; border-radius: 8px; text-align: center;">
-                            <div style="font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; font-weight: 600;">
-                                Propiedades captadas
+                        <?php if ($total > 0): ?>
+                        <div class="tasa-exito">
+                            <div class="tasa-info">
+                                <span><i class="fas fa-chart-line"></i> Tasa de éxito</span>
+                                <strong><?php echo $tasa_exito; ?>%</strong>
                             </div>
-                            <div style="font-size: 1.5rem; font-weight: 700; color: #cbd5e1;">—</div>
-                            <div style="font-size: 0.65rem; color: #cbd5e1;">
-                                Pendiente de asociación
+                            <div class="tasa-bar">
+                                <div class="tasa-fill" style="width: <?php echo $tasa_exito; ?>%;"></div>
                             </div>
                         </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($captador['ultima_actividad'])): ?>
+                        <div class="ultima-actividad">
+                            <i class="far fa-clock"></i>
+                            Última actividad: <?php echo date('d/m/Y H:i', strtotime($captador['ultima_actividad'])); ?>
+                        </div>
+                        <?php else: ?>
+                        <div class="ultima-actividad sin-actividad">
+                            <i class="fas fa-minus-circle"></i>
+                            Sin actividad registrada
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if ($total > 0): ?>
+                        <button type="button" class="btn-ver-leads" onclick="verLeads(<?php echo $captador['id']; ?>, '<?php echo sanitizar(addslashes($captador['name'])); ?>')">
+                            <i class="fas fa-eye"></i> Ver los <?php echo $total; ?> leads
+                        </button>
+                        <?php else: ?>
+                        <button type="button" class="btn-ver-leads sin-leads" disabled>
+                            <i class="fas fa-inbox"></i> Sin leads asignados
+                        </button>
+                        <?php endif; ?>
                     </div>
                     <?php endforeach; ?>
                 </div>
             <?php endif; ?>
         </div>
 
-        <!-- ===== TAB 3: NIVELES DE COMISIÓN (REFERENCIA) ===== -->
+        <!-- ===== TAB 3: NIVELES DE COMISIÓN ===== -->
         <div class="tab-content <?php echo $tab_activo === 'tab-niveles' ? 'active' : ''; ?>" id="tab-niveles">
             <div class="table-container">
                 <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 15px;">
@@ -672,7 +832,6 @@ try {
 
         <!-- ===== TAB 4: ESCRITURACIÓN ===== -->
         <div class="tab-content <?php echo $tab_activo === 'tab-escrituracion' ? 'active' : ''; ?>" id="tab-escrituracion">
-            <!-- Stats rápidas -->
             <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 20px;">
                 <div class="stat-card" style="padding: 15px;">
                     <div class="stat-number" style="font-size: 1.5rem;"><?php echo intval($stats_esc['total'] ?? 0); ?></div>
@@ -688,7 +847,6 @@ try {
                 </div>
             </div>
 
-            <!-- Filtros y búsqueda -->
             <div style="background: white; padding: 14px 18px; border-radius: 12px; border: 1px solid #e8edf4; margin-bottom: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                 <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                     <a href="?filtro_esc=todas<?php echo $busqueda_esc ? '&buscar_esc=' . urlencode($busqueda_esc) : ''; ?>" class="tab-btn" style="padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; text-decoration: none; color: <?php echo $filtro_esc === 'todas' ? '#10b981' : '#64748b'; ?>; background: <?php echo $filtro_esc === 'todas' ? '#ecfdf5' : '#f1f5f9'; ?>;">Todas</a>
@@ -702,7 +860,6 @@ try {
                 </form>
             </div>
 
-            <!-- Tabla -->
             <div class="table-container">
                 <?php if (empty($propiedades)): ?>
                     <div class="placeholder-box" style="border: none;">
@@ -777,7 +934,7 @@ try {
             </div>
         </div>
 
-        <!-- ===== TAB 5: HISTORIAL (PENDIENTE) ===== -->
+        <!-- ===== TAB 5: HISTORIAL ===== -->
         <div class="tab-content <?php echo $tab_activo === 'tab-historial' ? 'active' : ''; ?>" id="tab-historial">
             <div class="placeholder-box">
                 <i class="fas fa-history"></i>
@@ -786,7 +943,7 @@ try {
             </div>
         </div>
 
-        <!-- ===== TAB 6: ANALÍTICOS (PENDIENTE) ===== -->
+        <!-- ===== TAB 6: ANALÍTICOS ===== -->
         <div class="tab-content <?php echo $tab_activo === 'tab-analiticos' ? 'active' : ''; ?>" id="tab-analiticos">
             <div class="placeholder-box">
                 <i class="fas fa-chart-pie"></i>
@@ -796,6 +953,27 @@ try {
         </div>
     </div>
 </main>
+
+<!-- ===== MODAL DE LEADS ===== -->
+<div class="modal-overlay" id="modalLeads">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>
+                <i class="fas fa-users"></i>
+                Leads de <span id="modalCaptadorName">—</span>
+            </h3>
+            <button class="modal-close" onclick="cerrarModalLeads()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body" id="modalLeadsBody">
+            <div class="loader">
+                <i class="fas fa-spinner"></i>
+                <p style="margin-top: 12px;">Cargando leads...</p>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
 // ===== TABS =====
@@ -832,6 +1010,138 @@ document.addEventListener('DOMContentLoaded', function() {
             document.body.style.overflow = '';
         });
     }
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') cerrarModalLeads();
+    });
+});
+
+// ===== MODAL DE LEADS =====
+function verLeads(captadorId, captadorName) {
+    const modal = document.getElementById('modalLeads');
+    const body = document.getElementById('modalLeadsBody');
+    document.getElementById('modalCaptadorName').textContent = captadorName;
+
+    modal.classList.add('show');
+    document.body.style.overflow = 'hidden';
+
+    body.innerHTML = `
+        <div class="loader">
+            <i class="fas fa-spinner"></i>
+            <p style="margin-top: 12px;">Cargando leads de ${captadorName}...</p>
+        </div>
+    `;
+
+    fetch(`?ajax=leads_captador&captador_id=${captadorId}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                body.innerHTML = `
+                    <div class="leads-modal-empty">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <p>Error: ${data.error}</p>
+                    </div>
+                `;
+                return;
+            }
+
+            if (!data.leads || data.leads.length === 0) {
+                body.innerHTML = `
+                    <div class="leads-modal-empty">
+                        <i class="fas fa-inbox"></i>
+                        <h3 style="color: #0f172a;">Sin leads asignados</h3>
+                        <p>Este captador aún no tiene leads.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <p style="margin: 0 0 16px 0; color: #64748b; font-size: 0.85rem;">
+                    <i class="fas fa-info-circle"></i>
+                    Mostrando <strong>${data.total}</strong> lead${data.total === 1 ? '' : 's'}.
+                </p>
+                <table class="leads-modal-table">
+                    <thead>
+                        <tr>
+                            <th>Contacto</th>
+                            <th>Teléfono</th>
+                            <th>Formulario</th>
+                            <th>Estado</th>
+                            <th>Asignado</th>
+                            <th>Próxima acción</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            data.leads.forEach(lead => {
+                const estado = lead.estado_seguimiento || 'nuevo';
+                const waLink = lead.phone ? `https://wa.me/${lead.phone.replace(/\D/g, '')}` : null;
+                const fechaAsig = lead.fecha_asignacion ? new Date(lead.fecha_asignacion.replace(' ', 'T')).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                const proxima = lead.proxima_accion ? new Date(lead.proxima_accion.replace(' ', 'T')).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+                html += `
+                    <tr>
+                        <td>
+                            <div style="font-weight: 600; color: #0f172a;">${escapeHtml(lead.full_name || 'Sin nombre')}</div>
+                            <div style="font-size: 0.75rem; color: #94a3b8;">${escapeHtml(lead.email || '')}</div>
+                        </td>
+                        <td>
+                            ${waLink ? `<a href="${waLink}" target="_blank" style="color: #10b981; text-decoration: none; font-weight: 600;">
+                                <i class="fab fa-whatsapp"></i> ${escapeHtml(lead.phone)}
+                            </a>` : '<span style="color: #cbd5e1;">—</span>'}
+                        </td>
+                        <td style="font-size: 0.78rem; color: #64748b;">${escapeHtml(lead.form_name || '—')}</td>
+                        <td><span class="badge-estado ${estado}">${etiquetaEstado(estado)}</span></td>
+                        <td style="font-size: 0.8rem; color: #64748b;">${fechaAsig}</td>
+                        <td style="font-size: 0.8rem; color: ${lead.proxima_accion ? '#0f172a' : '#94a3b8'};">${proxima}</td>
+                    </tr>
+                `;
+            });
+
+            html += `</tbody></table>`;
+            body.innerHTML = html;
+        })
+        .catch(err => {
+            body.innerHTML = `
+                <div class="leads-modal-empty">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p>Error de conexión: ${err.message}</p>
+                </div>
+            `;
+        });
+}
+
+function cerrarModalLeads() {
+    const modal = document.getElementById('modalLeads');
+    if (modal) {
+        modal.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function etiquetaEstado(estado) {
+    const map = {
+        'nuevo': 'Nuevo',
+        'contactado': 'Contactado',
+        'negociacion': 'En negociación',
+        'seguimiento': 'En seguimiento',
+        'cerrado_ganado': 'Ganado',
+        'cerrado_perdido': 'Perdido'
+    };
+    return map[estado] || estado;
+}
+
+document.getElementById('modalLeads')?.addEventListener('click', function(e) {
+    if (e.target === this) cerrarModalLeads();
 });
 
 // ===== AGREGAR NUEVO NIVEL =====
