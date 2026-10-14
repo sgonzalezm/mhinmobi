@@ -41,8 +41,8 @@ function notificarVisitaAgendada($propiedad_id, $fecha_visita, $gestor_id, $capt
 // ============================================
 // FUNCIÓN PARA CALCULAR VIABILIDAD
 // ============================================
-function calcularViabilidad($precio_pretendido, $gastos_operativos, $ganancia_requerida, $comisiones, $precio_comercial) {
-    $costo_total = $precio_pretendido + $gastos_operativos + $ganancia_requerida + $comisiones;
+function calcularViabilidad($precio_pretendido, $gastos_operativos, $ganancia_requerida, $comisiones, $precio_comercial, $deuda_hipoteca, $deuda_servicios) {
+    $costo_total = $precio_pretendido + $gastos_operativos + $ganancia_requerida + $comisiones + $deuda_hipoteca + $deuda_servicios;
     $margen = $precio_comercial - $costo_total;
     
     if ($margen > $precio_comercial * 0.15) {
@@ -135,6 +135,8 @@ function generarPDFPropiedad($propiedad, $costos, $usuario) {
         ['Gastos Operativos (fijos)', '$' . number_format($propiedad['gastos_operativos'] ?? 0, 2)],
         ['Beneficio Requerido (fijo)', '$' . number_format($propiedad['ganancia_requerida'] ?? 0, 2)],
         ['Comisiones', '$' . number_format($propiedad['comisiones'] ?? 0, 2)],
+        ['Deuda Hipotecaria', '$' . number_format($propiedad['deuda_hipoteca'] ?? 0, 2)],
+        ['Deuda de Servicios', '$' . number_format($propiedad['deuda_servicios'] ?? 0, 2)],
     ];
     
     foreach ($financiero as $item) {
@@ -145,7 +147,9 @@ function generarPDFPropiedad($propiedad, $costos, $usuario) {
     $costo_total = ($propiedad['precio_pretendido'] + 
                    ($propiedad['gastos_operativos'] ?? 0) + 
                    ($propiedad['ganancia_requerida'] ?? 0) + 
-                   ($propiedad['comisiones'] ?? 0));
+                   ($propiedad['comisiones'] ?? 0) + 
+                   ($propiedad['deuda_hipoteca'] ?? 0) + 
+                   ($propiedad['deuda_servicios'] ?? 0));
     $margen = ($propiedad['precio_comercial'] ?? 0) - $costo_total;
     
     $pdf->Ln(3);
@@ -259,6 +263,8 @@ function generarHTMLReporte($propiedad, $costos, $usuario) {
     $html .= '<div class="datos">';
     $html .= '<div><span class="etiqueta">Precio Pretendido:</span> $' . number_format($propiedad['precio_pretendido'], 2) . '</div>';
     $html .= '<div><span class="etiqueta">Valor Comercial:</span> $' . number_format($propiedad['precio_comercial'] ?? 0, 2) . '</div>';
+    $html .= '<div><span class="etiqueta">Deuda Hipotecaria:</span> $' . number_format($propiedad['deuda_hipoteca'] ?? 0, 2) . '</div>';
+    $html .= '<div><span class="etiqueta">Deuda de Servicios:</span> $' . number_format($propiedad['deuda_servicios'] ?? 0, 2) . '</div>';
     $html .= '<div><span class="etiqueta">Gastos Operativos (fijos):</span> $' . number_format($propiedad['gastos_operativos'] ?? 0, 2) . '</div>';
     $html .= '<div><span class="etiqueta">Beneficio Requerido (fijo):</span> $' . number_format($propiedad['ganancia_requerida'] ?? 0, 2) . '</div>';
     $html .= '<div><span class="etiqueta">Comisiones:</span> $' . number_format($propiedad['comisiones'] ?? 0, 2) . '</div>';
@@ -384,6 +390,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $ganancia_requerida = floatval($_POST['beneficio_fijo'] ?? ($precio_pretendido * (($costos['porcentaje_ganancia'] ?? 20) / 100)));
                 $comisiones = $precio_pretendido * (($costos['porcentaje_comision'] ?? 3) / 100);
                 $precio_comercial = $precio_pretendido * ($costos['factor_ajuste_comercial'] ?? 1.15);
+                $deuda_hipoteca = floatval($_POST['deuda_hipoteca'] ?? 0);
+                $deuda_servicios = floatval($_POST['deuda_servicios'] ?? 0);
             } else {
                 // Calificador: usa valores por defecto pero SIEMPRE calcula
                 $gastos_operativos = $costos['gastos_operativos_por_m2'] ?? 0;
@@ -393,13 +401,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             // Calcular viabilidad (SIEMPRE se calcula)
-            $resultado = calcularViabilidad($precio_pretendido, $gastos_operativos, $ganancia_requerida, $comisiones, $precio_comercial);
+            $resultado = calcularViabilidad($precio_pretendido, $gastos_operativos, $ganancia_requerida, $comisiones, $precio_comercial, $deuda_hipoteca, $deuda_servicios);
             
             if ($propiedad_id > 0) {
                 $sql = "UPDATE propiedades_calificacion SET 
                     direccion = ?, ciudad = ?, colonia = ?, m2_terreno = ?, m2_construccion = ?,
                     antiguedad = ?, recamaras = ?, banos = ?, estacionamiento = ?,
-                    precio_pretendido = ?, precio_comercial = ?,
+                    precio_pretendido = ?, precio_comercial = ?, deuda_hipoteca = ?, deuda_servicios = ?,
                     gastos_operativos = ?, ganancia_requerida = ?, comisiones = ?,
                     viabilidad = ?, indicador_color = ?,
                     actualizado_por = ?, fecha_actualizacion = NOW()
@@ -418,6 +426,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     intval($_POST['estacionamiento'] ?? 0),
                     $precio_pretendido,
                     $precio_comercial,
+                    $deuda_hipoteca,
+                    $deuda_servicios,
                     $gastos_operativos,
                     $ganancia_requerida,
                     $comisiones,
@@ -432,11 +442,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sql = "INSERT INTO propiedades_calificacion (
                     direccion, ciudad, colonia, m2_terreno, m2_construccion,
                     antiguedad, recamaras, banos, estacionamiento,
-                    precio_pretendido, precio_comercial,
+                    precio_pretendido, precio_comercial, deuda_hipoteca, deuda_servicios,
                     gastos_operativos, ganancia_requerida, comisiones,
                     viabilidad, indicador_color,
                     creado_por, fecha_creacion
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
                 
                 $stmt = $conn->prepare($sql);
                 $stmt->execute([
@@ -451,6 +461,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     intval($_POST['estacionamiento'] ?? 0),
                     $precio_pretendido,
                     $precio_comercial,
+                    $deuda_hipoteca,
+                    $deuda_servicios,
                     $gastos_operativos,
                     $ganancia_requerida,
                     $comisiones,
@@ -1423,6 +1435,16 @@ $stats['con_visita'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
                     <div class="form-group">
                         <label for="precio_pretendido">Precio pretendido <span class="required">*</span></label>
                         <input type="number" id="precio_pretendido" name="precio_pretendido" value="<?php echo htmlspecialchars($propiedad['precio_pretendido'] ?? ''); ?>" step="0.01" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="deuda_hipoteca">Deuda Hipotecaria</label>
+                        <input type="number" id="deuda_hipoteca" name="deuda_hipoteca" value="<?php echo htmlspecialchars($propiedad['deuda_hipoteca'] ?? ''); ?>" step="0.01">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="deuda_servicios">Deuda de Servicios</label>
+                        <input type="number" id="deuda_servicios" name="deuda_servicios" value="<?php echo htmlspecialchars($propiedad['deuda_servicios'] ?? ''); ?>" step="0.01">
                     </div>
                     
                     <!-- CAMPOS SOLO PARA ADMINISTRADOR -->
