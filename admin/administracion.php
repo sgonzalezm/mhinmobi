@@ -177,6 +177,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // === ACTUALIZAR NIVELES DE CAPTADOR ===
+    if (isset($_POST['accion']) && $_POST['accion'] === 'actualizar_niveles_captador') {
+        try {
+            foreach ($_POST['niveles_cap'] as $id => $datos) {
+                $stmt = $conn->prepare("
+                    UPDATE comision_niveles_captador 
+                    SET nivel_nombre = ?,
+                        nivel_orden = ?,
+                        captaciones_min = ?,
+                        captaciones_max = ?,
+                        pago_por_captacion = ?,
+                        apoyo_publicitario = ?,
+                        bono_global = ?,
+                        porcentaje_adelanto = ?
+                    WHERE id = ?
+                ");
+                $stmt->execute([
+                    sanitizar($datos['nombre']),
+                    intval($datos['orden']),
+                    intval($datos['min']),
+                    intval($datos['max']),
+                    floatval($datos['pago']),
+                    floatval($datos['apoyo']),
+                    floatval($datos['bono']),
+                    floatval($datos['adelanto']),
+                    $id
+                ]);
+            }
+            $mensaje = '✅ Niveles de captador actualizados correctamente';
+            $tipo_mensaje = 'success';
+            
+        } catch (Exception $e) {
+            $mensaje = '❌ Error al actualizar niveles de captador: ' . $e->getMessage();
+            $tipo_mensaje = 'error';
+        }
+    }
+
+    // === AGREGAR NUEVO NIVEL DE CAPTADOR ===
+    if (isset($_POST['accion']) && $_POST['accion'] === 'agregar_nivel_captador') {
+        try {
+            $stmt = $conn->prepare("
+                INSERT INTO comision_niveles_captador (nivel_nombre, nivel_orden, captaciones_min, captaciones_max, pago_por_captacion, apoyo_publicitario, bono_global, porcentaje_adelanto)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                sanitizar($_POST['nombre']),
+                intval($_POST['orden']),
+                intval($_POST['min']),
+                intval($_POST['max']),
+                floatval($_POST['pago']),
+                floatval($_POST['apoyo']),
+                floatval($_POST['bono']),
+                floatval($_POST['adelanto'])
+            ]);
+            $mensaje = '✅ Nuevo nivel de captador creado correctamente';
+            $tipo_mensaje = 'success';
+            
+        } catch (Exception $e) {
+            $mensaje = '❌ Error al crear nivel de captador: ' . $e->getMessage();
+            $tipo_mensaje = 'error';
+        }
+    }
+
     // === MARCAR PROPIEDAD COMO ESCRITURADA ===
     if (isset($_POST['accion']) && $_POST['accion'] === 'marcar_escriturada') {
         try {
@@ -250,6 +313,15 @@ try {
     $niveles = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     error_log("Error obteniendo niveles: " . $e->getMessage());
+}
+
+// 1.b Obtener niveles de comisión de captadores
+$niveles_captador = [];
+try {
+    $stmt = $conn->query("SELECT * FROM comision_niveles_captador ORDER BY nivel_orden ASC");
+    $niveles_captador = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Error obteniendo niveles de captador: " . $e->getMessage());
 }
 
 // 2. Obtener ASESORES
@@ -623,7 +695,10 @@ try {
                 <i class="fas fa-hand-holding-heart"></i> Captadores
             </button>
             <button class="tab-btn <?php echo $tab_activo === 'tab-niveles' ? 'active' : ''; ?>" data-tab="tab-niveles">
-                <i class="fas fa-layer-group"></i> Niveles (Referencia)
+                <i class="fas fa-layer-group"></i> Niveles Asesores
+            </button>
+            <button class="tab-btn <?php echo $tab_activo === 'tab-niveles-captador' ? 'active' : ''; ?>" data-tab="tab-niveles-captador">
+                <i class="fas fa-layer-group"></i> Niveles Captadores
             </button>
             <button class="tab-btn <?php echo $tab_activo === 'tab-escrituracion' ? 'active' : ''; ?>" data-tab="tab-escrituracion">
                 <i class="fas fa-file-contract"></i> Escrituración
@@ -825,6 +900,54 @@ try {
                     <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
                         <button type="submit" class="btn-guardar-niveles"><i class="fas fa-save"></i> Guardar Niveles</button>
                         <button type="button" class="btn-agregar-nivel" onclick="agregarNivel()"><i class="fas fa-plus"></i> Agregar Nivel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ===== TAB 3.b: NIVELES DE COMISIÓN CAPTADORES ===== -->
+        <div class="tab-content <?php echo $tab_activo === 'tab-niveles-captador' ? 'active' : ''; ?>" id="tab-niveles-captador">
+            <div class="table-container">
+                <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 15px;">
+                    <i class="fas fa-info-circle"></i> Configura los niveles, pagos por captación y bonos para los captadores.
+                </p>
+                <form method="POST" action="">
+                    <input type="hidden" name="accion" value="actualizar_niveles_captador">
+                    <div style="overflow-x: auto;">
+                        <table class="data-table" style="min-width: 1000px;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;">#</th>
+                                    <th>Nombre</th>
+                                    <th style="width: 70px;">Orden</th>
+                                    <th style="width: 80px;">Capt. Min</th>
+                                    <th style="width: 80px;">Capt. Max</th>
+                                    <th style="width: 100px;">Pago x Capt.</th>
+                                    <th style="width: 100px;">Apoyo Public.</th>
+                                    <th style="width: 100px;">Bono Global</th>
+                                    <th style="width: 100px;">% Adelanto</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($niveles_captador as $nivel): ?>
+                                <tr>
+                                    <td><?php echo $nivel['id']; ?></td>
+                                    <td><input type="text" name="niveles_cap[<?php echo $nivel['id']; ?>][nombre]" value="<?php echo sanitizar($nivel['nivel_nombre']); ?>" required></td>
+                                    <td><input type="number" name="niveles_cap[<?php echo $nivel['id']; ?>][orden]" value="<?php echo $nivel['nivel_orden']; ?>" required></td>
+                                    <td><input type="number" name="niveles_cap[<?php echo $nivel['id']; ?>][min]" value="<?php echo $nivel['captaciones_min']; ?>" required></td>
+                                    <td><input type="number" name="niveles_cap[<?php echo $nivel['id']; ?>][max]" value="<?php echo $nivel['captaciones_max']; ?>" required></td>
+                                    <td><input type="number" name="niveles_cap[<?php echo $nivel['id']; ?>][pago]" value="<?php echo $nivel['pago_por_captacion']; ?>" step="0.01" required></td>
+                                    <td><input type="number" name="niveles_cap[<?php echo $nivel['id']; ?>][apoyo]" value="<?php echo $nivel['apoyo_publicitario']; ?>" step="0.01" required></td>
+                                    <td><input type="number" name="niveles_cap[<?php echo $nivel['id']; ?>][bono]" value="<?php echo $nivel['bono_global']; ?>" step="0.01" required></td>
+                                    <td><input type="number" name="niveles_cap[<?php echo $nivel['id']; ?>][adelanto]" value="<?php echo $nivel['porcentaje_adelanto']; ?>" step="0.01" required></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
+                        <button type="submit" class="btn-guardar-niveles"><i class="fas fa-save"></i> Guardar Niveles Captador</button>
+                        <button type="button" class="btn-agregar-nivel" onclick="agregarNivelCaptador()"><i class="fas fa-plus"></i> Agregar Nivel Captador</button>
                     </div>
                 </form>
             </div>
@@ -1144,7 +1267,7 @@ document.getElementById('modalLeads')?.addEventListener('click', function(e) {
     if (e.target === this) cerrarModalLeads();
 });
 
-// ===== AGREGAR NUEVO NIVEL =====
+// ===== AGREGAR NUEVO NIVEL (ASESORES) =====
 function agregarNivel() {
     const form = document.createElement('form');
     form.method = 'POST';
@@ -1166,9 +1289,36 @@ function agregarNivel() {
             </div>
         </div>
     `;
-    const container = document.querySelector('.table-container');
-    const buttons = container.querySelector('div:last-child');
-    container.insertBefore(form, buttons);
+    const container = document.querySelector('#tab-niveles .table-container');
+    const buttons = container.querySelector('form > div:last-child');
+    container.insertBefore(form, buttons.parentNode);
+}
+
+// ===== AGREGAR NUEVO NIVEL DE CAPTADOR =====
+function agregarNivelCaptador() {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '';
+    form.innerHTML = `
+        <input type="hidden" name="accion" value="agregar_nivel_captador">
+        <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-top: 15px; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; border: 1px solid #e2e8f0;">
+            <div><label style="font-size: 0.75rem; font-weight: 600; color: #64748b;">Nombre</label><input type="text" name="nombre" placeholder="Ej: Platino" required style="width: 100%; padding: 6px 10px; border: 1px solid #e8edf4; border-radius: 6px;"></div>
+            <div><label style="font-size: 0.75rem; font-weight: 600; color: #64748b;">Orden</label><input type="number" name="orden" placeholder="4" required style="width: 100%; padding: 6px 10px; border: 1px solid #e8edf4; border-radius: 6px;"></div>
+            <div><label style="font-size: 0.75rem; font-weight: 600; color: #64748b;">Capt. Min</label><input type="number" name="min" placeholder="0" required style="width: 100%; padding: 6px 10px; border: 1px solid #e8edf4; border-radius: 6px;"></div>
+            <div><label style="font-size: 0.75rem; font-weight: 600; color: #64748b;">Capt. Max</label><input type="number" name="max" placeholder="999" required style="width: 100%; padding: 6px 10px; border: 1px solid #e8edf4; border-radius: 6px;"></div>
+            <div><label style="font-size: 0.75rem; font-weight: 600; color: #64748b;">Pago x Capt.</label><input type="number" name="pago" placeholder="0.00" step="0.01" required style="width: 100%; padding: 6px 10px; border: 1px solid #e8edf4; border-radius: 6px;"></div>
+            <div><label style="font-size: 0.75rem; font-weight: 600; color: #64748b;">Apoyo Public.</label><input type="number" name="apoyo" placeholder="0.00" step="0.01" required style="width: 100%; padding: 6px 10px; border: 1px solid #e8edf4; border-radius: 6px;"></div>
+            <div><label style="font-size: 0.75rem; font-weight: 600; color: #64748b;">Bono Global</label><input type="number" name="bono" placeholder="0.00" step="0.01" required style="width: 100%; padding: 6px 10px; border: 1px solid #e8edf4; border-radius: 6px;"></div>
+            <div><label style="font-size: 0.75rem; font-weight: 600; color: #64748b;">% Adelanto</label><input type="number" name="adelanto" placeholder="0.00" step="0.01" required style="width: 100%; padding: 6px 10px; border: 1px solid #e8edf4; border-radius: 6px;"></div>
+            <div style="display: flex; align-items: end; gap: 8px;">
+                <button type="submit" style="padding: 6px 20px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;"><i class="fas fa-plus"></i> Crear</button>
+                <button type="button" onclick="this.closest('form').remove()" style="padding: 6px 12px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer;"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+    `;
+    const container = document.querySelector('#tab-niveles-captador .table-container');
+    const buttons = container.querySelector('form > div:last-child');
+    container.insertBefore(form, buttons.parentNode);
 }
 </script>
 </body>

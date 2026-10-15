@@ -6,10 +6,10 @@ $rol_actual = $_SESSION['usuario_rol'] ?? 'externo';
 // Definición de permisos por rol
 $permisos = [
     'admin' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'crm_clientes', 'rastreabilidad', 'mensajes', 'gestion_acceso', 'administracion', 'bolsa_trabajo', 'audit_logs'],
-    'asesor' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'rastreabilidad', 'mensajes'],
+    'asesor' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'rastreabilidad', 'mensajes', 'Mis captaciones'],
     'captador' => ['inicio', 'calificador', 'publicar_propiedad', 'mensajes', 'gestion_leads', 'Mis captaciones'],
     'propietario' => ['mis_propiedades', 'publicar_propiedad', 'mensajes'],
-    'externo' => ['mensajes']
+    'externo' => ['calificador','inventario_maestro', 'mis_propiedades', 'Mis captaciones']
 ];
 
 // Función para verificar si un elemento debe mostrarse

@@ -8,7 +8,18 @@ if (estaLogueado()) {
     if (esAdmin()) {
         header('Location: accesos.php');
     } else {
-        header('Location: login.php');
+        // Obtenemos el rol del usuario desde la sesión
+        // (Asumo que guardas el rol en $_SESSION['user_role'] o similar al iniciar sesión)
+        $user_role = $_SESSION['user_role'] ?? $_SESSION['role'] ?? ''; 
+
+        if ($user_role === 'captador') {
+            header('Location: ../admin/calificador_propiedad.php');
+        } else if ($user_role === 'asesor') {
+            header('Location: accesos.php');
+        } else {
+            // Para cualquier otro rol (ej. cliente normal)
+            header('Location: mis_propiedades.php');
+        }
     }
     exit;
 }
@@ -43,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else if ($usuario['role'] === 'asesor') {
                 header('Location: accesos.php');
             }else {
-                header('Location: dashboard.php');
+                header('Location: mis_propiedades.php');
             }
             exit;
         } else {

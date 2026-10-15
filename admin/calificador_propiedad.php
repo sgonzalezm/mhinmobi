@@ -81,7 +81,7 @@ function generarPDFPropiedad($propiedad, $costos, $usuario) {
     require_once($tcpdf_path);
     
     $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
-    $pdf->SetCreator('Inmobiliaria MH');
+    $pdf->SetCreator('Grupo Inmobiliario Vera Terra');
     $pdf->SetAuthor($usuario['name']);
     $pdf->SetTitle('Reporte Propiedad #' . $propiedad['id']);
     $pdf->SetSubject('Calificación de Propiedad');
@@ -91,7 +91,7 @@ function generarPDFPropiedad($propiedad, $costos, $usuario) {
     $pdf->AddPage();
     
     $pdf->SetFont('helvetica', 'B', 18);
-    $pdf->Cell(0, 10, 'INMOBILIARIA MH', 0, 1, 'C');
+    $pdf->Cell(0, 10, 'Grupo Inmobiliario Vera Terra', 0, 1, 'C');
     $pdf->SetFont('helvetica', '', 10);
     $pdf->Cell(0, 5, 'Reporte de Calificación de Propiedad', 0, 1, 'C');
     $pdf->Ln(10);
@@ -313,6 +313,77 @@ function generarHTMLReporte($propiedad, $costos, $usuario) {
 }
 
 // ============================================
+// FUNCIÓN PARA PRE-CARGAR DATOS EN vender.php
+// ============================================
+function precargarDatosParaVender($propiedad, $conn) {
+    // Convertir imágenes del calificador a array
+    $imagenes = json_decode($propiedad['fotos_publicacion'] ?? '[]', true);
+    if (!is_array($imagenes)) $imagenes = [];
+    
+    // Determinar si tiene adeudo
+    $tiene_adeudo = (!empty($propiedad['deuda_hipoteca']) || !empty($propiedad['deuda_servicios'])) ? 1 : 0;
+    $monto_adeudo = ($propiedad['deuda_hipoteca'] ?? 0) + ($propiedad['deuda_servicios'] ?? 0);
+    
+    // Generar título automático
+    $titulo = 'Propiedad en ' . ($propiedad['colonia'] ?? $propiedad['ciudad'] ?? 'ubicación');
+    
+    // Generar descripción con datos del análisis
+    $descripcion = "Propiedad calificada #{$propiedad['id']}.\n";
+    $descripcion .= "Dirección: {$propiedad['direccion']}\n";
+    if (!empty($propiedad['m2_construccion'])) $descripcion .= "Construcción: {$propiedad['m2_construccion']} m²\n";
+    if (!empty($propiedad['m2_terreno'])) $descripcion .= "Terreno: {$propiedad['m2_terreno']} m²\n";
+    if (!empty($propiedad['recamaras'])) $descripcion .= "Recámaras: {$propiedad['recamaras']}\n";
+    if (!empty($propiedad['banos'])) $descripcion .= "Baños: {$propiedad['banos']}\n";
+    $descripcion .= "Viabilidad: " . ucfirst($propiedad['viabilidad'] ?? 'Sin evaluar');
+    
+    // Mapear datos de calificador → vender.php
+    $datos_venta = [
+        // ===== DATOS BÁSICOS =====
+        'titulo' => $titulo,
+        'precio' => $propiedad['precio_pretendido'],
+        'tipo_operacion' => 'venta',
+        'tipo_vivienda' => 'casa', // default, el admin lo ajusta
+        'tipo_casa' => '',
+        'nivel_duplex' => '',
+        'nivel_departamento' => '',
+        'descripcion' => $descripcion,
+        
+        // ===== DETALLES =====
+        'm2' => $propiedad['m2_construccion'] ?: $propiedad['m2_terreno'],
+        'recamaras' => $propiedad['recamaras'] ?? 0,
+        'banos' => $propiedad['banos'] ?? 0,
+        'estacionamiento' => $propiedad['estacionamiento'] ?? 0,
+        
+        // ===== UBICACIÓN =====
+        'estado' => '', // el admin debe seleccionar
+        'municipio' => $propiedad['ciudad'] ?? '', // aproximación
+        'colonia' => $propiedad['colonia'] ?? '',
+        'domicilio' => $propiedad['direccion'],
+        
+        // ===== ACCESORIOS =====
+        'accesorios' => [],
+        'accesorio_otro' => '',
+        
+        // ===== IMÁGENES =====
+        'imagenes' => $imagenes,
+        
+        // ===== LEGAL Y FINANCIERO =====
+        'tiene_adeudo' => $tiene_adeudo,
+        'tipo_adeudo' => !empty($propiedad['deuda_hipoteca']) ? 'banco' : 'particular',
+        'banco_id' => '',
+        'monto_adeudo' => $monto_adeudo,
+        'tipo_adeudo_propiedad' => 'individual',
+        'adeudo_compartido_detalles' => '',
+        'tiene_escrituras' => 0,
+        'tiene_testamento' => 0,
+        'legal_status' => 'libre',
+        'legal_status_notes' => '',
+    ];
+    
+    return $datos_venta;
+}
+
+// ============================================
 // OBTENER PARÁMETROS DE COSTOS
 // ============================================
 $stmt = $conn->prepare("SELECT * FROM parametros_costos WHERE id = 1");
@@ -380,18 +451,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         if (empty($direccion)) $errores[] = 'La dirección es obligatoria';
         if ($precio_pretendido <= 0) $errores[] = 'El precio pretendido debe ser mayor a 0';
-        if ($m2_construccion <= 0) $errores[] = 'Los metros cuadrados deben ser mayores a 0';
         
         if (empty($errores)) {
+            // ============================================
+            // CORRECCIÓN: Leer SIEMPRE deuda_hipoteca y deuda_servicios del POST
+            // ============================================
+            $deuda_hipoteca = floatval($_POST['deuda_hipoteca'] ?? 0);
+            $deuda_servicios = floatval($_POST['deuda_servicios'] ?? 0);
+            
             // Obtener valores financieros
-            // Si es administrador, usa los valores ingresados, si no, usa valores por defecto (0)
             if ($es_administrador) {
                 $gastos_operativos = floatval($_POST['gastos_operativos_fijos'] ?? $costos['gastos_operativos_por_m2'] ?? 0);
                 $ganancia_requerida = floatval($_POST['beneficio_fijo'] ?? ($precio_pretendido * (($costos['porcentaje_ganancia'] ?? 20) / 100)));
                 $comisiones = $precio_pretendido * (($costos['porcentaje_comision'] ?? 3) / 100);
                 $precio_comercial = $precio_pretendido * ($costos['factor_ajuste_comercial'] ?? 1.15);
-                $deuda_hipoteca = floatval($_POST['deuda_hipoteca'] ?? 0);
-                $deuda_servicios = floatval($_POST['deuda_servicios'] ?? 0);
             } else {
                 // Calificador: usa valores por defecto pero SIEMPRE calcula
                 $gastos_operativos = $costos['gastos_operativos_por_m2'] ?? 0;
@@ -607,6 +680,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         header("Location: calificador_propiedad.php?id=" . $propiedad_id);
+        exit;
+    }
+    
+    // ============================================
+    // REGISTRAR EN VENTAS (redirige a vender.php con datos pre-cargados)
+    // ============================================
+    if ($action === 'registrar_en_ventas') {
+        // Solo administrador
+        if (!$es_administrador) {
+            $_SESSION['errores'] = ['Solo administradores pueden registrar en ventas'];
+            header("Location: calificador_propiedad.php?id=" . $propiedad_id);
+            exit;
+        }
+        
+        // Cargar propiedad completa
+        $stmt = $conn->prepare("SELECT * FROM propiedades_calificacion WHERE id = ?");
+        $stmt->execute([$propiedad_id]);
+        $prop = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$prop) {
+            $_SESSION['errores'] = ['Propiedad no encontrada'];
+            header("Location: calificador_propiedad.php?listado=1");
+            exit;
+        }
+        
+        // Validar que esté aprobada y con visita
+        if ($prop['go_no_go'] !== 'aprobado') {
+            $_SESSION['errores'] = ['Solo se pueden registrar propiedades aprobadas'];
+            header("Location: calificador_propiedad.php?id=" . $propiedad_id);
+            exit;
+        }
+        
+        if (empty($prop['fecha_visita'])) {
+            $_SESSION['errores'] = ['Debes completar la visita antes de registrar en ventas'];
+            header("Location: calificador_propiedad.php?id=" . $propiedad_id . "&etapa=3");
+            exit;
+        }
+        
+        // Pre-cargar datos en la sesión de vender.php
+        $_SESSION['form_venta'] = precargarDatosParaVender($prop, $conn);
+        $_SESSION['calificador_origen_id'] = $propiedad_id;
+        
+        // Redirigir a vender.php
+        header("Location: ../vender.php?desde_calificador=1");
         exit;
     }
 }
@@ -1408,8 +1525,8 @@ $stats['con_visita'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
                     </div>
                     
                     <div class="form-group">
-                        <label for="m2_construccion">M² de Construcción <span class="required">*</span></label>
-                        <input type="number" id="m2_construccion" name="m2_construccion" value="<?php echo htmlspecialchars($propiedad['m2_construccion'] ?? ''); ?>" step="0.01" required>
+                        <label for="m2_construccion">M² de Construcción</label>
+                        <input type="number" id="m2_construccion" name="m2_construccion" value="<?php echo htmlspecialchars($propiedad['m2_construccion'] ?? ''); ?>" step="0.01">
                     </div>
                     
                     <div class="form-group">
@@ -1774,6 +1891,17 @@ $stats['con_visita'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
                     <i class="fas fa-home"></i> Propiedad #<?php echo $propiedad['id']; ?>
                 </div>
                 
+                <!-- AVISO INFORMATIVO PARA REGISTRO EN VENTAS -->
+                <?php if ($es_administrador && $propiedad['go_no_go'] == 'aprobado'): ?>
+                <div style="background: #d1ecf1; padding: 12px 18px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #17a2b8;">
+                    <p style="margin: 0; color: #0c5460;">
+                        <i class="fas fa-info-circle"></i> 
+                        Esta propiedad está lista para registrarse en el módulo de <strong>Ventas</strong>. 
+                        Al hacer clic en <strong>"Registrar en Ventas"</strong>, se redirigirá al formulario completo con los datos pre-cargados.
+                    </p>
+                </div>
+                <?php endif; ?>
+                
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                     <div><strong>Dirección:</strong> <?php echo htmlspecialchars($propiedad['direccion']); ?></div>
                     <div><strong>Ciudad:</strong> <?php echo htmlspecialchars($propiedad['ciudad'] ?? 'N/A'); ?></div>
@@ -1888,11 +2016,14 @@ $stats['con_visita'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
                     <button onclick="document.getElementById('exportPdfForm').submit();" class="btn btn-danger">
                             <i class="fas fa-file-pdf"></i> Exportar PDF
                     </button>
-                    <button>
-                        <a href="../vender.php" class="btn btn-secondary">
-                            <i class="fas fa-print"></i> Registrar la propiedad
-                        </a>
-                    </button>
+                    <?php if ($es_administrador && $propiedad['go_no_go'] == 'aprobado'): ?>
+                        <form method="POST" style="display:inline;">
+                            <input type="hidden" name="action" value="registrar_en_ventas">
+                            <button type="submit" class="btn btn-success" onclick="return confirm('¿Registrar esta propiedad en el módulo de ventas?\n\nSerás redirigido al formulario completo con los datos pre-cargados. Deberás completar los campos faltantes (tipo de vivienda, estado, accesorios, etc.).');">
+                                <i class="fas fa-rocket"></i> Registrar en Ventas
+                            </button>
+                        </form>
+                    <?php endif; ?>
                 </div>
             </div>
             

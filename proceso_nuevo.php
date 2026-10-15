@@ -1,8 +1,6 @@
 <?php
 // proceso_nuevo.php
 session_start();
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
 
 require_once 'includes/conexion.php';
 require_once 'includes/auth.php';
@@ -29,7 +27,7 @@ try {
     $stmt = $conn->prepare("
         SELECT p.id, p.title, p.domicilio, p.estado
         FROM properties p
-        WHERE p.status = 'activo'
+        WHERE p.status IN ('activo', 'apartado')
         AND p.id NOT IN (
             SELECT property_id FROM property_tracking WHERE status = 'activo'
         )
@@ -103,7 +101,7 @@ $etapas_proceso = [
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Iniciar Nuevo Proceso | Inmobiliaria MH</title>
+    <title>Iniciar Nuevo Proceso | Vera terra Grupo inmobiliario</title>
     <link rel="stylesheet" href="css/socios.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
