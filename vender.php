@@ -207,7 +207,7 @@ $municipios_filtrados = obtenerMunicipios();
 $socio = null;
 if (isset($_SESSION['usuario_id'])) {
     try {
-        $sql = "SELECT id, name, email, rol FROM users WHERE id = ? AND activo = 1";
+        $sql = "SELECT id, name, email, role FROM users WHERE id = ? AND activo = 1";
         $stmt = $conn->prepare($sql);
         $stmt->execute([$_SESSION['usuario_id']]);
         $socio = $stmt->fetch();

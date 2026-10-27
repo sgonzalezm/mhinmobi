@@ -5,11 +5,11 @@ $rol_actual = $_SESSION['usuario_rol'] ?? 'externo';
 
 // Definición de permisos por rol
 $permisos = [
-    'admin' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'crm_clientes', 'rastreabilidad', 'mensajes', 'gestion_acceso', 'administracion', 'bolsa_trabajo', 'audit_logs'],
-    'asesor' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'rastreabilidad', 'mensajes', 'Mis captaciones'],
-    'captador' => ['inicio', 'calificador', 'publicar_propiedad', 'mensajes', 'gestion_leads', 'Mis captaciones'],
-    'propietario' => ['mis_propiedades', 'publicar_propiedad', 'mensajes'],
-    'externo' => ['calificador','inventario_maestro', 'mis_propiedades', 'Mis captaciones']
+    'admin' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'crm_clientes', 'rastreabilidad', 'mensajes', 'gestion_acceso', 'administracion', 'bolsa_trabajo', 'audit_logs', 'perfil'],
+    'asesor' => ['inicio', 'calificador', 'mis_propiedades', 'publicar_propiedad', 'inventario_maestro', 'rastreabilidad', 'mensajes', 'Mis captaciones', 'perfil'],
+    'captador' => ['inicio', 'calificador', 'publicar_propiedad', 'mensajes', 'gestion_leads', 'Mis captaciones', 'perfil'],
+    'propietario' => ['mis_propiedades', 'publicar_propiedad', 'mensajes', 'perfil'],
+    'externo' => ['calificador','inventario_maestro', 'mis_propiedades', 'Mis captaciones', 'perfil']
 ];
 
 // Función para verificar si un elemento debe mostrarse
@@ -139,6 +139,13 @@ $roles_espanol = [
             <i class="fas fa-envelope-open-text"></i> Bolsa de Trabajo
         </a>
         <?php endif; ?>
+
+        <?php if (ver('perfil')): ?>
+        <a href="../perfil.php">
+            <i class="fas fa-user"></i> Perfil
+        </a>
+        <?php endif; ?>
+
         <?php if (ver('audit_logs')): ?>
         <a href="../audit_logs.php">
             <i class="fas fa-clock "></i> Audit Logs
