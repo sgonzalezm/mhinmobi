@@ -76,11 +76,12 @@ function getCategoriaIcon($property_type) {
     return $icons[$property_type] ?? 'fa-regular fa-building';
 }
 
-// ===== CONSULTAR PROPIEDADES DESTACADAS =====
+// ===== CONSULTAR PROPIEDADES DESTACADAS (ORDEN MANUAL) =====
 $propiedades_destacadas = [];
 
 if ($conn) {
     try {
+        // 1) Primero: propiedades marcadas manualmente para el home, respetando display_order
         $sql = "
             SELECT 
                 p.id,
@@ -93,6 +94,7 @@ if ($conn) {
                 p.property_type,
                 p.created_at,
                 p.sold_at,
+                p.display_order,
                 pd.square_meters,
                 pd.bedrooms,
                 pd.bathrooms,
@@ -104,7 +106,6 @@ if ($conn) {
                 (SELECT file_path FROM property_media 
                  WHERE property_id = p.id AND is_primary = 1 
                  ORDER BY sort_order ASC LIMIT 1) as imagen_principal,
-                -- Días para vender (solo vendidas)
                 CASE 
                     WHEN p.status = 'vendido' 
                          AND p.sold_at IS NOT NULL 
@@ -118,32 +119,94 @@ if ($conn) {
             LEFT JOIN property_financials pf ON p.id = pf.property_id
             LEFT JOIN property_featuring f ON p.id = f.property_id AND f.status = 'active'
             WHERE p.status IN ('activo', 'apartado', 'vendido')
-            AND p.publica = 1
+              AND p.publica = 1
+              AND p.featured_home = 1
             GROUP BY p.id
-            ORDER BY 
-                CASE 
-                    WHEN p.status = 'activo' AND f.status = 'active' THEN 0
-                    WHEN p.status = 'activo' THEN 1
-                    WHEN p.status = 'apartado' THEN 2
-                    WHEN p.status = 'vendido' THEN 3
-                    ELSE 4
-                END,
-                p.created_at DESC
+            ORDER BY p.display_order ASC, p.created_at DESC
             LIMIT 6
         ";
 
         $stmt = $conn->prepare($sql);
         $stmt->execute();
-        $todas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $propiedades_destacadas = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Limitar: máximo 2 vendidas y 2 apartadas en el index (opcional)
-        $max_vendidas  = 2;
-        $max_apartadas = 2;
-        $cont_vendidas = 0;
+        // 2) Si el admin no ha marcado suficientes, rellenar automáticamente hasta 6
+        //    (así el landing nunca se ve vacío si aún no se ha configurado nada)
+        $faltan = 6 - count($propiedades_destacadas);
+
+        if ($faltan > 0) {
+            $idsExcluir = array_column($propiedades_destacadas, 'id');
+            $placeholders = !empty($idsExcluir)
+                ? implode(',', array_fill(0, count($idsExcluir), '?'))
+                : '0';
+
+            $sqlAuto = "
+                SELECT 
+                    p.id,
+                    p.title,
+                    p.operation_type,
+                    p.colonia,
+                    p.address_city,
+                    p.domicilio,
+                    p.status,
+                    p.property_type,
+                    p.created_at,
+                    p.sold_at,
+                    p.display_order,
+                    pd.square_meters,
+                    pd.bedrooms,
+                    pd.bathrooms,
+                    pd.parking_spots,
+                    pf.asking_price as price,
+                    f.id as featuring_id,
+                    f.status as featuring_status,
+                    f.end_date as featuring_end,
+                    (SELECT file_path FROM property_media 
+                     WHERE property_id = p.id AND is_primary = 1 
+                     ORDER BY sort_order ASC LIMIT 1) as imagen_principal,
+                    CASE 
+                        WHEN p.status = 'vendido' 
+                             AND p.sold_at IS NOT NULL 
+                             AND p.created_at IS NOT NULL 
+                             AND p.sold_at >= p.created_at
+                        THEN DATEDIFF(p.sold_at, p.created_at)
+                        ELSE NULL
+                    END as dias_para_vender
+                FROM properties p
+                LEFT JOIN property_details pd ON p.id = pd.property_id
+                LEFT JOIN property_financials pf ON p.id = pf.property_id
+                LEFT JOIN property_featuring f ON p.id = f.property_id AND f.status = 'active'
+                WHERE p.status IN ('activo', 'apartado', 'vendido')
+                  AND p.publica = 1
+                  AND p.id NOT IN ($placeholders)
+                GROUP BY p.id
+                ORDER BY 
+                    CASE 
+                        WHEN p.status = 'activo' AND f.status = 'active' THEN 0
+                        WHEN p.status = 'activo' THEN 1
+                        WHEN p.status = 'apartado' THEN 2
+                        WHEN p.status = 'vendido' THEN 3
+                        ELSE 4
+                    END,
+                    p.created_at DESC
+                LIMIT $faltan
+            ";
+
+            $stmt = $conn->prepare($sqlAuto);
+            $stmt->execute($idsExcluir);
+            $autoCompletadas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $propiedades_destacadas = array_merge($propiedades_destacadas, $autoCompletadas);
+        }
+
+        // 3) Límites de seguridad (máx 2 vendidas / 2 apartadas)
+        $max_vendidas   = 2;
+        $max_apartadas  = 2;
+        $cont_vendidas  = 0;
         $cont_apartadas = 0;
-        $propiedades_destacadas = [];
+        $filtradas = [];
 
-        foreach ($todas as $p) {
+        foreach ($propiedades_destacadas as $p) {
             $status = $p['status'] ?? '';
             if ($status === 'vendido') {
                 if ($cont_vendidas >= $max_vendidas) continue;
@@ -152,11 +215,10 @@ if ($conn) {
                 if ($cont_apartadas >= $max_apartadas) continue;
                 $cont_apartadas++;
             }
-            $propiedades_destacadas[] = $p;
+            $filtradas[] = $p;
         }
 
-        // Recortar a 6 por si acaso
-        $propiedades_destacadas = array_slice($propiedades_destacadas, 0, 6);
+        $propiedades_destacadas = array_slice($filtradas, 0, 6);
 
     } catch (PDOException $e) {
         error_log("Error al consultar propiedades destacadas: " . $e->getMessage());

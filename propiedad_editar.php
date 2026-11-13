@@ -382,8 +382,10 @@ try {
         .btn-secondary { background: #e8e8e8; color: #333; }
         .btn-secondary:hover { background: #d5d5d5; }
         .drag-instruction { font-size: 12px; color: #c9a84c; margin-top: 8px; display: flex; align-items: center; gap: 5px; }
-        .geo-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-        .geo-status { font-size: 13px; color: #666; }
+        .geo-hint { background: #f8f6f0; border-left: 4px solid #c9a84c; padding: 12px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; color: #555; line-height: 1.6; }
+        .geo-hint strong { color: #1a1a2e; }
+        .geo-input-row { display: flex; gap: 8px; }
+        .geo-input-row input { flex: 1; }
         .geo-map-container { display: none; margin-top: 12px; }
         .geo-map-frame { width: 100%; height: 280px; border: 1px solid #ddd; border-radius: 8px; }
         @media (max-width: 768px) {
@@ -391,6 +393,7 @@ try {
             .accesorios-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
             .servicios-grid { grid-template-columns: 1fr; }
             .edit-header { flex-direction: column; align-items: flex-start; }
+            .geo-input-row { flex-direction: column; }
         }
     </style>
 </head>
@@ -560,42 +563,42 @@ try {
                     <input type="text" id="domicilio" name="domicilio" value="<?php echo htmlspecialchars($prop['domicilio'] ?? ''); ?>" placeholder="Ej: Av. Juárez #123" required>
                 </div>
 
-                <!-- Geolocalización GPS -->
+                <!-- UBICACIÓN GPS (vía enlace de WhatsApp / Google Maps) -->
                 <div class="form-group">
                     <label>
-                        <i class="fas fa-map-marker-alt" style="color:#c9a84c;"></i> 
-                        Coordenadas GPS
+                        <i class="fas fa-map-marker-alt" style="color:#c9a84c;"></i>
+                        Ubicación en el mapa
                     </label>
-                    <div class="geo-controls">
-                        <button type="button" id="btnGeo" class="btn btn-dorado" style="padding:10px 18px;">
-                            <i class="fas fa-crosshairs"></i> Capturar ubicación
-                        </button>
-                        <button type="button" id="btnGeoClear" class="btn btn-secondary" style="padding:10px 18px; <?php echo (!empty($prop['address_lat']) && !empty($prop['address_lng'])) ? '' : 'display:none;'; ?>">
-                            <i class="fas fa-times"></i> Limpiar
-                        </button>
-                        <span id="geoStatus" class="geo-status"></span>
+
+                    <div class="geo-hint">
+                        <strong>1.</strong> En WhatsApp toca el mapa que te enviaron → <strong>Compartir</strong> → <strong>Copiar enlace</strong><br>
+                        <strong>2.</strong> Pégalo aquí abajo y toca <strong>OK</strong>
                     </div>
+
+                    <div class="geo-input-row">
+                        <input type="text" id="ubicacion_link" placeholder="Pega el enlace aquí...">
+                        <button type="button" id="btnResolverLink" class="btn btn-dorado" style="padding:10px 20px; white-space:nowrap;">
+                            <i class="fas fa-check"></i> OK
+                        </button>
+                    </div>
+
                     <div class="form-row" style="margin-top:12px;">
                         <div class="form-group" style="margin-bottom:0;">
                             <label for="address_lat" style="font-size:12px; color:#888;">Latitud</label>
-                            <input type="text" id="address_lat" name="address_lat" 
-                                   value="<?php echo htmlspecialchars($prop['address_lat'] ?? ''); ?>" 
+                            <input type="text" id="address_lat" name="address_lat"
+                                   value="<?php echo htmlspecialchars($prop['address_lat'] ?? ''); ?>"
                                    readonly placeholder="—">
                         </div>
                         <div class="form-group" style="margin-bottom:0;">
                             <label for="address_lng" style="font-size:12px; color:#888;">Longitud</label>
-                            <input type="text" id="address_lng" name="address_lng" 
-                                   value="<?php echo htmlspecialchars($prop['address_lng'] ?? ''); ?>" 
+                            <input type="text" id="address_lng" name="address_lng"
+                                   value="<?php echo htmlspecialchars($prop['address_lng'] ?? ''); ?>"
                                    readonly placeholder="—">
                         </div>
                     </div>
+
                     <div id="geoMapContainer" class="geo-map-container">
                         <iframe id="geoMapFrame" class="geo-map-frame" loading="lazy"></iframe>
-                        <div style="margin-top:8px; text-align:right;">
-                            <a id="geoMapLink" href="#" target="_blank" class="btn btn-secondary" style="padding:8px 14px; font-size:13px;">
-                                <i class="fas fa-external-link-alt"></i> Abrir en Google Maps
-                            </a>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -1013,15 +1016,13 @@ document.addEventListener('DOMContentLoaded', function() {
         imagenesGuardadas.value = JSON.stringify(imagenes);
     }
 
-    // ===== GEOLOCALIZACIÓN GPS =====
-    const btnGeo = document.getElementById('btnGeo');
-    const btnGeoClear = document.getElementById('btnGeoClear');
-    const geoStatus = document.getElementById('geoStatus');
+    // ===== UBICACIÓN VÍA ENLACE DE WHATSAPP / GOOGLE MAPS =====
+    const btnResolverLink = document.getElementById('btnResolverLink');
+    const inputLink = document.getElementById('ubicacion_link');
     const inputLat = document.getElementById('address_lat');
     const inputLng = document.getElementById('address_lng');
     const geoMapContainer = document.getElementById('geoMapContainer');
     const geoMapFrame = document.getElementById('geoMapFrame');
-    const geoMapLink = document.getElementById('geoMapLink');
 
     function mostrarMapa(lat, lng) {
         if (!lat || !lng) {
@@ -1030,79 +1031,64 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const bbox = `${(parseFloat(lng)-0.003).toFixed(6)},${(parseFloat(lat)-0.002).toFixed(6)},${(parseFloat(lng)+0.003).toFixed(6)},${(parseFloat(lat)+0.002).toFixed(6)}`;
         geoMapFrame.src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
-        geoMapLink.href = `https://www.google.com/maps?q=${lat},${lng}`;
         geoMapContainer.style.display = 'block';
     }
 
+    // Si ya hay coordenadas al cargar, mostrar el mapa
     if (inputLat.value && inputLng.value) {
-        mostrarMapa(inputLat.value, inputLng.value);
-        btnGeoClear.style.display = 'inline-flex';
+        mostrarMapa(parseFloat(inputLat.value), parseFloat(inputLng.value));
     }
 
-    btnGeo.addEventListener('click', function() {
-        if (!navigator.geolocation) {
-            Swal.fire({ icon: 'error', title: 'No soportado', text: 'Tu navegador no soporta geolocalización', confirmButtonColor: '#c9a84c' });
+    btnResolverLink.addEventListener('click', function() {
+        const valor = inputLink.value.trim();
+        if (!valor) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Falta el enlace',
+                text: 'Pega el enlace del mapa primero.',
+                confirmButtonColor: '#c9a84c'
+            });
             return;
         }
 
-        geoStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Obteniendo ubicación...';
-        btnGeo.disabled = true;
+        btnResolverLink.disabled = true;
+        btnResolverLink.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
-        navigator.geolocation.getCurrentPosition(
-            function(position) {
-                const lat = position.coords.latitude.toFixed(6);
-                const lng = position.coords.longitude.toFixed(6);
-                inputLat.value = lat;
-                inputLng.value = lng;
+        const fd = new FormData();
+        fd.append('ubicacion', valor);
 
-                const precision = position.coords.accuracy ? Math.round(position.coords.accuracy) + 'm' : '—';
-                geoStatus.innerHTML = `<i class="fas fa-check-circle" style="color:#28a745;"></i> Capturada (precisión: ${precision})`;
-                btnGeo.disabled = false;
-                btnGeoClear.style.display = 'inline-flex';
-                mostrarMapa(lat, lng);
-
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Ubicación capturada',
-                    html: `Lat: <b>${lat}</b><br>Lng: <b>${lng}</b><br><small>Precisión: ${precision}</small>`,
-                    confirmButtonColor: '#c9a84c',
-                    timer: 2500,
-                    showConfirmButton: false
-                });
-            },
-            function(error) {
-                btnGeo.disabled = false;
-                let msg = 'Error desconocido';
-                switch(error.code) {
-                    case error.PERMISSION_DENIED: msg = 'Permiso denegado. Activa el GPS.'; break;
-                    case error.POSITION_UNAVAILABLE: msg = 'Ubicación no disponible.'; break;
-                    case error.TIMEOUT: msg = 'Tiempo de espera agotado.'; break;
+        fetch('resolver_ubicacion.php', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    inputLat.value = data.lat.toFixed(6);
+                    inputLng.value = data.lng.toFixed(6);
+                    mostrarMapa(data.lat, data.lng);
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Ubicación lista',
+                        text: 'Revisa que el pin esté en el lugar correcto.',
+                        confirmButtonColor: '#c9a84c'
+                    });
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'No se pudo',
+                        text: data.error || 'Error desconocido',
+                        confirmButtonColor: '#c9a84c'
+                    });
                 }
-                geoStatus.innerHTML = `<i class="fas fa-exclamation-triangle" style="color:#dc3545;"></i> ${msg}`;
-                Swal.fire({ icon: 'error', title: 'Error', text: msg, confirmButtonColor: '#c9a84c' });
-            },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-        );
-    });
-
-    btnGeoClear.addEventListener('click', function() {
-        Swal.fire({
-            title: '¿Borrar coordenadas?',
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#dc3545',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: 'Borrar',
-            cancelButtonText: 'Cancelar'
-        }).then(r => {
-            if (r.isConfirmed) {
-                inputLat.value = '';
-                inputLng.value = '';
-                geoStatus.textContent = '';
-                geoMapContainer.style.display = 'none';
-                btnGeoClear.style.display = 'none';
-            }
-        });
+            })
+            .catch(() => Swal.fire({
+                icon: 'error',
+                title: 'Error de conexión',
+                text: 'Revisa tu internet e intenta de nuevo.',
+                confirmButtonColor: '#c9a84c'
+            }))
+            .finally(() => {
+                btnResolverLink.disabled = false;
+                btnResolverLink.innerHTML = '<i class="fas fa-check"></i> OK';
+            });
     });
 });
 </script>

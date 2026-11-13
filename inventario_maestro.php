@@ -678,6 +678,9 @@ function getStatusBadge($status) {
             <i class="fas fa-list"></i> Todas
             <span class="tab-count"><?php echo $countTodas; ?></span>
         </a>
+        <a href="home_destacadas.php" class="view-tab portal-link">
+            <i class="fas fa-sort-amount-up"></i> Ordenar publicaciones
+        </a>
         <a href="mapa_ventas.php" class="view-tab portal-link">
             <i class="fas fa-map-marked-alt"></i> Portal de Métricas
         </a>

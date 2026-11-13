@@ -55,13 +55,29 @@ function getUbicacionCompleta($propiedad) {
     return !empty($parts) ? implode(', ', $parts) : 'Ubicación no especificada';
 }
 
+// ===== NUEVAS FUNCIONES PARA MAPA =====
+function tieneUbicacionMapa($propiedad) {
+    $lat = $propiedad['address_lat'] ?? null;
+    $lng = $propiedad['address_lng'] ?? null;
+    return !empty($lat) && !empty($lng) 
+        && is_numeric($lat) && is_numeric($lng)
+        && abs((float)$lat) <= 90 && abs((float)$lng) <= 180;
+}
+
+function getMapaUrl($propiedad) {
+    $lat = (float)$propiedad['address_lat'];
+    $lng = (float)$propiedad['address_lng'];
+    return 'https://maps.google.com/?q=' . $lat . ',' . $lng;
+}
+
 // ===== OBTENER PROPIEDAD =====
 $propiedad = null;
 try {
     $stmt = $conn->prepare("
         SELECT 
             p.id, p.title, p.operation_type, p.property_type, p.status,
-            p.address_city, p.domicilio, p.created_at,
+            p.address_city, p.domicilio, p.address_lat, p.address_lng,
+            p.created_at,
             pd.square_meters, pd.bedrooms, pd.bathrooms, pd.parking_spots,
             pd.description,
             pf.asking_price as price
@@ -143,6 +159,8 @@ $icono_categoria = getCategoriaIcon($propiedad['property_type'] ?? '');
 $ubicacion = getUbicacionCompleta($propiedad);
 $precio = formatearPrecio($propiedad['price']);
 $esta_apartada = strtolower($propiedad['status']) === 'apartada';
+$tiene_mapa = tieneUbicacionMapa($propiedad);
+$mapa_url = $tiene_mapa ? getMapaUrl($propiedad) : '';
 
 // Datos para WhatsApp
 $whatsapp_numero = '523311586937';
@@ -922,6 +940,99 @@ $whatsapp_url = "https://wa.me/{$whatsapp_numero}?text={$whatsapp_texto}";
             font-weight: 600;
         }
 
+        /* ===== NUEVO: SECCIÓN UBICACIÓN / MAPA ===== */
+        .location-map-card {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 20px 22px;
+            background: linear-gradient(135deg, var(--gold-light) 0%, #fdfaf4 100%);
+            border: 1px solid rgba(197, 160, 89, 0.35);
+            border-radius: var(--radius);
+            position: relative;
+            overflow: hidden;
+            transition: box-shadow var(--transition), transform var(--transition);
+        }
+
+        .location-map-card::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: linear-gradient(180deg, var(--gold), var(--gold-hover));
+        }
+
+        .location-map-card:hover {
+            box-shadow: 0 8px 24px rgba(197, 160, 89, 0.18);
+            transform: translateY(-2px);
+        }
+
+        .location-map-icon {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            background: var(--navy);
+            color: var(--gold);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            flex-shrink: 0;
+            box-shadow: 0 4px 14px rgba(11, 31, 58, 0.2);
+        }
+
+        .location-map-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .location-map-body .label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 4px;
+        }
+
+        .location-map-body .address {
+            font-size: 0.95rem;
+            color: var(--navy);
+            font-weight: 500;
+            line-height: 1.4;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .location-map-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 11px 22px;
+            background: var(--gold);
+            color: #fff;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            transition: all var(--transition);
+            box-shadow: 0 4px 14px rgba(197, 160, 89, 0.35);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .location-map-btn i {
+            font-size: 0.9rem;
+        }
+
+        .location-map-btn:hover {
+            background: var(--gold-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 22px rgba(197, 160, 89, 0.45);
+        }
+
         /* ===== SIDEBAR CONTACTO ===== */
         .sidebar {
             position: sticky;
@@ -1387,6 +1498,19 @@ $whatsapp_url = "https://wa.me/{$whatsapp_numero}?text={$whatsapp_texto}";
             }
 
             .whatsapp-float .tooltip { display: none; }
+
+            /* Mapa responsive */
+            .location-map-card {
+                flex-direction: column;
+                text-align: center;
+                gap: 14px;
+                padding: 22px 18px;
+            }
+
+            .location-map-btn {
+                width: 100%;
+                justify-content: center;
+            }
         }
 
         @media (max-width: 480px) {
@@ -1563,6 +1687,30 @@ $whatsapp_url = "https://wa.me/{$whatsapp_numero}?text={$whatsapp_texto}";
                             <span class="label">Estacionamientos</span>
                         </div>
                     </div>
+
+                    <!-- ===== NUEVO: SECCIÓN UBICACIÓN / MAPA ===== -->
+                    <?php if ($tiene_mapa): ?>
+                        <div class="info-block">
+                            <h2><i class="fa-solid fa-map-location-dot"></i> Ubicación</h2>
+                            <div class="location-map-card">
+                                <div class="location-map-icon">
+                                    <i class="fa-solid fa-location-dot"></i>
+                                </div>
+                                <div class="location-map-body">
+                                    <div class="label">Dirección de la propiedad</div>
+                                    <div class="address"><?php echo htmlspecialchars($ubicacion); ?></div>
+                                </div>
+                                <a href="<?php echo htmlspecialchars($mapa_url); ?>" 
+                                   target="_blank" 
+                                   rel="noopener noreferrer"
+                                   class="location-map-btn"
+                                   aria-label="Abrir ubicación en Google Maps">
+                                    <i class="fa-solid fa-map-location-dot"></i>
+                                    Ver en mapa
+                                </a>
+                            </div>
+                        </div>
+                    <?php endif; ?>
 
                     <!-- Descripción -->
                     <?php if (!empty($propiedad['description'])): ?>

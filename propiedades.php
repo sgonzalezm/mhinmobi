@@ -97,6 +97,8 @@ try {
             p.operation_type,
             p.colonia,
             p.domicilio,
+            p.address_lat,
+            p.address_lng,
             p.status,
             p.publica,
             p.property_type,
@@ -239,6 +241,22 @@ function esVendida($propiedad) {
 
 function esApartada($propiedad) {
     return ($propiedad['status'] ?? '') === 'apartado';
+}
+
+// ===== NUEVAS FUNCIONES PARA MAPA =====
+function tieneUbicacionMapa($propiedad) {
+    $lat = $propiedad['address_lat'] ?? null;
+    $lng = $propiedad['address_lng'] ?? null;
+    return !empty($lat) && !empty($lng) 
+        && is_numeric($lat) && is_numeric($lng)
+        && abs((float)$lat) <= 90 && abs((float)$lng) <= 180;
+}
+
+function getMapaUrl($propiedad) {
+    $lat = (float)$propiedad['address_lat'];
+    $lng = (float)$propiedad['address_lng'];
+    // URL de Google Maps con pin compartible (abre en pestaña nueva)
+    return 'https://maps.google.com/?q=' . $lat . ',' . $lng;
 }
 
 function buildPageUrl($page, $tipo, $categoria, $busqueda, $per_page) {
@@ -886,6 +904,61 @@ try {
             font-size: 0.8rem;
         }
 
+        /* ===== FILA DE UBICACIÓN CON BOTÓN DE MAPA ===== */
+        .location-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .location-row .location {
+            flex: 1;
+            min-width: 0;
+            margin-bottom: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .map-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 11px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            color: var(--navy);
+            background: var(--gold-light);
+            border: 1px solid rgba(197, 160, 89, 0.45);
+            border-radius: 20px;
+            transition: all var(--transition);
+            white-space: nowrap;
+            flex-shrink: 0;
+            text-decoration: none;
+            line-height: 1;
+        }
+
+        .map-btn i {
+            color: var(--gold);
+            font-size: 0.75rem;
+            transition: color var(--transition);
+        }
+
+        .map-btn:hover {
+            background: var(--gold);
+            color: #fff;
+            border-color: var(--gold);
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(197, 160, 89, 0.35);
+        }
+
+        .map-btn:hover i {
+            color: #fff;
+        }
+
         /* ===== PAGINACIÓN ===== */
         .pagination {
             display: flex;
@@ -1160,6 +1233,18 @@ try {
                 font-size: 0.8rem;
                 min-width: 36px;
             }
+
+            .map-btn span {
+                display: none;
+            }
+
+            .map-btn {
+                padding: 6px 9px;
+                border-radius: 50%;
+                width: 28px;
+                height: 28px;
+                justify-content: center;
+            }
         }
     </style>
 </head>
@@ -1249,6 +1334,8 @@ try {
                         $ubicacion = getUbicacionCompleta($prop);
                         $precio = formatearPrecio($prop['price']);
                         $imagen = getImagenUrl($prop['imagen_principal']);
+                        $tiene_mapa = tieneUbicacionMapa($prop);
+                        $mapa_url = $tiene_mapa ? getMapaUrl($prop) : '';
                         
                         // Clases de la tarjeta
                         $card_class = 'property-card';
@@ -1289,7 +1376,25 @@ try {
                             </div>
                             <div class="property-info">
                                 <h3><?php echo htmlspecialchars($prop['title']); ?></h3>
-                                <div class="location"><i class="fa-solid fa-location-dot"></i> <?php echo htmlspecialchars($ubicacion); ?></div>
+                                
+                                <!-- ===== FILA UBICACIÓN + BOTÓN MAPA ===== -->
+                                <div class="location-row">
+                                    <div class="location">
+                                        <i class="fa-solid fa-location-dot"></i> <?php echo htmlspecialchars($ubicacion); ?>
+                                    </div>
+                                    <?php if ($tiene_mapa): ?>
+                                        <a href="<?php echo htmlspecialchars($mapa_url); ?>" 
+                                           target="_blank" 
+                                           rel="noopener noreferrer"
+                                           class="map-btn"
+                                           title="Ver ubicación en el mapa"
+                                           aria-label="Abrir ubicación en el mapa">
+                                            <i class="fa-solid fa-map-location-dot"></i>
+                                            <span>Mapa</span>
+                                        </a>
+                                    <?php endif; ?>
+                                </div>
+                                
                                 <div class="price"><?php echo $precio; ?></div>
                                 
                                 <?php if ($es_vendida): ?>
